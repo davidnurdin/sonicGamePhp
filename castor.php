@@ -7,6 +7,7 @@ use function Castor\app;
 use function Castor\context;
 
 
+// apt install libsdl2-image-dev
 #[AsTask(description: 'Execute the project SF !')]
 function run(): void
 {
@@ -22,12 +23,18 @@ function run(): void
         $phpPath = PHP_BINARY;
         io()->warning("No Sdl extension found with Castor, relaunch dynamic castor with sdl extension");
         // TODO : windows version
-        $pathToRun = implode(' ', [ $phpPath, '-d', 'extension=sdl.so', $scriptCastor ] , ) ;
+        $pathToRun = implode(' ', [ $phpPath, '-d', 'extension=sdl.so', '-d' , 'extension=sdl_image.so', $scriptCastor ] , ) ;
         Castor\run($pathToRun , context: $context->withEnvironment([
             'CASTOR_SDL_LAUNCHED' => '1',
         ])); ;
         return;
     }
+
+    if (!extension_loaded('sdl_image')) {
+        io()->error('SDL_image extension not loaded, please install it.');
+        return;
+    }
+
 
     io()->success('SDL extension loaded, launching the game...');
     include('./app.php');

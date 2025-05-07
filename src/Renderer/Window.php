@@ -24,8 +24,6 @@ class Window
             $flag = \SDL_WINDOW_FULLSCREEN;
         }
 
-        dump('CREATE WINDOW');
-
         $this->window = \SDL_CreateWindow(
             $this->title,
             \SDL_WINDOWPOS_UNDEFINED,

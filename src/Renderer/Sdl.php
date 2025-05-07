@@ -6,8 +6,12 @@ class Sdl
 {
 
     private ?Window $window = null;
+    private $textures = [];
 
-    public function __construct(private Renderer $renderer)
+    public function __construct(
+        private Renderer $renderer,
+        private SdlImage $sdlImage,
+    )
     {
 
     }
@@ -15,8 +19,25 @@ class Sdl
     public function initSDL($fullscreen = false ,$title='xxx')
     {
         \SDL_Init(\SDL_INIT_VIDEO);
+        \SDL_SetHint("SDL_RENDER_SCALE_QUALITY", "0");
         $this->createSdlObjects($fullscreen,$title);
+
+        // TODO : voir
         return [$this->window->getWindow(), $this->renderer->getRenderer()];  // Retourne la fenêtre et le renderer
+    }
+
+    public function loadTexture($name,$path,$transparentColor = null)
+    {
+        $texture = $this->sdlImage->loadImage($path,$this->renderer->getRenderer(),$transparentColor);
+        if ($texture === null) {
+            throw new \RuntimeException('Failed to create texture: ' . \SDL_GetError());
+        }
+        $this->textures[$name] = $texture;
+    }
+
+    public function getTextures($name)
+    {
+        return $this->textures[$name];
     }
 
     public function exitSDL($window, $renderer)

@@ -8,6 +8,9 @@ class InputKeyboard
     private array $pressed = [];
     private array $released = [];
 
+    private $nbKeyPressed = 0 ;
+    private $lastKeyPressed = [];
+
     public function __construct()
     {
     }
@@ -17,15 +20,33 @@ class InputKeyboard
         $type = $event->type;
         $key = $event->key->keysym->sym;
 
+//        dump(count(  $this->lastKeyPressed));
+
         if ($type === SDL_KEYDOWN) {
             if (!isset($this->held[$key])) {
                 $this->pressed[$key] = true;
+                // add $key if not exist
+                if (!in_array($key, $this->lastKeyPressed)) {
+                    $this->lastKeyPressed[] = $key;
+                }
+                $this->nbKeyPressed = count($this->lastKeyPressed);
+
             }
             $this->held[$key] = true;
         } elseif ($type === SDL_KEYUP) {
             $this->released[$key] = true;
-            unset($this->held[$key]);
+            if (isset($this->held[$key])) {
+                unset($this->held[$key]);
+                // search $key in $lastKeyPressed and delete it
+                $index = array_search($key, $this->lastKeyPressed);
+                if ($index !== false) {
+                    unset($this->lastKeyPressed[$index]);
+                }
+                $this->nbKeyPressed = count($this->lastKeyPressed);
+
+            }
         }
+
     }
 
     public function isKeyPressed($key): bool
@@ -47,5 +68,27 @@ class InputKeyboard
     {
         $this->pressed = [];
         $this->released = [];
+    }
+
+    public function haveOneKeyPressed()
+    {
+        return $this->nbKeyPressed > 0 ;
+    }
+
+    public function getLastKeyPressed()
+    {
+        if ($this->nbKeyPressed > 0) {
+            $keyPress = end($this->lastKeyPressed);
+            return $keyPress;
+        }
+        return null;
+    }
+
+    public function getCurrentKeysPressed()
+    {
+        $pressed = $this->lastKeyPressed;
+        // renum the array
+        $pressed = array_values($pressed);
+        return $pressed;
     }
 }

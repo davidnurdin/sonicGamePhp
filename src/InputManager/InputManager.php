@@ -24,7 +24,7 @@ class InputManager extends EventEmitter
                 case \SDL_KEYDOWN:
                 case \SDL_KEYUP:
                     $this->inputKeyboard->handle($event);
-                    $this->emit('keyPress', [$this->getKeyboard(), $event->key->keysym->sym]);
+                   // $this->emit('keyPress', [$this->getKeyboard(), $event->key->keysym->sym]);
                     break;
             }
 
