@@ -31,27 +31,9 @@ class Renderer
         \SDL_SetRenderDrawColor($this->renderer, $int, $int1, $int2, $int3);
     }
 
-    public function createScene(Scene $scene,Player $player,Sdl $sdl)
+    public function createScene(Scene $scene,Player $player,Sdl $sdl,$fontTab)
     {
-//        $sdl->getRenderer()->setColor(255, 0, 0, 255);
-//        $sdl->getRenderer()->clear();
-
-//        // Créer un rectangle
-//        $rect = new \SDL_Rect();
-//        $rect->x = 100;
-//        $rect->y = 100;
-//        $rect->w = 50;
-//        $rect->h = 50;
-//
-//        // Dessiner le rectangle
-//        \SDL_RenderFillRect($this->renderer, $rect);
-
-//        dump($scene->getCamera()->getX());
-        // Draw the player
-        $scene->drawBackground($sdl);
-        $scene->drawPlayer($player,$sdl);
-
-
+        $scene->drawScene($sdl,$player,$fontTab);
     }
 
     public function destroy()

@@ -24,7 +24,7 @@ function run(): void
         $phpPath = PHP_BINARY;
         io()->warning("No Sdl extension found with Castor, relaunch dynamic castor with sdl extension");
         // TODO : windows version
-        $pathToRun = implode(' ', [ $phpPath, '-d', 'extension=sdl.so', '-d' , 'extension=sdl_image.so', $scriptCastor ] , ) ;
+        $pathToRun = implode(' ', [ $phpPath, '-d', 'extension=sdl.so', '-d' , 'extension=sdl_image.so', '-d' , 'extension=sdl_ttf.so', $scriptCastor ] , ) ;
         Castor\run($pathToRun , context: $context->withEnvironment([
             'CASTOR_SDL_LAUNCHED' => '1',
         ])); ;
@@ -33,6 +33,11 @@ function run(): void
 
     if (!extension_loaded('sdl_image')) {
         io()->error('SDL_image extension not loaded, please install it.');
+        return;
+    }
+
+    if (!extension_loaded('sdl_ttf')) {
+        io()->error('SDL_ttf extension not loaded, please install it.');
         return;
     }
 

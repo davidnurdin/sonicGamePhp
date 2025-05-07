@@ -8,8 +8,22 @@ use SonicGame\Renderer\Sdl;
 class Scene
 {
 
+    private int $debugMode = 0 ;
+
     public function __construct(private Camera $camera,private TileSet $tileSet)
     {
+
+    }
+
+    public function drawScene($sdl,$player,$font)
+    {
+        // draw the scene
+        $this->drawBackground($sdl);
+        $this->drawPlayer($player,$sdl);
+
+        if ($this->debugMode) {
+            $this->drawDebug($sdl,$font);
+        }
 
     }
 
@@ -66,5 +80,36 @@ class Scene
             null,
             \SDL_FLIP_NONE
         );
+
+    }
+
+    public function setDebugMode(int $debugMode)
+    {
+        $this->debugMode = $debugMode;
+    }
+
+    private function drawDebug($sdl,$fontTab)
+    {
+        if ($this->debugMode == 1)
+            $char = 'F' ;
+        else
+            $char = '0' ;
+
+        $srcRectFont = new \SDL_Rect;
+        $srcRectFont->x = 0;
+        $srcRectFont->y = 0;
+        $srcRectFont->w = 32;
+        $srcRectFont->h = 32;
+
+        $dstRectFont = new \SDL_Rect;
+        $dstRectFont->x = 0;
+        $dstRectFont->y = 0;
+        $dstRectFont->w = 320;
+        $dstRectFont->h = 320;
+
+        dump('Debug mode is enabled : ' . $this->debugMode);
+        \SDL_RenderCopyEx($sdl->getRenderer()->getRenderer(),
+            $fontTab[substr($char, 0, 1)], $srcRectFont,$dstRectFont, 0, null, 0);
+
     }
 }

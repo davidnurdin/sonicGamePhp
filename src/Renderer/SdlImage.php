@@ -17,7 +17,7 @@ class SdlImage
 
     public function loadImage($path,$renderer,$transparentColor = null)
     {
-        $surface = \IMG_Load($this->assetManager->getAssetFolder().$path );
+        $surface = \IMG_Load($this->assetManager->getAssetFolder().'/' .$path );
         if ($surface === null) {
             throw new \RuntimeException('Failed to load image: ' .$path);
         }

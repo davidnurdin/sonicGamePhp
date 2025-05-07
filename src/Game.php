@@ -14,6 +14,8 @@ use SonicGame\Scene\Scene;
 class Game extends EventEmitter
 {
 
+    private int $debugMode = 0 ;
+
     public function __construct(
         private GameLoop $gameLoop,
         private InputManager $inputManager,
@@ -36,8 +38,14 @@ class Game extends EventEmitter
         $vars = [] ;
         // Init SDL
         $this->sdl->initSDL(fullscreen: false, title: 'SonicGame');
-        $this->sdl->loadTexture('sonic', '/tileset/sprites/tileset-sonic.png',['r' => 0 , 'g' => '72' , 'b' => 0]);
-        $this->sdl->loadTexture('background', '/background_large.jpg');
+
+        // Init Textures
+        $this->sdl->loadTexture('sonic', 'tileset/sprites/tileset-sonic.png',['r' => 0 , 'g' => '72' , 'b' => 0]);
+        $this->sdl->loadTexture('background', 'background_large.jpg');
+        $this->sdl->loadFont('sonic','fonts/NiseSegaSonic.TTF') ;
+
+
+
 
         $this->registerEvents();
         $frameDuration = 1 / 60; // 60Hz
@@ -114,8 +122,10 @@ class Game extends EventEmitter
             $vars['deltaSum'] += $delta;
 
             // Rendu de la scène
+            $this->scene->setDebugMode($this->debugMode);
+
             $this->sdl->getRenderer()->clear();
-            $this->sdl->getRenderer()->createScene($this->scene,$this->player,$this->sdl);
+            $this->sdl->getRenderer()->createScene($this->scene,$this->player,$this->sdl,$this->sdl->getFont('sonic'));
             $this->sdl->getRenderer()->present();
 
             // Update the player
@@ -195,6 +205,25 @@ class Game extends EventEmitter
         {
             // Exit the game
             $this->inputManager->emit('exitGame', []);
+        }
+
+        if ($keyboard->isKeyPressed(\SDLK_F1))
+        {
+            // Take a screenshot
+
+            if ($this->debugMode == 0)
+                $this->debugMode = 1 ;
+            else
+                $this->debugMode = 0 ;
+        }
+
+        if ($keyboard->isKeyPressed(\SDLK_F2))
+        {
+            // Take a screenshot
+            if ($this->debugMode == 1)
+                $this->debugMode = 2 ;
+            else
+                $this->debugMode = 1 ;
         }
 
     }

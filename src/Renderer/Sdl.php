@@ -7,10 +7,11 @@ class Sdl
 
     private ?Window $window = null;
     private $textures = [];
-
+    private $fonts = [];
     public function __construct(
         private Renderer $renderer,
         private SdlImage $sdlImage,
+        private SdlTtf $sdlFont,
     )
     {
 
@@ -20,7 +21,7 @@ class Sdl
     {
         \SDL_Init(\SDL_INIT_VIDEO);
         \SDL_SetHint("SDL_RENDER_SCALE_QUALITY", "0");
-        $this->createSdlObjects($fullscreen,$title);
+        $this->createSdlObjects($title,$fullscreen);
 
         // TODO : voir
         return [$this->window->getWindow(), $this->renderer->getRenderer()];  // Retourne la fenêtre et le renderer
@@ -57,7 +58,7 @@ class Sdl
         return $this->renderer;
     }
 
-    private function createWindow($fullscreen = false,$title)
+    private function createWindow($title,$fullscreen = false)
     {
         if ($this?->window?->isInitialized())
             $this->destroySdlObject();
@@ -72,15 +73,26 @@ class Sdl
         $this->window->destroy();
     }
 
-    private function createSdlObjects($fullscreen = false,$title)
+    private function createSdlObjects($title,$fullscreen = false)
     {
-        $this->createWindow($fullscreen,$title);
+        $this->createWindow($title,$fullscreen);
         // Création de la fenêtre SDL
         $window = $this->window->getWindow() ;
         // Création du renderer SDL associé à la fenêtre
         $renderer = $this->renderer->createRenderer($window);
 
         return [$window, $renderer];
+    }
+
+    public function loadFont($name,$path)
+    {
+        $font = $this->sdlFont->loadFont($path,$this->renderer->getRenderer());
+        $this->fonts[$name] = $font ;
+    }
+
+    public function getFont($name)
+    {
+        return $this->fonts[$name];
     }
 
 
