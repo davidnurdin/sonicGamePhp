@@ -6,7 +6,8 @@ use function Castor\io;
 use function Castor\app;
 use function Castor\context;
 
-
+// libsdl2-ttf-dev
+// libsdl2-dev
 // apt install libsdl2-image-dev
 #[AsTask(description: 'Execute the project SF !')]
 function run(): void
