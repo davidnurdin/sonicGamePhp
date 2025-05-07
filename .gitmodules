@@ -1,0 +1,6 @@
+[submodule "php-sdl-image"]
+	path = php-sdl-image
+	url = https://github.com/kea/php-sdl-image
+[submodule "php-sdl"]
+	path = php-sdl
+	url = https://github.com/Ponup/php-sdl
