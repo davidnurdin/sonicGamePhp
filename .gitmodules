@@ -4,3 +4,6 @@
 [submodule "php-sdl"]
 	path = php-sdl
 	url = https://github.com/Ponup/php-sdl
+[submodule "php-sdl-ttf"]
+	path = php-sdl-ttf
+	url = https://github.com/Ponup/php-sdl-ttf
