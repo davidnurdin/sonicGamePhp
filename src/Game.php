@@ -31,7 +31,7 @@ class Game extends EventEmitter
     {
         $vars = [] ;
         // Init SDL
-        $this->sdl->initSDL();
+        $this->sdl->initSDL(fullscreen: true, title: 'SonicGame');
         $this->registerEvents();
         $frameDuration = 1 / 60; // wanted FPS : 60 fps
 
@@ -101,7 +101,7 @@ class Game extends EventEmitter
 
         if ($keyboard->isKeyPressed(\SDLK_F12))
         {
-           $this->window->toggleFullscreen();
+           $this->sdl->getWindow()->toggleFullscreen();
         }
 
     }

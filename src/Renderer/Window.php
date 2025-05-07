@@ -14,6 +14,7 @@ class Window
 
     public function __construct(int $width, int $height, string $title,$fullscreen = false)
     {
+        $this->isFullScreen = $fullscreen;
         $this->width = $width;
         $this->height = $height;
         $this->title = $title;
@@ -23,6 +24,7 @@ class Window
             $flag = \SDL_WINDOW_FULLSCREEN;
         }
 
+        dump('CREATE WINDOW');
 
         $this->window = \SDL_CreateWindow(
             $this->title,

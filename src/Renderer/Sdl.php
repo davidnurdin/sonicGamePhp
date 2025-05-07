@@ -12,10 +12,10 @@ class Sdl
 
     }
 
-    public function initSDL()
+    public function initSDL($fullscreen = false ,$title='xxx')
     {
         \SDL_Init(\SDL_INIT_VIDEO);
-        $this->createSdlObjects();
+        $this->createSdlObjects($fullscreen,$title);
         return [$this->window->getWindow(), $this->renderer->getRenderer()];  // Retourne la fenêtre et le renderer
     }
 
@@ -36,12 +36,12 @@ class Sdl
         return $this->renderer;
     }
 
-    private function createWindow($fullscreen = false)
+    private function createWindow($fullscreen = false,$title)
     {
         if ($this?->window?->isInitialized())
             $this->destroySdlObject();
 
-        $this->window = (new Window(800, 600, 'Sonic Game',fullscreen:$fullscreen)) ;
+        $this->window = (new Window(800, 600, $title,fullscreen:$fullscreen)) ;
     }
 
     private function destroySdlObject()
@@ -51,9 +51,9 @@ class Sdl
         $this->window->destroy();
     }
 
-    private function createSdlObjects($fullscreen = false)
+    private function createSdlObjects($fullscreen = false,$title)
     {
-        $this->createWindow($fullscreen);
+        $this->createWindow($fullscreen,$title);
         // Création de la fenêtre SDL
         $window = $this->window->getWindow() ;
         // Création du renderer SDL associé à la fenêtre
