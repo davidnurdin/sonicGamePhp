@@ -12,7 +12,8 @@ use SonicGame\Renderer\Window;
 
 class Game extends EventEmitter
 {
-    private Window $window ;
+    private ?Window $window = null;
+
     public function __construct(
         private GameLoop $gameLoop,
         private InputManager $inputManager,
@@ -31,22 +32,14 @@ class Game extends EventEmitter
     public function initSDL()
     {
         \SDL_Init(\SDL_INIT_VIDEO);
-
-        $this->window = (new Window(800, 600, 'Sonic Game',fullscreen:false)) ;
-
-        // Création de la fenêtre SDL
-        $window = $this->window->getWindow() ;
-        // Création du renderer SDL associé à la fenêtre
-        $renderer = $this->renderer->createRenderer($window);
-
-        return [$window, $renderer];  // Retourne la fenêtre et le renderer
+        $this->createSdlObjects();
+        return [$this->window->getWindow(), $this->renderer->getRenderer()];  // Retourne la fenêtre et le renderer
     }
 
     public function exitSDL($window, $renderer)
     {
-        // Détuire le renderer et la fenêtre avant de quitter SDL
-        \SDL_DestroyRenderer($renderer);
-        \SDL_DestroyWindow($window);
+
+        $this->destroySdlObject();
         \SDL_Quit();
     }
 
@@ -55,10 +48,10 @@ class Game extends EventEmitter
     {
         $vars = [] ;
         // Init SDL
-        [$window, $renderer] = $this->initSDL();
-
-        $vars['renderer'] = $renderer;
-        $vars['window'] = $window;
+        $this->initSDL();
+//        [$window, $renderer] = $this->initSDL();
+//        $vars['renderer'] = $renderer;
+//        $vars['window'] = $window;
 
         $this->registerEvents();
         $frameDuration = 1 / 60; // wanted FPS : 60 fps
@@ -96,35 +89,10 @@ class Game extends EventEmitter
         });
 
         $this->gameLoop->start();
-        $this->exitSDL($vars['window'], $vars['renderer']);
+        $this->exitSDL($this->window->getWindow(), $this->renderer->getRenderer());
     }
 
     // Renders your game objects here
-    private function render($window)
-    {
-        // Example of a basic rendering process
-        // Clear the screen (usually with a color or background)
-        \SDL_SetRenderDrawColor($window, 0, 0, 0, 255); // Black color
-        \SDL_RenderClear($window); // Clears the window with the set color
-
-        // Example: draw something (e.g., a rectangle)
-        \SDL_SetRenderDrawColor($window, 255, 0, 0, 255); // Red color
-        // Correct creation of SDL_Rect
-        $rect = new \SDL_Rect();
-        $rect->x = 100;
-        $rect->y = 100;
-        $rect->w = 50;
-        $rect->h = 50;
-
-// Draw the rectangle
-        \SDL_RenderFillRect($window, $rect);
-
-
-        // Finally, present the new frame to the screen
-        \SDL_RenderPresent($window);
-    }
-
-
     private function eventExitGame()
     {
         $this->gameLoop->stop();
@@ -151,6 +119,36 @@ class Game extends EventEmitter
             // Move the player to left
             echo "Left key pressed !" ;
         }
+
+        if ($keyboard->isKeyPressed(\SDLK_F12))
+        {
+           $this->window->toggleFullscreen();
+        }
+
+    }
+
+    private function createWindow($fullscreen = false)
+    {
+        if ($this?->window?->isInitialized())
+            $this->destroySdlObject();
+
+        $this->window = (new Window(800, 600, 'Sonic Game',fullscreen:$fullscreen)) ;
+    }
+
+    private function destroySdlObject()
+    {
+        // Détuire le renderer et la fenêtre avant de quitter SDL
+        $this->renderer->destroy();
+        $this->window->destroy();
+    }
+
+    private function createSdlObjects($fullscreen = false)
+    {
+        $this->createWindow($fullscreen);
+        // Création de la fenêtre SDL
+        $window = $this->window->getWindow() ;
+        // Création du renderer SDL associé à la fenêtre
+        $renderer = $this->renderer->createRenderer($window);
 
     }
 

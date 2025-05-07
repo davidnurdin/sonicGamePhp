@@ -8,7 +8,9 @@ class Window
     private int $height;
     private string $title;
 
-    private $window ;
+    private $window;
+    private bool $isInit = false ;
+    private bool $isFullScreen = false ;
 
     public function __construct(int $width, int $height, string $title,$fullscreen = false)
     {
@@ -31,12 +33,34 @@ class Window
             $flag,
         );
 
-
+        $this->isInit = true ;
     }
 
     public function getWindow()
     {
         return $this->window;
+    }
+
+    public function destroy()
+    {
+        \SDL_DestroyWindow($this->window);
+        $this->isInit = false ;
+    }
+
+    public function isInitialized()
+    {
+        return $this->isInit ;
+    }
+
+    public function toggleFullscreen()
+    {
+        $this->isFullScreen = $this->isFullScreen ? false : true ;
+
+        if ($this->isFullScreen)
+            \SDL_SetWindowFullscreen($this->window, \SDL_WINDOW_FULLSCREEN);
+        else
+            \SDL_SetWindowFullscreen($this->window, 0);
+
     }
 
 }

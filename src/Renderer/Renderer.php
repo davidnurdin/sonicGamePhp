@@ -40,4 +40,14 @@ class Renderer
         // Dessiner le rectangle
         \SDL_RenderFillRect($this->renderer, $rect);
     }
+
+    public function destroy()
+    {
+        \SDL_DestroyRenderer($this->renderer);
+    }
+
+    public function getRenderer()
+    {
+        return $this->renderer;
+    }
 }
