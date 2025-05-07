@@ -7,17 +7,15 @@ use React\EventLoop\TimerInterface;
 use SonicGame\InputManager\InputKeyboard;
 use SonicGame\InputManager\InputManager;
 use SonicGame\Loop\GameLoop;
-use SonicGame\Renderer\Renderer;
-use SonicGame\Renderer\Window;
+use SonicGame\Renderer\Sdl;
 
 class Game extends EventEmitter
 {
-    private ?Window $window = null;
 
     public function __construct(
         private GameLoop $gameLoop,
         private InputManager $inputManager,
-        private Renderer $renderer
+        private Sdl $sdl,
     )
     {
 
@@ -29,30 +27,11 @@ class Game extends EventEmitter
         $this->inputManager->on('keyPress', fn($keyboard, $key) => $this->eventKeyPressed($keyboard, $key));
     }
 
-    public function initSDL()
-    {
-        \SDL_Init(\SDL_INIT_VIDEO);
-        $this->createSdlObjects();
-        return [$this->window->getWindow(), $this->renderer->getRenderer()];  // Retourne la fenêtre et le renderer
-    }
-
-    public function exitSDL($window, $renderer)
-    {
-
-        $this->destroySdlObject();
-        \SDL_Quit();
-    }
-
-
     public function run(): void
     {
         $vars = [] ;
         // Init SDL
-        $this->initSDL();
-//        [$window, $renderer] = $this->initSDL();
-//        $vars['renderer'] = $renderer;
-//        $vars['window'] = $window;
-
+        $this->sdl->initSDL();
         $this->registerEvents();
         $frameDuration = 1 / 60; // wanted FPS : 60 fps
 
@@ -79,17 +58,17 @@ class Game extends EventEmitter
             $this->inputManager->poll();
 
             // Rendu de la scène
-            $this->renderer->setColor(rand(1,255), 0, 0, 255);
-            $this->renderer->clear();
-            $this->renderer->createScene();
-            $this->renderer->present();
+            $this->sdl->getRenderer()->setColor(rand(1,255), 0, 0, 255);
+            $this->sdl->getRenderer()->clear();
+            $this->sdl->getRenderer()->createScene();
+            $this->sdl->getRenderer()->present();
 
             // reset transient states
             $this->inputManager->getKeyboard()->resetTransientStates();
         });
 
         $this->gameLoop->start();
-        $this->exitSDL($this->window->getWindow(), $this->renderer->getRenderer());
+        $this->sdl->exitSDL($this->sdl->getWindow()->getWindow(), $this->sdl->getRenderer()->getRenderer());
     }
 
     // Renders your game objects here
@@ -127,29 +106,5 @@ class Game extends EventEmitter
 
     }
 
-    private function createWindow($fullscreen = false)
-    {
-        if ($this?->window?->isInitialized())
-            $this->destroySdlObject();
-
-        $this->window = (new Window(800, 600, 'Sonic Game',fullscreen:$fullscreen)) ;
-    }
-
-    private function destroySdlObject()
-    {
-        // Détuire le renderer et la fenêtre avant de quitter SDL
-        $this->renderer->destroy();
-        $this->window->destroy();
-    }
-
-    private function createSdlObjects($fullscreen = false)
-    {
-        $this->createWindow($fullscreen);
-        // Création de la fenêtre SDL
-        $window = $this->window->getWindow() ;
-        // Création du renderer SDL associé à la fenêtre
-        $renderer = $this->renderer->createRenderer($window);
-
-    }
 
 }
