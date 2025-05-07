@@ -9,6 +9,7 @@ use SonicGame\InputManager\InputKeyboard;
 use SonicGame\InputManager\InputManager;
 use SonicGame\Loop\GameLoop;
 use SonicGame\Renderer\Sdl;
+use SonicGame\Scene\Level;
 use SonicGame\Scene\Scene;
 
 class Game extends EventEmitter
@@ -22,6 +23,7 @@ class Game extends EventEmitter
         private Sdl $sdl,
         private Player $player,
         private Scene $scene,
+        private Level $level,
     )
     {
 
@@ -40,10 +42,19 @@ class Game extends EventEmitter
         $this->sdl->initSDL(fullscreen: false, title: 'SonicGame');
 
         // Init Textures
+
+        for ($i = 1 ; $i < 30 ; $i++)
+            $this->sdl->loadTexture('tileset' . $i, 'tileset/levels/tileset' . $i . '.png');
+
         $this->sdl->loadTexture('sonic', 'tileset/sprites/tileset-sonic.png',['r' => 0 , 'g' => '72' , 'b' => 0]);
         $this->sdl->loadTexture('background', 'background_large.jpg');
         $this->sdl->loadFont('sonic','fonts/NiseSegaSonic.TTF') ;
 
+
+        $this->level->setLevel(1);
+        $this->level->setLevelName('Green Hill Zone');
+        $this->level->setLevelDescription('The first level of the game, set in a lush green landscape with hills and loops.');
+        $this->level->setTileSet($this->sdl->getTextures('tileset' . $this->level->getLevel()));
 
 
 
