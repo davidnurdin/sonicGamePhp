@@ -12,7 +12,6 @@ use SonicGame\Loop\GameLoop;
 
 class Game
 {
-
     public function __construct(
         private ?GameLoop $gameLoop = null,
         private ?InputManager $inputManager = null)
@@ -29,28 +28,27 @@ class Game
 
     public function initSDL()
     {
+        // The object window is important there is a bug in SDL Wrapper Php..
         SDL_Init(SDL_INIT_VIDEO);
         $window = SDL_CreateWindow("XXX", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 500,500, SDL_WINDOW_SHOWN);
         return $window ;
     }
     public function run(): void
     {
-
         // Init SDL
         $window = $this->initSDL();
 
-        $emitter = new EventEmitter();
-        $emitter->on('eventSdl', static function ($xxx) : void {
+        $this->inputManager->on('eventSdl', static function ($xxx) : void {
             var_dump($xxx);
 //                $logger->log(sprintf("User '%s' was created.", $user->getLogin()));
         });
 
 
         $frameDuration = 1/60 ; // 60 fps
-        $this->gameLoop->addPeriodicTimer($frameDuration, function (TimerInterface $timer) use ($emitter) {
+        $this->gameLoop->addPeriodicTimer($frameDuration, function (TimerInterface $timer) {
             // Logique principale ici
             echo "Sonic is running at " . microtime(true) . PHP_EOL;
-            $this->inputManager->poll($emitter);
+            $this->inputManager->poll();
 
             // update / render
             $this->inputManager->getKeyboard()->resetTransientStates();

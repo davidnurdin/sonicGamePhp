@@ -4,7 +4,7 @@ namespace SonicGame\InputManager;
 
 use Evenement\EventEmitter;
 
-class InputManager
+class InputManager extends EventEmitter
 {
 
     public function __construct(private ?InputKeyboard $inputKeyboard = null)
@@ -16,12 +16,12 @@ class InputManager
         }
     }
 
-    public function poll($emitter)
+    public function poll()
     {
 //        echo "Poll Event input ... and send event" . PHP_EOL;
         $event = new \SDL_Event;
         while (SDL_PollEvent($event)) {
-            $emitter->emit('eventSdl', [$event]);
+            $this->emit('eventSdl', [$event]);
         }
 
 

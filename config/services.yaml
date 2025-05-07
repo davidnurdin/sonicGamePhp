@@ -1,0 +1,15 @@
+# config/services.yaml
+services:
+  _defaults:
+    autowire: true      # active l'injection automatique des dépendances
+    autoconfigure: true # active automatiquement les tags comme Command, etc.
+    public: false
+
+  SonicGame\:
+    resource: '../src/*'
+    exclude: '../src/{Entity,Repository,Tests}'
+
+  # Exemple : autoriser l'injection directe de commandes si besoin
+  SonicGame\Command\:
+    resource: '../src/Command'
+    public: true
