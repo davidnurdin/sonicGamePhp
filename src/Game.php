@@ -134,7 +134,7 @@ class Game extends EventEmitter
 //        dump('KeyPress : ' . $keyPressed);
 
         // escape
-        if ($keyPressed == \SDLK_ESCAPE)
+        if ($keyboard->isKeyPressed(\SDLK_ESCAPE))
         {
             // Exit the game
             $this->inputManager->emit('exitGame', []);
@@ -148,7 +148,7 @@ class Game extends EventEmitter
 
         if ($keyboard->isKeyHeld(\SDLK_LEFT))
         {
-            // Move the player to right
+            // Move the player to left
             echo "Left key pressed !" ;
         }
 
