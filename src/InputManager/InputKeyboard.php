@@ -4,26 +4,28 @@ namespace SonicGame\InputManager;
 
 class InputKeyboard
 {
+    private array $held = [];
+    private array $pressed = [];
+    private array $released = [];
 
     public function __construct()
     {
     }
 
-    private array $held = [];
-    private array $pressed = [];
-    private array $released = [];
-
     public function handle($event): void
     {
+        $type = $event->type;
         $key = $event->key->keysym->sym;
 
-//        if ($event->type === \SDL_EVENT_KEYDOWN && !$event->key->repeat) {
-//            $this->pressed[$key] = true;
-//            $this->held[$key] = true;
-//        } elseif ($event->type === \SDL_EVENT_KEYUP) {
-//            $this->released[$key] = true;
-//            unset($this->held[$key]);
-//        }
+        if ($type === SDL_KEYDOWN) {
+            if (!isset($this->held[$key])) {
+                $this->pressed[$key] = true;
+            }
+            $this->held[$key] = true;
+        } elseif ($type === SDL_KEYUP) {
+            $this->released[$key] = true;
+            unset($this->held[$key]);
+        }
     }
 
     public function isKeyPressed($key): bool
@@ -46,5 +48,4 @@ class InputKeyboard
         $this->pressed = [];
         $this->released = [];
     }
-
 }

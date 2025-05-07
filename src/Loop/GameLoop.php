@@ -8,7 +8,7 @@ use React\EventLoop\LoopInterface;
 class GameLoop
 {
 
-    public function __construct(private ?LoopInterface $loop = null)
+    public function __construct(private ?LoopInterface $loop)
     {
         $this->init();
     }
