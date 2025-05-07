@@ -27,9 +27,11 @@ $application = new Application();
 $application->add($command);
 $application->setDefaultCommand($command->getName(), true); // Set the default command
 
+// TODO : detecter quand on viens de castor passer les $input+$output de celui ci
 // delete arguments that are passed by castor
 $input = new ArrayInput([
 ]);
 
 // Exécution (avec Input/Output gérés automatiquement)
-$application->run($input);
+/** @var $application Application */
+$application->doRun($input, new Symfony\Component\Console\Output\ConsoleOutput());

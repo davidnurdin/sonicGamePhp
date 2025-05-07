@@ -24,6 +24,10 @@ class Game
         if (!$this->inputManager) {
             $this->inputManager = new InputManager();
         }
+
+
+
+
     }
 
     public function initSDL()
@@ -37,23 +41,24 @@ class Game
     {
         // Init SDL
         $window = $this->initSDL();
+        $mthis = $this;
 
-        $this->inputManager->on('eventSdl', static function ($xxx) : void {
-            var_dump($xxx);
-//                $logger->log(sprintf("User '%s' was created.", $user->getLogin()));
+        $this->inputManager->on('exitGame', static function () use ($mthis) : void {
+            $mthis->gameLoop->stop();
         });
-
 
         $frameDuration = 1/60 ; // 60 fps
         $this->gameLoop->addPeriodicTimer($frameDuration, function (TimerInterface $timer) {
-            // Logique principale ici
-            echo "Sonic is running at " . microtime(true) . PHP_EOL;
+//            echo "Sonic is running at " . microtime(true) . PHP_EOL;
             $this->inputManager->poll();
-
             // update / render
             $this->inputManager->getKeyboard()->resetTransientStates();
 
         });
-        $this->gameLoop->run();
+        $this->gameLoop->start();
+
+        \SDL_DestroyWindow($window);
+        \SDL_Quit();
+
     }
 }

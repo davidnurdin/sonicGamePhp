@@ -18,14 +18,15 @@ class InputManager extends EventEmitter
 
     public function poll()
     {
-//        echo "Poll Event input ... and send event" . PHP_EOL;
         $event = new \SDL_Event;
         while (SDL_PollEvent($event)) {
-            $this->emit('eventSdl', [$event]);
+            // $this->emit('eventSdl', [$event]);
+            // detect SQL QUIT
+            if ($event->type == \SDL_QUIT) {
+                $this->emit('exitGame', []);
+            }
+
         }
-
-
-
 //        while (\SDL::PollEvent($event)) {
 //            switch ($event->type) {
 //                case \SDL_EVENT_KEYDOWN:

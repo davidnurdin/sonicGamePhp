@@ -18,7 +18,7 @@ class GameLoop
         $this->loop->addPeriodicTimer($frameDuration, $closure);
     }
 
-    public function run()
+    public function start()
     {
         $this->loop->run();
     }
@@ -28,5 +28,10 @@ class GameLoop
         if (!$this->loop) {
             $this->loop = Loop::get(); // récupère la boucle unique de ReactPHP
         }
+    }
+
+    public function stop()
+    {
+        $this->loop->stop();
     }
 }

@@ -30,8 +30,8 @@ function run(): void
     }
 
     io()->success('SDL extension loaded, launching the game...');
-    sleep(1);
     include('./app.php');
+    io()->success('Game Finished');
 }
 app()->setDefaultCommand('run');
 
