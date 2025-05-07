@@ -29,8 +29,8 @@ class Game
     public function initSDL()
     {
         // The object window is important there is a bug in SDL Wrapper Php..
-        SDL_Init(SDL_INIT_VIDEO);
-        $window = SDL_CreateWindow("XXX", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 500,500, SDL_WINDOW_SHOWN);
+        \SDL_Init(\SDL_INIT_VIDEO);
+        $window = \SDL_CreateWindow("XXX", \SDL_WINDOWPOS_UNDEFINED, \SDL_WINDOWPOS_UNDEFINED, 500,500, \SDL_WINDOW_SHOWN);
         return $window ;
     }
     public function run(): void

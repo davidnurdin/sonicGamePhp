@@ -9,6 +9,10 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
 use Symfony\Component\Config\FileLocator;
 
+if (!extension_loaded('sdl')) {
+    die('La bibliothèque SDL n\'est pas chargée.');
+}
+
 // Création du container DI
 $container = new ContainerBuilder();
 $loader = new YamlFileLoader($container, new FileLocator(__DIR__ . '/config'));

@@ -2,6 +2,7 @@
 
 namespace SonicGame\Command;
 
+use SonicGame\Game;
 use SonicGame\Service\SampleClass;
 use React\EventLoop\Loop;
 use Symfony\Component\Console\Command\Command;
@@ -12,7 +13,7 @@ class DefaultCommand extends Command
 {
     protected static $defaultName = 'default';
 
-    public function __construct(private SampleClass $sampleClass)
+    public function __construct(private Game $game)
     {
         parent::__construct(self::$defaultName);
     }
@@ -24,17 +25,7 @@ class DefaultCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        // Your command logic here
-        $output->writeln(($this->sampleClass->sampleMethod()));
-
-        $loop = Loop::get();
-
-        $loop->addPeriodicTimer(1, function () use ($output) {
-            $output->writeln('Timer tick');
-        });
-
-        $loop->run();
-
+        $this->game->run();
         return Command::SUCCESS;
     }
 }
