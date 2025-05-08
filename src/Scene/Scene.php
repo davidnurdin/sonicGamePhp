@@ -3,6 +3,7 @@
 namespace SonicGame\Scene;
 
 use SonicGame\Entities\Player;
+use SonicGame\Level\Level;
 use SonicGame\Renderer\Sdl;
 
 class Scene
@@ -60,10 +61,14 @@ class Scene
     {
         // TODO : lire les data du level ! + utilisé une taille qui dépend de notre fenetre en cours
         $tileSet = $level->getTileSet();
+        /** @var Level $level */
+        for ($cell = 0; $cell < $level->getMapWidth(); $cell++) {
+            for ($row = 0; $row < $level->getMapHeight(); $row++) {
 
-        for ($cell = 0; $cell < 30; $cell++) {
-            for ($row = 0; $row < 30; $row++) {
-                $tile = $tileSet->getTile($row % 3);
+                $tileValue = $level->getTile($cell,$row);
+                /** @var TileSet $tileSet */
+                $tileRect = $tileSet->getTile($tileValue);
+
                 $destRect = new \SDL_Rect;
                 $destRect->x = $cell * $tileSet->getWidth() - $this->camera->getX();
                 $destRect->y = $row * $tileSet->getHeight() - $this->camera->getY();
@@ -74,7 +79,7 @@ class Scene
                 \SDL_RenderCopyEx(
                     $this->sdl->getRenderer()->getRenderer(),
                     $this->sdl->getTextures('tileset' . $level->getLevel()),
-                    $tile,
+                    $tileRect,
                     $destRect,
                     0,
                     null,

@@ -2,15 +2,17 @@
 
 namespace SonicGame\Scene;
 
+use SonicGame\Renderer\Sdl;
+
 class TileSet
 {
     private array $tiles = [];
     private int $tileWidth = 32;
     private int $tileHeight = 32;
 
-    public function __construct()
+    public function __construct(private Sdl $sdl)
     {
-        // private int $tileWidth = 32,private int $tileHeight = 32,private $texture
+
     }
 
     public function generateTiles($texture): void {
@@ -59,6 +61,11 @@ class TileSet
     public function getHeight()
     {
         return $this->tileHeight;
+    }
+
+    public function loadTileSet(string $name, string $path)
+    {
+        $this->sdl->loadTexture($name,$path);
     }
 
 

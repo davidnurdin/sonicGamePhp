@@ -38,11 +38,10 @@ class LevelManager
     public function loadLevels()
     {
         for ($i = 1 ; $i < 30 ; $i++) {
-            $tileSet = new TileSet();
-            $level = new Level($tileSet);
-            $this->sdl->loadTexture('tileset' . $i, 'tileset/levels/tileset' . $i . '.png');
-            $level->setLevel($i);
-            $level->setTileSet($this->sdl->getTextures('tileset' . $i));
+            $tileSet = new TileSet($this->sdl);
+            $tileSet->loadTileSet('tileset' . $i, 'tileset/levels/tileset' . $i . '.png');
+            $level = new Level($tileSet,$i,$this->sdl);
+            $level->readLevelPositionTilesAndMeta();
 
             // Initialize levels
             $this->levels[] = $level;

@@ -4,10 +4,8 @@ namespace SonicGame\Entities;
 
 use SonicGame\Utils\Vector;
 
-class Player
+class Player extends Entity
 {
-    use Vector;
-
     public function moveUp()
     {
         $this->y -= 1;
@@ -24,17 +22,6 @@ class Player
     {
         $this->x += 1;
     }
-
-    public function getX()
-    {
-        return $this->x;
-    }
-
-    public function getY()
-    {
-        return $this->y;
-    }
-
 
 }
 
