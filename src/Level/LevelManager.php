@@ -3,7 +3,6 @@
 namespace SonicGame\Level;
 
 use SonicGame\Renderer\Sdl;
-use SonicGame\Scene\Level;
 use SonicGame\Scene\TileSet;
 
 class LevelManager
@@ -41,9 +40,8 @@ class LevelManager
         for ($i = 1 ; $i < 30 ; $i++) {
             $tileSet = new TileSet();
             $level = new Level($tileSet);
+            $this->sdl->loadTexture('tileset' . $i, 'tileset/levels/tileset' . $i . '.png');
             $level->setLevel($i);
-//            $level->setLevelName('Green Hill Zone');
-//            $level->setLevelDescription('The first level of the game, set in a lush green landscape with hills and loops.');
             $level->setTileSet($this->sdl->getTextures('tileset' . $i));
 
             // Initialize levels

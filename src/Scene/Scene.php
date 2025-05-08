@@ -10,25 +10,25 @@ class Scene
 
     private int $debugMode = 0 ;
 
-    public function __construct(private Camera $camera)
+    public function __construct(private Camera $camera,private Sdl $sdl)
     {
 
     }
 
-    public function drawScene($sdl,$player,$font,$level)
+    public function drawScene($player,$font,$level)
     {
         // draw the scene
 //        $this->drawBackground($sdl);
-        $this->drawTiles($sdl,$level);
-        $this->drawPlayer($player,$sdl);
+        $this->drawTiles($level);
+        $this->drawPlayer($player);
 
         if ($this->debugMode) {
-            $this->drawDebug($sdl,$font);
+            $this->drawDebug($font);
         }
 
     }
 
-    public function drawPlayer(Player $player,Sdl $sdl)
+    public function drawPlayer(Player $player)
     {
 
         $destRect = new \SDL_Rect;
@@ -39,8 +39,8 @@ class Scene
 
         // with api native sdl
         \SDL_RenderCopyEx(
-            $sdl->getRenderer()->getRenderer(),
-            $sdl->getTextures('sonic'),
+            $this->sdl->getRenderer()->getRenderer(),
+            $this->sdl->getTextures('sonic'),
             null,
             $destRect,
             0,
@@ -56,7 +56,7 @@ class Scene
     }
 
 
-    public function drawTiles(Sdl $sdl,$level)
+    public function drawTiles($level)
     {
         // TODO : lire les data du level ! + utilisé une taille qui dépend de notre fenetre en cours
         $tileSet = $level->getTileSet();
@@ -72,8 +72,8 @@ class Scene
 
                 // with api native sdl
                 \SDL_RenderCopyEx(
-                    $sdl->getRenderer()->getRenderer(),
-                    $sdl->getTextures('tileset' . $level->getLevel()),
+                    $this->sdl->getRenderer()->getRenderer(),
+                    $this->sdl->getTextures('tileset' . $level->getLevel()),
                     $tile,
                     $destRect,
                     0,
@@ -86,41 +86,13 @@ class Scene
 
 
     }
-    public function drawBackground(Sdl $sdl)
-    {
-
-        $srcRect = new \SDL_Rect;
-        $srcRect->x = $this->camera->getX();
-        $srcRect->y = $this->camera->getY();
-        $srcRect->w = 300;
-        $srcRect->h = 300;
-
-
-        $destRect = new \SDL_Rect;
-        $destRect->x = 0;
-        $destRect->y = 0;
-        $destRect->w = 1640;
-        $destRect->h = 1480;
-
-        // with api native sdl
-        \SDL_RenderCopyEx(
-            $sdl->getRenderer()->getRenderer(),
-            $sdl->getTextures('background'),
-            $srcRect,
-            $destRect,
-            0,
-            null,
-            \SDL_FLIP_NONE
-        );
-
-    }
 
     public function setDebugMode(int $debugMode)
     {
         $this->debugMode = $debugMode;
     }
 
-    private function drawDebug($sdl,$fontTab)
+    private function drawDebug($fontTab)
     {
         if ($this->debugMode == 1)
             $char = 'F' ;
@@ -140,7 +112,7 @@ class Scene
         $dstRectFont->h = 320;
 
         dump('Debug mode is enabled : ' . $this->debugMode);
-        \SDL_RenderCopyEx($sdl->getRenderer()->getRenderer(),
+        \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(),
             $fontTab[substr($char, 0, 1)], $srcRectFont,$dstRectFont, 0, null, 0);
 
     }

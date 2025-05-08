@@ -10,7 +10,6 @@ use SonicGame\InputManager\InputManager;
 use SonicGame\Level\LevelManager;
 use SonicGame\Loop\GameLoop;
 use SonicGame\Renderer\Sdl;
-use SonicGame\Scene\Level;
 use SonicGame\Scene\Scene;
 
 class Game extends EventEmitter
@@ -44,9 +43,6 @@ class Game extends EventEmitter
         $this->sdl->initSDL(fullscreen: false, title: 'SonicGame');
 
         // Init Textures
-
-        for ($i = 1 ; $i < 30 ; $i++)
-            $this->sdl->loadTexture('tileset' . $i, 'tileset/levels/tileset' . $i . '.png');
 
         $this->sdl->loadTexture('sonic', 'tileset/sprites/tileset-sonic.png',['r' => 0 , 'g' => '72' , 'b' => 0]);
         $this->sdl->loadTexture('background', 'background_large.jpg');
@@ -132,7 +128,12 @@ class Game extends EventEmitter
             $this->scene->setDebugMode($this->debugMode);
 
             $this->sdl->getRenderer()->clear();
-            $this->sdl->getRenderer()->createScene($this->scene,$this->player,$this->sdl,$this->sdl->getFont('sonic'),$this->levelManager->getCurrentLevel());
+            $this->sdl->getRenderer()->createScene(
+                $this->scene,
+                $this->player,
+                $this->sdl->getFont('sonic'),
+                $this->levelManager->getCurrentLevel()
+            );
             $this->sdl->getRenderer()->present();
 
             // Update the player

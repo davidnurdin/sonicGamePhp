@@ -1,6 +1,8 @@
 <?php
 
-namespace SonicGame\Scene;
+namespace SonicGame\Level;
+
+use SonicGame\Scene\TileSet;
 
 class Level
 {
@@ -14,14 +16,6 @@ class Level
     public function setLevel(int $level)
     {
         $this->level = $level;
-    }
-
-    public function setLevelName(string $name)
-    {
-    }
-
-    public function setLevelDescription(string $description)
-    {
     }
 
     public function setTileSet(mixed $textureTileset)
