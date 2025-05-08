@@ -63,5 +63,15 @@ class Window
 
     }
 
+    public function getWidth()
+    {
+        return $this->width;
+    }
+
+    public function getHeight()
+    {
+        return $this->height;
+    }
+
 }
 

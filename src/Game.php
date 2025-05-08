@@ -71,9 +71,9 @@ class Game extends EventEmitter
         $iterationCamera = 0 ;
         $sens = 0 ;
         // Auto move the camera on X
-        $this->gameLoop->addPeriodicTimer(1/100, function (TimerInterface $timer) use (&$iterationCamera,&$sens) {
+        $this->gameLoop->addPeriodicTimer($frameDuration, function (TimerInterface $timer) use (&$iterationCamera,&$sens) {
             $iterationCamera++ ;
-            if ($iterationCamera > 200)
+            if ($iterationCamera > 50)
             {
                 $iterationCamera = 0 ;
                 $sens++;
@@ -82,13 +82,13 @@ class Game extends EventEmitter
             }
 
             if ($sens == 0 )
-                $this->scene->getCamera()->setX($this->scene->getCamera()->getX() + 1);
+                $this->scene->getCamera()->setX($this->scene->getCamera()->getX() + 10);
             elseif ($sens == 1)
-                $this->scene->getCamera()->setX($this->scene->getCamera()->getX() - 1);
+                $this->scene->getCamera()->setX($this->scene->getCamera()->getX() - 10);
             elseif ($sens == 2)
-                $this->scene->getCamera()->setY($this->scene->getCamera()->getY() + 1);
+                $this->scene->getCamera()->setY($this->scene->getCamera()->getY() + 10);
             elseif ($sens == 3)
-                $this->scene->getCamera()->setY($this->scene->getCamera()->getY() - 1);
+                $this->scene->getCamera()->setY($this->scene->getCamera()->getY() - 10);
 
 
         });

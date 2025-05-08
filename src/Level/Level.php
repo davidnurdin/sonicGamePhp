@@ -96,7 +96,7 @@ class Level
     public function getTile(int $x, int $y)
     {
         if (isset($this->tilemap[$y][$x]) === false) {
-            throw new \OutOfBoundsException("Tile index out of bounds: $x, $y");
+            return null;
         }
 
         return $this->tilemap[$y][$x];

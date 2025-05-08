@@ -65,27 +65,63 @@ class Scene
 
     public function drawTiles($level)
     {
-        // TODO : lire les data du level ! + utilisé une taille qui dépend de notre fenetre en cours
         $tileSet = $level->getTileSet();
         /** @var Level $level */
-        for ($cell = 0; $cell < $level->getMapWidth(); $cell++) {
-            for ($row = 0; $row < $level->getMapHeight(); $row++) {
-                $tileValue = $level->getTile($cell,$row);
+
+        // On limite l'affichage à la taille de la fenêtre
+
+        $mapHeight = $level->getMapHeight() ;
+        $mapWidth = $level->getMapWidth();
+
+
+        $cameraX = $this->camera->getX() ;
+        $cameraY = $this->camera->getY() ;
+        $tileSize = 32 ;
+
+        $winW = $this->sdl->getWindow()->getWidth();
+        $winH = $this->sdl->getWindow()->getHeight();
+
+//        $maxWidth = floor($this->sdl->getWindow()->getWidth()/$tileSet->getWidth()) - 1 ;
+//        $maxHeight = floor($this->sdl->getWindow()->getHeight()/$tileSet->getHeight()) -1 ;
+
+        $startCol = (int) floor($cameraX / $tileSize);
+        $endCol = (int) ceil(($cameraX + $winW) / $tileSize);
+        $offsetX = -(int) ($cameraX % $tileSize);
+
+        $startRow = (int) floor($cameraY / $tileSize);
+        $endRow = (int) ceil(($cameraY + $winH) / $tileSize);
+        $offsetY = -(int) ($cameraY % $tileSize);
+
+        $startRow = max(0, $startRow);
+        $endRow = min($mapHeight, $endRow);
+
+        $startCol = max(0, $startCol);
+        $endCol = min($mapWidth, $endCol);
+
+
+        for ($y = $startRow; $y < $endRow ; $y++) {
+            for ($x = $startCol; $x < $endCol; $x++) {
+                $tileValue = $level->getTile($x,$y);
+                if ($tileValue === null)
+                    continue ;
+
                 /** @var TileSet $tileSet */
                 $tileRect = $tileSet->getTile($tileValue);
 
-                $destRect = new \SDL_Rect;
-                $destRect->x = $cell * $tileSet->getWidth() - $this->camera->getX();
-                $destRect->y = $row * $tileSet->getHeight() - $this->camera->getY();
-                $destRect->w = $tileSet->getWidth();
-                $destRect->h = $tileSet->getHeight();
+                $dstRect = new \SDL_Rect;
+                $dstRect->x = ($x - $startCol) * $tileSize + $offsetX ;
+                // $dstRect->y = $y * $tileSize + (int)$cameraY;
+                $dstRect->y = ($y - $startRow) * $tileSize + $offsetY ;
+                $dstRect->w = $tileSize;
+                $dstRect->h = $tileSize;
+
 
                 // with api native sdl
                 \SDL_RenderCopyEx(
                     $this->sdl->getRenderer()->getRenderer(),
                     $this->sdl->getTextures('tileset' . $level->getLevel()),
                     $tileRect,
-                    $destRect,
+                    $dstRect,
                     0,
                     null,
                     \SDL_FLIP_NONE
