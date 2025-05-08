@@ -10,16 +10,16 @@ class Scene
 
     private int $debugMode = 0 ;
 
-    public function __construct(private Camera $camera,private Level $level)
+    public function __construct(private Camera $camera)
     {
 
     }
 
-    public function drawScene($sdl,$player,$font)
+    public function drawScene($sdl,$player,$font,$level)
     {
         // draw the scene
 //        $this->drawBackground($sdl);
-        $this->drawTiles($sdl);
+        $this->drawTiles($sdl,$level);
         $this->drawPlayer($player,$sdl);
 
         if ($this->debugMode) {
@@ -56,11 +56,10 @@ class Scene
     }
 
 
-    public function drawTiles(Sdl $sdl)
+    public function drawTiles(Sdl $sdl,$level)
     {
-
         // TODO : lire les data du level ! + utilisé une taille qui dépend de notre fenetre en cours
-        $tileSet = $this->level->getTileSet();
+        $tileSet = $level->getTileSet();
 
         for ($cell = 0; $cell < 30; $cell++) {
             for ($row = 0; $row < 30; $row++) {
@@ -74,7 +73,7 @@ class Scene
                 // with api native sdl
                 \SDL_RenderCopyEx(
                     $sdl->getRenderer()->getRenderer(),
-                    $sdl->getTextures('tileset' . $this->level->getLevel()),
+                    $sdl->getTextures('tileset' . $level->getLevel()),
                     $tile,
                     $destRect,
                     0,

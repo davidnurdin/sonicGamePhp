@@ -7,6 +7,7 @@ use React\EventLoop\TimerInterface;
 use SonicGame\Entities\Player;
 use SonicGame\InputManager\InputKeyboard;
 use SonicGame\InputManager\InputManager;
+use SonicGame\Level\LevelManager;
 use SonicGame\Loop\GameLoop;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Scene\Level;
@@ -17,13 +18,14 @@ class Game extends EventEmitter
 
     private int $debugMode = 0 ;
 
+
     public function __construct(
         private GameLoop $gameLoop,
         private InputManager $inputManager,
         private Sdl $sdl,
         private Player $player,
         private Scene $scene,
-        private Level $level,
+        private LevelManager $levelManager,
     )
     {
 
@@ -50,13 +52,7 @@ class Game extends EventEmitter
         $this->sdl->loadTexture('background', 'background_large.jpg');
         $this->sdl->loadFont('sonic','fonts/NiseSegaSonic.TTF') ;
 
-
-        $this->level->setLevel(1);
-        $this->level->setLevelName('Green Hill Zone');
-        $this->level->setLevelDescription('The first level of the game, set in a lush green landscape with hills and loops.');
-        $this->level->setTileSet($this->sdl->getTextures('tileset' . $this->level->getLevel()));
-
-
+        $this->levelManager->loadLevels();
 
         $this->registerEvents();
         $frameDuration = 1 / 60; // 60Hz
@@ -136,7 +132,7 @@ class Game extends EventEmitter
             $this->scene->setDebugMode($this->debugMode);
 
             $this->sdl->getRenderer()->clear();
-            $this->sdl->getRenderer()->createScene($this->scene,$this->player,$this->sdl,$this->sdl->getFont('sonic'));
+            $this->sdl->getRenderer()->createScene($this->scene,$this->player,$this->sdl,$this->sdl->getFont('sonic'),$this->levelManager->getCurrentLevel());
             $this->sdl->getRenderer()->present();
 
             // Update the player
@@ -235,6 +231,19 @@ class Game extends EventEmitter
                 $this->debugMode = 2 ;
             else
                 $this->debugMode = 1 ;
+        }
+
+        if ($keyboard->isKeyPressed(\SDLK_F4))
+        {
+
+            // next level
+            $this->levelManager->nextLevel();
+        }
+
+        if ($keyboard->isKeyPressed(\SDLK_F3))
+        {
+            // next level
+            $this->levelManager->previousLevel();
         }
 
     }

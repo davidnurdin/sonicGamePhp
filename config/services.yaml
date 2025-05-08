@@ -13,3 +13,7 @@ services:
   SonicGame\Command\:
     resource: '../src/Command'
     public: true
+
+  SonicGame\Level\LevelManager:
+    arguments:
+      $sdl: '@SonicGame\Renderer\Sdl'

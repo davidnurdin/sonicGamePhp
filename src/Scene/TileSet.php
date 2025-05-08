@@ -35,6 +35,10 @@ class TileSet
     }
 
     public function getTile(int $index): \SDL_Rect {
+        if (isset($this->tiles[$index]) === false) {
+            throw new \OutOfBoundsException("Tile index out of bounds: $index");
+        }
+
         return $this->tiles[$index];
     }
 

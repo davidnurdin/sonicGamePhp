@@ -31,9 +31,9 @@ class Renderer
         \SDL_SetRenderDrawColor($this->renderer, $int, $int1, $int2, $int3);
     }
 
-    public function createScene(Scene $scene,Player $player,Sdl $sdl,$fontTab)
+    public function createScene(Scene $scene,Player $player,Sdl $sdl,$fontTab,$level)
     {
-        $scene->drawScene($sdl,$player,$fontTab);
+        $scene->drawScene($sdl,$player,$fontTab,$level);
     }
 
     public function destroy()

@@ -8,7 +8,6 @@ class Level
     public function __construct(private TileSet $tileSet)
     {
 
-        // generate the tiles
 
     }
 
