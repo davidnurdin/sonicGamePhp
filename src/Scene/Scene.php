@@ -35,14 +35,20 @@ class Scene
         $destRect = new \SDL_Rect;
         $destRect->x = $player->getX();
         $destRect->y = $player->getY();
-        $destRect->w = 64;
-        $destRect->h = 64;
+        $destRect->w = 32;
+        $destRect->h = 32;
+
+        $srcRect = new \SDL_Rect;
+        $srcRect->x = 3;
+        $srcRect->y = 3;
+        $srcRect->w = 23;
+        $srcRect->h = 32;
 
         // with api native sdl
         \SDL_RenderCopyEx(
             $this->sdl->getRenderer()->getRenderer(),
             $this->sdl->getTextures('sonic'),
-            null,
+            $srcRect,
             $destRect,
             0,
             null,
@@ -64,7 +70,6 @@ class Scene
         /** @var Level $level */
         for ($cell = 0; $cell < $level->getMapWidth(); $cell++) {
             for ($row = 0; $row < $level->getMapHeight(); $row++) {
-
                 $tileValue = $level->getTile($cell,$row);
                 /** @var TileSet $tileSet */
                 $tileRect = $tileSet->getTile($tileValue);
