@@ -2,7 +2,7 @@
 
 namespace SonicGame\Renderer;
 
-use Symfony\Component\Console\Application;
+use SonicGame\AssetManager\AssetManager;
 
 class SdlTtf
 {

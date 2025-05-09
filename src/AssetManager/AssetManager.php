@@ -1,6 +1,6 @@
 <?php
 
-namespace SonicGame\Renderer;
+namespace SonicGame\AssetManager;
 
 class AssetManager
 {

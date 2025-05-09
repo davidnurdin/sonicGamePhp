@@ -11,6 +11,8 @@ use SonicGame\Level\LevelManager;
 use SonicGame\Loop\GameLoop;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Scene\Scene;
+use SonicGame\SoundManager\Sound;
+use SonicGame\SoundManager\SoundManager;
 
 class Game extends EventEmitter
 {
@@ -25,6 +27,7 @@ class Game extends EventEmitter
         private Player $player,
         private Scene $scene,
         private LevelManager $levelManager,
+        private SoundManager $soundManager,
     )
     {
 
@@ -52,6 +55,12 @@ class Game extends EventEmitter
         $vars = [] ;
         // Init SDL
         $this->sdl->initSDL(fullscreen: false, title: 'SonicGame');
+
+        $this->soundManager->Init();
+        $sound = new Sound(
+            __DIR__ . '/../assets/mixer/music/level1.mp3'
+        ) ;
+        $sound->play();
 
         // Init Textures
 

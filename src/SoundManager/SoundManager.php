@@ -8,10 +8,31 @@ class SoundManager
     private array $music = [];
     private array $soundEffects = [];
 
-    public function __construct(private string $assetFolder)
+    public function Init()
     {
-        $this->loadMusic();
-        $this->loadSoundEffects();
+        \Mix_Init(0x00000008 | 0x00000010 | 0x00000020 ); // MP3 | wav | OGG
+
+        if (\Mix_OpenAudio(44100, \MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+            echo "Erreur Mix_OpenAudio: " . Mix_GetError() . PHP_EOL;
+            exit(1);
+        }
+
+        // Load sounds and music
+//        $this->loadSounds();
+//        $this->loadMusic();
+    }
+    public function __construct()
+    {
+//        $this->loadMusic();
+//        $this->loadSoundEffects();
+    }
+
+    public function __destruct()
+    {
+        // TODO: Implement __destruct() method.
+//        Mix_FreeMusic($music);
+        Mix_CloseAudio();
+        Mix_Quit();
     }
 
     private function loadSounds(): void

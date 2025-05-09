@@ -4,15 +4,8 @@ namespace SonicGame\SoundManager;
 
 class Sound
 {
-    private string $path;
-    private int $volume;
-    private bool $loop;
-
-    public function __construct(string $path, int $volume = 100, bool $loop = false)
+    public function __construct(private string $path, private int $volume = 100, private bool $loop = false)
     {
-        $this->path = $path;
-        $this->volume = $volume;
-        $this->loop = $loop;
     }
 
     public function getPath(): string
@@ -35,7 +28,20 @@ class Sound
     {
         // Implement play logic here
         // For example, using SDL_mixer to play the sound
-        // \Mix_PlayChannel(-1, $this->path, $this->loop ? -1 : 0);
+//         \Mix_PlayChannel(-1, $this->path, $this->loop ? -1 : 0);
+
+        $music = \Mix_LoadMUS($this->path);
+        \Mix_PlayMusic($music,0);
+
+//        $music2 = \Mix_LoadWAV(__DIR__ . '/../../assets/mixer/sound/level1.ogg');
+//        \Mix_PlayChannel(-1,$music2,0);
+//        usleep(100000);
+//        \Mix_PlayChannel(-1,$music2,0);
+//        usleep(100000);
+//        \Mix_PlayChannel(-1,$music2,0);
+
+
+
     }
 
     public function pause(): void
