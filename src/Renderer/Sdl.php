@@ -77,7 +77,7 @@ class Sdl
     {
         $this->createWindow($title,$fullscreen);
         // Création de la fenêtre SDL
-        $window = $this->window->getWindow() ;
+        $window = $this->window ;
         // Création du renderer SDL associé à la fenêtre
         $renderer = $this->renderer->createRenderer($window);
 

@@ -9,11 +9,21 @@ class Renderer
 {
 
     private $renderer ;
+    private $renderTexture ;
 
-    public function createRenderer($window)
+
+    public function createRenderer(Window $window)
     {
-        $this->renderer = \SDL_CreateRenderer($window, -1, \SDL_RENDERER_ACCELERATED);
+//        $this->renderer = \SDL_CreateRenderer($window, -1, \SDL_RENDERER_ACCELERATED);
+        $this->renderer = \SDL_CreateRenderer($window->getWindow(), -1, \SDL_RENDERER_ACCELERATED | \SDL_RENDERER_PRESENTVSYNC);
+        $this->renderTexture = \SDL_CreateTexture($this->renderer, \SDL_PIXELFORMAT_RGBA8888, \SDL_TEXTUREACCESS_TARGET, $window->getWidth(), $window->getHeight());
+
         return $this->renderer;
+    }
+
+    public function getRenderTexture()
+    {
+        return $this->renderTexture;
     }
 
     public function clear()

@@ -127,6 +127,12 @@ class Game extends EventEmitter
             // Rendu de la scène
             $this->scene->setDebugMode($this->debugMode);
 
+
+//            \SDL_SetRenderTarget($this->sdl->getRenderer()->getRenderer(), $this->sdl->getRenderer()->getRenderTexture()); // DOUBLE BUFFERING
+
+//
+
+
             $this->sdl->getRenderer()->clear();
             $this->sdl->getRenderer()->createScene(
                 $this->scene,
@@ -134,12 +140,53 @@ class Game extends EventEmitter
                 $this->sdl->getFont('sonic'),
                 $this->levelManager->getCurrentLevel()
             );
+
+
+//            \SDL_SetRenderTarget($this->sdl->getRenderer()->getRenderer(), null);
+
+//            \SDL_RenderCopy($this->sdl->getRenderer()->getRenderer(),$this->sdl->getRenderer()->getRenderTexture(), null, null);
+//            $this->sdl->getRenderer()->clear();
+//            \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(), $this->sdl->getRenderer()->getRenderTexture(), null, null, 0, null, \SDL_FLIP_NONE);
             $this->sdl->getRenderer()->present();
+
+
+            $screenRect = new \SDL_Rect;
+            $screenRect->x = 0;
+            $screenRect->y = 0;
+            $screenRect->w = $this->sdl->getWindow()->getWidth();
+            $screenRect->h = $this->sdl->getWindow()->getHeight();
+
+            /*
+             *
+             *     $sdl->SDL_GetRendererOutputSize($renderer, FFI::addr($actualW), FFI::addr($actualH));
+
+    $scaleX = $actualW->cdata / $winW;
+    $scaleY = $actualH->cdata / $winH;
+    $scale = min($scaleX, $scaleY);
+    $outputW = (int)($winW * $scale);
+    $outputH = (int)($winH * $scale);
+    $offsetX = (int)(($actualW->cdata - $outputW) / 2);
+    $offsetY = (int)(($actualH->cdata - $outputH) / 2);
+
+    $screenRect = $sdl->new('SDL_Rect');
+    $screenRect->x = $offsetX;
+    $screenRect->y = $offsetY;
+    $screenRect->w = $outputW;
+    $screenRect->h = $outputH;
+
+             */
+//            \SDL_RenderCopy($this->sdl->getRenderer()->getRenderer(), $this->sdl->getRenderer()->getRenderTexture(), null, $screenRect); // DOUBLE BUFFERING
+//            $this->sdl->getRenderer()->present();
 
             // Update the player
 
         });
 
+//        while (true) {
+//            $this->gameLoop->start(1);
+//        }
+//
+//        echo "ok" ;
         $this->gameLoop->start();
         $this->sdl->exitSDL($this->sdl->getWindow()->getWindow(), $this->sdl->getRenderer()->getRenderer());
     }

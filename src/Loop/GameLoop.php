@@ -18,8 +18,27 @@ class GameLoop
         $this->loop->addPeriodicTimer($frameDuration, $closure);
     }
 
-    public function start()
+    public function start($maxTicks = -1)
     {
+        $tickCount = 0;
+
+        if ($maxTicks > 0) {
+            $this->loop->futureTick(function () use (&$tickCount, $maxTicks, &$loop) {
+                $tick = function () use (&$tickCount, $maxTicks, &$tick) {
+                    //                echo "Tick #{$tickCount}\n";
+                    $tickCount++;
+                    if ($tickCount < $maxTicks) {
+                        Loop::futureTick($tick);
+                    } else {
+                        //                    echo "Max ticks reached. Stopping loop.\n";
+                            $this->loop->stop();
+                    }
+                };
+                $tick(); // premier appel
+            });
+        }
+
+
         $this->loop->run();
     }
 
