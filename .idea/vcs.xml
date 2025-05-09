@@ -2,8 +2,10 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/php-mixer" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/php-sdl" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/php-sdl-image" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/php-sdl-mixer" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/php-sdl-ttf" vcs="Git" />
   </component>
 </project>

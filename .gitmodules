@@ -7,3 +7,6 @@
 [submodule "php-sdl-ttf"]
 	path = php-sdl-ttf
 	url = https://github.com/Ponup/php-sdl-ttf
+[submodule "php-mixer"]
+	path = php-mixer
+	url = https://github.com/kea/php-sdl-mixer
