@@ -9,14 +9,14 @@ use SonicGame\Renderer\Sdl;
 class Scene
 {
 
-    private int $debugMode = 0 ;
+    private int $debugMode = 0;
 
-    public function __construct(private Camera $camera,private Sdl $sdl)
+    public function __construct(private Camera $camera, private Sdl $sdl)
     {
 
     }
 
-    public function drawScene($player,$font,$level)
+    public function drawScene($player, $font, $level)
     {
         // draw the scene
 //        $this->drawBackground($sdl);
@@ -70,13 +70,13 @@ class Scene
 
         // On limite l'affichage à la taille de la fenêtre
 
-        $mapHeight = $level->getMapHeight() ;
+        $mapHeight = $level->getMapHeight();
         $mapWidth = $level->getMapWidth();
 
 
-        $cameraX = $this->camera->getX() ;
-        $cameraY = $this->camera->getY() ;
-        $tileSize = 32 ;
+        $cameraX = $this->camera->getX();
+        $cameraY = $this->camera->getY();
+        $tileSize = 32;
 
         $winW = $this->sdl->getWindow()->getWidth();
         $winH = $this->sdl->getWindow()->getHeight();
@@ -84,13 +84,13 @@ class Scene
 //        $maxWidth = floor($this->sdl->getWindow()->getWidth()/$tileSet->getWidth()) - 1 ;
 //        $maxHeight = floor($this->sdl->getWindow()->getHeight()/$tileSet->getHeight()) -1 ;
 
-        $startCol = (int) floor($cameraX / $tileSize);
-        $endCol = (int) ceil(($cameraX + $winW) / $tileSize);
-        $offsetX = -(int) ($cameraX % $tileSize);
+        $startCol = (int)floor($cameraX / $tileSize);
+        $endCol = (int)ceil(($cameraX + $winW) / $tileSize);
+        $offsetX = -(int)($cameraX % $tileSize);
 
-        $startRow = (int) floor($cameraY / $tileSize);
-        $endRow = (int) ceil(($cameraY + $winH) / $tileSize);
-        $offsetY = -(int) ($cameraY % $tileSize);
+        $startRow = (int)floor($cameraY / $tileSize);
+        $endRow = (int)ceil(($cameraY + $winH) / $tileSize);
+        $offsetY = -(int)($cameraY % $tileSize);
 
         $startRow = max(0, $startRow);
         $endRow = min($mapHeight, $endRow);
@@ -99,36 +99,37 @@ class Scene
         $endCol = min($mapWidth, $endCol);
 
 
-        for ($y = $startRow; $y < $endRow ; $y++) {
+        for ($y = $startRow; $y < $endRow; $y++) {
             for ($x = $startCol; $x < $endCol; $x++) {
-                $tileValue = $level->getTile($x,$y);
+                $tileValue = $level->getTile($x, $y);
                 if ($tileValue === null)
-                    continue ;
+                    continue;
 
                 /** @var TileSet $tileSet */
                 $tileRect = $tileSet->getTile($tileValue);
 
-                $dstRect = new \SDL_Rect;
-                $dstRect->x = ($x - $startCol) * $tileSize + $offsetX ;
-                // $dstRect->y = $y * $tileSize + (int)$cameraY;
-                $dstRect->y = ($y - $startRow) * $tileSize + $offsetY ;
-                $dstRect->w = $tileSize;
-                $dstRect->h = $tileSize;
+                if ($tileRect) {
+                    $dstRect = new \SDL_Rect;
+                    $dstRect->x = ($x - $startCol) * $tileSize + $offsetX;
+                    // $dstRect->y = $y * $tileSize + (int)$cameraY;
+                    $dstRect->y = ($y - $startRow) * $tileSize + $offsetY;
+                    $dstRect->w = $tileSize;
+                    $dstRect->h = $tileSize;
 
 
-                // with api native sdl
-                \SDL_RenderCopyEx(
-                    $this->sdl->getRenderer()->getRenderer(),
-                    $this->sdl->getTextures('tileset' . $level->getLevel()),
-                    $tileRect,
-                    $dstRect,
-                    0,
-                    null,
-                    \SDL_FLIP_NONE
-                );
+                    // with api native sdl
+                    \SDL_RenderCopyEx(
+                        $this->sdl->getRenderer()->getRenderer(),
+                        $this->sdl->getTextures('tileset' . $level->getLevel()),
+                        $tileRect,
+                        $dstRect,
+                        0,
+                        null,
+                        \SDL_FLIP_NONE
+                    );
+                }
             }
         }
-
 
 
     }
@@ -141,9 +142,9 @@ class Scene
     private function drawDebug($fontTab)
     {
         if ($this->debugMode == 1)
-            $char = 'F' ;
+            $char = 'F';
         else
-            $char = '0' ;
+            $char = '0';
 
         $srcRectFont = new \SDL_Rect;
         $srcRectFont->x = 0;
@@ -159,7 +160,7 @@ class Scene
 
         dump('Debug mode is enabled : ' . $this->debugMode);
         \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(),
-            $fontTab[substr($char, 0, 1)], $srcRectFont,$dstRectFont, 0, null, 0);
+            $fontTab[substr($char, 0, 1)], $srcRectFont, $dstRectFont, 0, null, 0);
 
     }
 }

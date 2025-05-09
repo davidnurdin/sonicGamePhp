@@ -2,10 +2,11 @@
 
 namespace SonicGame\Level;
 
+use Evenement\EventEmitter;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Scene\TileSet;
 
-class LevelManager
+class LevelManager extends EventEmitter
 {
     private array $levels = [];
     private int $currentLevelIndex = 0;
@@ -24,6 +25,7 @@ class LevelManager
     {
         if ($this->currentLevelIndex < count($this->levels) - 1) {
             $this->currentLevelIndex++;
+            $this->emit('levelChanged', [$this->currentLevelIndex+1]);
         }
     }
 
@@ -31,6 +33,7 @@ class LevelManager
     {
         if ($this->currentLevelIndex > 0) {
             $this->currentLevelIndex--;
+            $this->emit('levelChanged', [$this->currentLevelIndex+1]);
         }
     }
 

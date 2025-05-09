@@ -34,7 +34,18 @@ class Game extends EventEmitter
     {
         $this->inputManager->on('exitGame', fn() => $this->eventExitGame());
         $this->inputManager->on('keyPress', fn($keyboard, $key) => $this->eventKeyPressed($keyboard, $key));
+        $this->levelManager->on('levelChanged', fn($level) => $this->levelReload($level));
+
     }
+
+    private function levelReload(int $level)
+    {
+        $this->scene->getCamera()->setX(0);
+        $this->scene->getCamera()->setY(0);
+
+        dump('Loaded level : ' . $level);
+    }
+
 
     public function run(): void
     {
@@ -73,22 +84,22 @@ class Game extends EventEmitter
         // Auto move the camera on X
         $this->gameLoop->addPeriodicTimer($frameDuration, function (TimerInterface $timer) use (&$iterationCamera,&$sens) {
             $iterationCamera++ ;
-            if ($iterationCamera > 50)
-            {
-                $iterationCamera = 0 ;
-                $sens++;
-                if ($sens > 3)
-                    $sens = 0 ;
-            }
-
-            if ($sens == 0 )
-                $this->scene->getCamera()->setX($this->scene->getCamera()->getX() + 10);
-            elseif ($sens == 1)
-                $this->scene->getCamera()->setX($this->scene->getCamera()->getX() - 10);
-            elseif ($sens == 2)
-                $this->scene->getCamera()->setY($this->scene->getCamera()->getY() + 10);
-            elseif ($sens == 3)
-                $this->scene->getCamera()->setY($this->scene->getCamera()->getY() - 10);
+//            if ($iterationCamera > 50)
+//            {
+//                $iterationCamera = 0 ;
+//                $sens++;
+//                if ($sens > 3)
+//                    $sens = 0 ;
+//            }
+//
+//            if ($sens == 0 )
+//                $this->scene->getCamera()->setX($this->scene->getCamera()->getX() + 10);
+//            elseif ($sens == 1)
+//                $this->scene->getCamera()->setX($this->scene->getCamera()->getX() - 10);
+//            elseif ($sens == 2)
+//                $this->scene->getCamera()->setY($this->scene->getCamera()->getY() + 10);
+//            elseif ($sens == 3)
+//                $this->scene->getCamera()->setY($this->scene->getCamera()->getY() - 10);
 
 
         });
@@ -132,6 +143,9 @@ class Game extends EventEmitter
 
 //
 
+
+//            $this->levelManager->nextLevel();
+//            dump( $this->levelManager->getCurrentLevel()->getLevel());
 
             $this->sdl->getRenderer()->clear();
             $this->sdl->getRenderer()->createScene(
@@ -293,6 +307,34 @@ class Game extends EventEmitter
             // next level
             $this->levelManager->previousLevel();
         }
+
+        // key 2 numeric pad
+        if ($keyboard->isKeyHeld(\SDLK_KP_2))
+        {
+            // next level
+            $this->scene->getCamera()->setY($this->scene->getCamera()->getY() + 1);
+        }
+
+        if ($keyboard->isKeyHeld(\SDLK_KP_8))
+        {
+            // next level
+            $this->scene->getCamera()->setY($this->scene->getCamera()->getY() - 1);
+        }
+
+        // key 2 numeric pad
+        if ($keyboard->isKeyHeld(\SDLK_KP_4))
+        {
+            // next level
+            $this->scene->getCamera()->setX($this->scene->getCamera()->getX() - 1);
+        }
+
+        // key 2 numeric pad
+        if ($keyboard->isKeyHeld(\SDLK_KP_6))
+        {
+            // next level
+            $this->scene->getCamera()->setX($this->scene->getCamera()->getX() +  1);
+        }
+
 
     }
 

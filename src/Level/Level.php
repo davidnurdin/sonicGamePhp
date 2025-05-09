@@ -7,14 +7,13 @@ use SonicGame\Scene\TileSet;
 
 class Level
 {
-    private int $level = 1 ;
     private array $tilemap;
     private int $mapWidth;
     private int $mapHeight;
     private int $currentPositionSoniceYinTile;
     private int $currentPositionSoniceXinTile;
 
-    public function __construct(private TileSet $tileSet,int $level,Sdl $sdl)
+    public function __construct(private TileSet $tileSet,private int $level,Sdl $sdl)
     {
         $this->setTileSet($sdl->getTextures('tileset' . $level));
     }
