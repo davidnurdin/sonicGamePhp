@@ -2,9 +2,10 @@
 
 namespace SonicGame\Entities;
 
+use Evenement\EventEmitter;
 use SonicGame\Utils\Vector;
 
-class Entity
+class Entity extends EventEmitter
 {
     use Vector;
 

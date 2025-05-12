@@ -3,6 +3,7 @@
 namespace SonicGame\Renderer;
 
 use SonicGame\Entities\Player;
+use SonicGame\Level\Level;
 use SonicGame\Scene\Scene;
 
 class Renderer
@@ -41,9 +42,9 @@ class Renderer
         \SDL_SetRenderDrawColor($this->renderer, $int, $int1, $int2, $int3);
     }
 
-    public function createScene(Scene $scene,Player $player,$fontTab,$level)
+    public function createScene(Scene $scene,Player $player,$fontTab,Level $level)
     {
-        $scene->drawScene($player,$fontTab,$level);
+        $scene->drawScene($fontTab,$level);
     }
 
     public function destroy()

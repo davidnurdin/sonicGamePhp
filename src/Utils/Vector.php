@@ -21,11 +21,17 @@ trait Vector
     public function setX(int $x): void
     {
         $this->x = $x;
+        if (is_callable([$this, 'emit'])) {
+            $this->emit('positionChanged', [$this->x, $this->y]);
+        }
     }
 
     public function setY(int $y): void
     {
         $this->y = $y;
+        if (is_callable([$this, 'emit'])) {
+            $this->emit('positionChanged', [$this->x, $this->y]);
+        }
     }
 
 

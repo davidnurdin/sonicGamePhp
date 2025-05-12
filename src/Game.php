@@ -30,7 +30,7 @@ class Game extends EventEmitter
         private SoundManager $soundManager,
     )
     {
-
+        $scene->setPlayer($this->player);
     }
 
     private function registerEvents()
@@ -46,6 +46,9 @@ class Game extends EventEmitter
         $this->scene->getCamera()->setX(0);
         $this->scene->getCamera()->setY(0);
 
+//        $this->player->setX($this->levelManager->getCurrentLevel()->getCurrentPositionSoniceXinTile());
+//        $this->player->setY($this->levelManager->getCurrentLevel()->getCurrentPositionSoniceYinTile());
+
         dump('Loaded level : ' . $level);
     }
 
@@ -54,7 +57,7 @@ class Game extends EventEmitter
     {
         $vars = [] ;
         // Init SDL
-        $this->sdl->initSDL(fullscreen: false, title: 'SonicGame');
+        $this->sdl->initSDL(fullscreen: false, title: 'SonicGame',width:320,height:200);
 
         $this->soundManager->Init();
         $sound = new Sound(
@@ -87,38 +90,11 @@ class Game extends EventEmitter
         });
 
 
-
-        $iterationCamera = 0 ;
-        $sens = 0 ;
-        // Auto move the camera on X
-        $this->gameLoop->addPeriodicTimer($frameDuration, function (TimerInterface $timer) use (&$iterationCamera,&$sens) {
-            $iterationCamera++ ;
-//            if ($iterationCamera > 50)
-//            {
-//                $iterationCamera = 0 ;
-//                $sens++;
-//                if ($sens > 3)
-//                    $sens = 0 ;
-//            }
-//
-//            if ($sens == 0 )
-//                $this->scene->getCamera()->setX($this->scene->getCamera()->getX() + 10);
-//            elseif ($sens == 1)
-//                $this->scene->getCamera()->setX($this->scene->getCamera()->getX() - 10);
-//            elseif ($sens == 2)
-//                $this->scene->getCamera()->setY($this->scene->getCamera()->getY() + 10);
-//            elseif ($sens == 3)
-//                $this->scene->getCamera()->setY($this->scene->getCamera()->getY() - 10);
-
-
-        });
-
-
-        $this->gameLoop->addPeriodicTimer(1/1, function (TimerInterface $timer) use (&$vars) {
-            // DUmp the key pressed
-            $keyPressed = $this->inputManager->getKeyboard()->getCurrentKeysPressed();
-            dump($keyPressed);
-        });
+//        $this->gameLoop->addPeriodicTimer(1/1, function (TimerInterface $timer) use (&$vars) {
+//            // DUmp the key pressed
+//            $keyPressed = $this->inputManager->getKeyboard()->getCurrentKeysPressed();
+//            dump($keyPressed);
+//        });
 
 
         // Event LOOP Inputs
@@ -146,15 +122,6 @@ class Game extends EventEmitter
 
             // Rendu de la scène
             $this->scene->setDebugMode($this->debugMode);
-
-
-//            \SDL_SetRenderTarget($this->sdl->getRenderer()->getRenderer(), $this->sdl->getRenderer()->getRenderTexture()); // DOUBLE BUFFERING
-
-//
-
-
-//            $this->levelManager->nextLevel();
-//            dump( $this->levelManager->getCurrentLevel()->getLevel());
 
             $this->sdl->getRenderer()->clear();
             $this->sdl->getRenderer()->createScene(

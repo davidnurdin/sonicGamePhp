@@ -4,6 +4,7 @@ namespace SonicGame\Scene;
 
 use SonicGame\Entities\Player;
 use SonicGame\Level\Level;
+use SonicGame\Level\LevelManager;
 use SonicGame\Renderer\Sdl;
 
 class Scene
@@ -11,13 +12,14 @@ class Scene
 
     private int $debugMode = 0;
 
-    public function __construct(private Camera $camera, private Sdl $sdl)
+    public function __construct(private Camera $camera, private Sdl $sdl,private Player $player)
     {
-
+        $this->camera->stickTo($this->player);
     }
 
-    public function drawScene($player, $font, $level)
+    public function drawScene($font, $level)
     {
+        $player = $this->player;
         // draw the scene
 //        $this->drawBackground($sdl);
         $this->drawTiles($level);
@@ -63,7 +65,7 @@ class Scene
     }
 
 
-    public function drawTiles($level)
+    public function drawTiles(Level $level)
     {
         $tileSet = $level->getTileSet();
         /** @var Level $level */
@@ -162,5 +164,10 @@ class Scene
         \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(),
             $fontTab[substr($char, 0, 1)], $srcRectFont, $dstRectFont, 0, null, 0);
 
+    }
+
+    public function setPlayer(Player $player)
+    {
+        $this->player = $player;
     }
 }
