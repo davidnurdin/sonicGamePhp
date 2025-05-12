@@ -3,6 +3,7 @@
 namespace SonicGame\Level;
 
 use Evenement\EventEmitter;
+use SonicGame\AssetManager\AssetManager;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Scene\TileSet;
 
@@ -11,7 +12,7 @@ class LevelManager extends EventEmitter
     private array $levels = [];
     private int $currentLevelIndex = 0;
 
-    public function __construct(private Sdl $sdl)
+    public function __construct(private Sdl $sdl,private AssetManager $assetManager)
     {
 
     }
@@ -78,7 +79,7 @@ class LevelManager extends EventEmitter
                 continue ;
             $tileSet = new TileSet($this->sdl);
             $tileSet->loadTileSet('tileset' . $i, 'tileset/levels/tileset' . $this->convertLevelToTileSet($i) . '.png');
-            $level = new Level($tileSet,$i,$this->sdl);
+            $level = new Level($tileSet,$i,$this->sdl,$this->assetManager);
             $level->readLevelPositionTilesAndMeta();
 
             // Initialize levels

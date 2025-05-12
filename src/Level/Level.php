@@ -2,6 +2,7 @@
 
 namespace SonicGame\Level;
 
+use SonicGame\AssetManager\AssetManager;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Scene\TileSet;
 
@@ -13,7 +14,7 @@ class Level
     private int $currentPositionSoniceYinTile;
     private int $currentPositionSoniceXinTile;
 
-    public function __construct(private TileSet $tileSet,private int $level,Sdl $sdl)
+    public function __construct(private TileSet $tileSet,private int $level,Sdl $sdl,private AssetManager $assetManager)
     {
         $this->setTileSet($sdl->getTextures('tileset' . $level));
     }
@@ -41,7 +42,7 @@ class Level
     public function readLevelPositionTilesAndMeta()
     {
 
-        $baseFile =__DIR__ . '/../'.'Resources/levels/' . 'level' . $this->level ;
+        $baseFile = $this->assetManager->getAssetFolder() . '/levels/' . 'level' . $this->level ;
         $level = file_get_contents($baseFile . '.bin');
         $levelMeta = eval('return ' . file_get_contents($baseFile .  '.meta') . ';' );
 

@@ -17,3 +17,4 @@ services:
   SonicGame\Level\LevelManager:
     arguments:
       $sdl: '@SonicGame\Renderer\Sdl'
+      $assetManager: '@SonicGame\AssetManager\AssetManager'
