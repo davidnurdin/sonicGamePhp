@@ -283,30 +283,34 @@ class Game extends EventEmitter
         // key 2 numeric pad
         if ($keyboard->isKeyHeld(\SDLK_KP_2))
         {
-            // next level
+            $this->scene->getCamera()->disableStick = true ;
             $this->scene->getCamera()->setY($this->scene->getCamera()->getY() + 1);
         }
 
         if ($keyboard->isKeyHeld(\SDLK_KP_8))
         {
-            // next level
+            $this->scene->getCamera()->disableStick = true ;
             $this->scene->getCamera()->setY($this->scene->getCamera()->getY() - 1);
         }
 
         // key 2 numeric pad
         if ($keyboard->isKeyHeld(\SDLK_KP_4))
         {
-            // next level
+            $this->scene->getCamera()->disableStick = true ;
             $this->scene->getCamera()->setX($this->scene->getCamera()->getX() - 1);
         }
 
         // key 2 numeric pad
         if ($keyboard->isKeyHeld(\SDLK_KP_6))
         {
-            // next level
+            $this->scene->getCamera()->disableStick = true ;
             $this->scene->getCamera()->setX($this->scene->getCamera()->getX() +  1);
         }
 
+        if ($keyboard->isKeyHeld(\SDLK_KP_5))
+        {
+            $this->scene->getCamera()->disableStick = false ;
+        }
 
     }
 

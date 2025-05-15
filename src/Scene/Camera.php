@@ -14,6 +14,8 @@ class Camera
     private ?Entity $stickedEntity = null;
     private ?Scene $scene = null;
 
+    public bool $disableStick = false ;
+
     public function stickTo(\SonicGame\Entities\Entity $entity,$oneShoot = false,$centerEntity = false)
     {
         $this->stickedEntity = &$entity;
@@ -28,8 +30,12 @@ class Camera
             $noSmooth = true ;
 
         // TODO : center Entity par example pour le level 19 => (fin de sonic)
-        $callable = function() use ($entity,$camera,$noSmooth,$centerEntity)
+        $that = &$this ;
+        $callable = function() use ($entity,$camera,$noSmooth,$centerEntity,$that)
         {
+            if ($that->disableStick)
+                return ;
+
             $cameraLerpSpeedY = 3.0;
             $cameraLerpSpeedX = 3.0;
             $delta = 0.01 ; // TODO le calculé grace a GameLoop
