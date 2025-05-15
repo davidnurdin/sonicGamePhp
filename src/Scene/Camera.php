@@ -49,8 +49,8 @@ class Camera
             $cameraY = $camera->getY();
             $cameraX = $camera->getX();
 
-            $targetCameraY = (int) $cameraY;
-            $targetCameraX = (int) $cameraX;
+            $targetCameraY = $cameraY;
+            $targetCameraX = $cameraX;
 
             $camDeadZoneUp = $winH * 0.40;
             $camDeadZoneDown = $winH - ($winH * 0.35);
@@ -62,17 +62,17 @@ class Camera
             $sonicScreenX = $sonicX - $cameraX;
 
             if ($sonicScreenY <= $camDeadZoneUp) {
-                $targetCameraY = (int) ($sonicY - $camDeadZoneUp);
+                $targetCameraY = ($sonicY - $camDeadZoneUp);
             }
             elseif ($sonicScreenY >= $camDeadZoneDown) {
-                $targetCameraY = (int) ($sonicY - $camDeadZoneDown);
+                $targetCameraY = ($sonicY - $camDeadZoneDown);
             }
 
             if ($sonicScreenX <= $camDeadZoneLeft) {
-                $targetCameraX = (int) ($sonicX - $camDeadZoneLeft);
+                $targetCameraX = ($sonicX - $camDeadZoneLeft);
             }
             elseif ($sonicScreenX >= $camDeadZoneRight) {
-                $targetCameraX = (int) ($sonicX - $camDeadZoneRight);
+                $targetCameraX = ($sonicX - $camDeadZoneRight);
             }
 
 
@@ -108,7 +108,7 @@ class Camera
                 $finalX = $cameraX + ($targetCameraX - $cameraX) * min($cameraLerpSpeedX * $delta, 1.0);
             }
 
-            $camera->setXY($finalX, $finalY);
+            $camera->setXY((int) $finalX, (int) $finalY);
 
 
 
