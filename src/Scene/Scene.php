@@ -34,12 +34,14 @@ class Scene
         {
             // init level
             $this->currentLevel = &$level ;
+            // init player
             $this->getPlayer()->setXY($level->getCurrentPositionSoniceXinTile()*32,$level->getCurrentPositionSoniceYinTile()*32);
+            // init camera
+            $this->camera->stickTo($this->player,true);
         }
 
         $player = $this->player;
         // draw the scene
-//        $this->drawBackground($sdl);
         $this->drawTiles($level);
         $this->drawPlayer($player);
 
