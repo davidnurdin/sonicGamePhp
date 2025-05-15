@@ -43,12 +43,7 @@ class Game extends EventEmitter
 
     private function levelReload(int $level)
     {
-        $this->scene->getCamera()->setX(0);
-        $this->scene->getCamera()->setY(0);
-
-//        $this->player->setX($this->levelManager->getCurrentLevel()->getCurrentPositionSoniceXinTile());
-//        $this->player->setY($this->levelManager->getCurrentLevel()->getCurrentPositionSoniceYinTile());
-
+        $this->scene->resetLevel();
         dump('Loaded level : ' . $level);
     }
 
@@ -57,7 +52,7 @@ class Game extends EventEmitter
     {
         $vars = [] ;
         // Init SDL
-        $this->sdl->initSDL(fullscreen: false, title: 'SonicGame',width:320,height:200);
+        $this->sdl->initSDL(fullscreen: false, title: 'SonicGame',width:500,height:230);
 
         $this->soundManager->Init();
         $sound = new Sound(
@@ -68,10 +63,11 @@ class Game extends EventEmitter
         // Init Textures
 
         $this->sdl->loadTexture('sonic', 'tileset/sprites/tileset-sonic.png',['r' => 0 , 'g' => '72' , 'b' => 0]);
-        $this->sdl->loadTexture('background', 'background_large.jpg');
         $this->sdl->loadFont('sonic','fonts/NiseSegaSonic.TTF') ;
 
         $this->levelManager->loadLevels();
+
+
 
         $this->registerEvents();
         $frameDuration = 1 / 60; // 60Hz

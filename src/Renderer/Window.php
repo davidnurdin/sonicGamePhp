@@ -12,12 +12,27 @@ class Window
     private bool $isInit = false ;
     private bool $isFullScreen = false ;
 
+    // Instance unique de la classe (privée et statique)
+    private static ?Window $instance = null;
+
+
+    public static function getInstance(): Window
+    {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+
+        return self::$instance;
+    }
+
     public function __construct(int $width, int $height, string $title,$fullscreen = false)
     {
+
         $this->isFullScreen = $fullscreen;
         $this->width = $width;
         $this->height = $height;
         $this->title = $title;
+        self::$instance = $this;
 
         $flag = \SDL_WINDOW_SHOWN;
         if ($fullscreen) {

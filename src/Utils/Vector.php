@@ -8,6 +8,15 @@ trait Vector
     {
     }
 
+    public function setXY(int $x, int $y): void
+    {
+        $this->x = $x;
+        $this->y = $y;
+        if (is_callable([$this, 'emit'])) {
+            $this->emit('positionChanged', [$this->x, $this->y]);
+        }
+    }
+
     public function getX(): int
     {
         return $this->x;

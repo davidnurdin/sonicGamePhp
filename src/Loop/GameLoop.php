@@ -13,9 +13,23 @@ class GameLoop
         $this->init();
     }
 
-    public function addPeriodicTimer(float|int $frameDuration, \Closure $closure): void
+    public static function nextTick(\Closure $closure): void
     {
-        $this->loop->addPeriodicTimer($frameDuration, $closure);
+        Loop::futureTick(function () use ($closure) {
+            // Code to execute on the next tick
+            $closure();
+        });
+
+    }
+
+    public static function addTimer(float|int $frameDuration, \Closure $closure): void
+    {
+        Loop::addTimer($frameDuration, $closure);
+    }
+
+    public static function addPeriodicTimer(float|int $frameDuration, \Closure $closure): void
+    {
+        Loop::addPeriodicTimer($frameDuration, $closure);
     }
 
     public function start($maxTicks = -1)

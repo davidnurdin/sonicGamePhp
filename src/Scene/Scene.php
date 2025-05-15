@@ -11,14 +11,32 @@ class Scene
 {
 
     private int $debugMode = 0;
+    private ?Level $currentLevel = null ;
 
     public function __construct(private Camera $camera, private Sdl $sdl,private Player $player)
     {
+        $this->camera->setScene($this);
         $this->camera->stickTo($this->player);
     }
 
-    public function drawScene($font, $level)
+    public function getPlayer()
     {
+        return $this->player;
+    }
+
+    public function getCurrentLevel()
+    {
+        return $this->currentLevel;
+    }
+    public function drawScene($font, Level $level)
+    {
+        if ($this->currentLevel === null)
+        {
+            // init level
+            $this->currentLevel = &$level ;
+            $this->getPlayer()->setXY($level->getCurrentPositionSoniceXinTile()*32,$level->getCurrentPositionSoniceYinTile()*32);
+        }
+
         $player = $this->player;
         // draw the scene
 //        $this->drawBackground($sdl);
@@ -35,10 +53,12 @@ class Scene
     {
 
         $destRect = new \SDL_Rect;
-        $destRect->x = $player->getX();
-        $destRect->y = $player->getY();
+        $destRect->x = $player->getX() - $this->camera->getX();
+        $destRect->y = $player->getY() - $this->camera->getY() + 16;
         $destRect->w = 32;
         $destRect->h = 32;
+
+//        dump($destRect);
 
         $srcRect = new \SDL_Rect;
         $srcRect->x = 3;
@@ -169,5 +189,10 @@ class Scene
     public function setPlayer(Player $player)
     {
         $this->player = $player;
+    }
+
+    public function resetLevel()
+    {
+        $this->currentLevel = null;
     }
 }
