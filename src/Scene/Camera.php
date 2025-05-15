@@ -20,12 +20,12 @@ class Camera
         $camera = $this ;
 
         // TODO : voir comment calculer le frameDuration et le $delta ... pour avoir un mouvement fluide quelque soit le framerate.
-        $frameDuration = 1 / 60; // 60Hz
+        $frameDuration = 1 / 120; // 60Hz
 
         GameLoop::addPeriodicTimer($frameDuration, function() use ($entity,$camera)
         {
-            $cameraLerpSpeedY = 30.0;
-            $cameraLerpSpeedX = 30.0;
+            $cameraLerpSpeedY = 3.0;
+            $cameraLerpSpeedX = 3.0;
             $delta = 0.01 ; // TODO le calculé grace a GameLoop
 
             $sonicX = $entity->getX();
@@ -43,8 +43,8 @@ class Camera
             $camDeadZoneUp = $winH * 0.40;
             $camDeadZoneDown = $winH - ($winH * 0.35);
 
-            $camDeadZoneLeft = $winW * 0.05;
-            $camDeadZoneRight = $winW - ($winW * 0.15);
+            $camDeadZoneLeft = $winW * 0.25;
+            $camDeadZoneRight = $winW - ($winW * 0.35);
 
             $sonicScreenY = $sonicY - $cameraY;
             $sonicScreenX = $sonicX - $cameraX;
@@ -88,8 +88,12 @@ class Camera
 
 
 
-            $finalY = $cameraY + ($targetCameraY - $cameraY) ;//  * min($cameraLerpSpeedY * $delta, 1.0) ;
-            $finalX = $cameraX + ($targetCameraX - $cameraX) ;//* min($cameraLerpSpeedX * $delta, 1.0) ;
+//            $finalY = $cameraY + ($targetCameraY - $cameraY) ;//  * min($cameraLerpSpeedY * $delta, 1.0) ;
+//            $finalX = $cameraX + ($targetCameraX - $cameraX) ;//* min($cameraLerpSpeedX * $delta, 1.0) ;
+
+            $finalY = $cameraY + ($targetCameraY - $cameraY) * min($cameraLerpSpeedY * $delta, 1.0) ;
+            $finalX = $cameraX + ($targetCameraX - $cameraX) * min($cameraLerpSpeedX * $delta, 1.0) ;
+
 
             $camera->setXY($finalX, $finalY);
 
