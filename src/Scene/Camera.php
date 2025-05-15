@@ -30,10 +30,9 @@ class Camera
             $noSmooth = true ;
 
         // TODO : center Entity par example pour le level 19 => (fin de sonic)
-        $that = &$this ;
-        $callable = function() use ($entity,$camera,$noSmooth,$centerEntity,$that)
+        $callable = function() use ($entity,$camera,$noSmooth,$centerEntity)
         {
-            if ($that->disableStick)
+            if ($this->disableStick)
                 return ;
 
             $cameraLerpSpeedY = 3.0;
@@ -100,8 +99,8 @@ class Camera
 
 
             if ($noSmooth == true) {
-                $finalY = $cameraY + ($targetCameraY - $cameraY);//  * min($cameraLerpSpeedY * $delta, 1.0) ;
-                $finalX = $cameraX + ($targetCameraX - $cameraX);//* min($cameraLerpSpeedX * $delta, 1.0) ;
+                $finalY = $cameraY + ($targetCameraY - $cameraY);
+                $finalX = $cameraX + ($targetCameraX - $cameraX);
             }
             else {
                 $finalY = $cameraY + ($targetCameraY - $cameraY) * min($cameraLerpSpeedY * $delta, 1.0);
