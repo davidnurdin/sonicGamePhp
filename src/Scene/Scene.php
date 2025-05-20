@@ -68,10 +68,12 @@ class Scene
         $srcRect->w = 23;
         $srcRect->h = 32;
 
+        $sonicTexture = $this->sdl->getTextures('sonic')[0] ;
+
         // with api native sdl
         \SDL_RenderCopyEx(
             $this->sdl->getRenderer()->getRenderer(),
-            $this->sdl->getTextures('sonic'),
+            $sonicTexture['texture'],
             $srcRect,
             $destRect,
             0,
@@ -122,7 +124,9 @@ class Scene
         $startCol = max(0, $startCol);
         $endCol = min($mapWidth, $endCol);
 
+        $texturesTileSet = $this->sdl->getTextures('tileset' . $level->getLevel()) ;
 
+        $maxWidth = floor(4096 / 32) * 32; // = 4064
         for ($y = $startRow; $y < $endRow; $y++) {
             for ($x = $startCol; $x < $endCol; $x++) {
                 $tileValue = $level->getTile($x, $y);
@@ -140,11 +144,20 @@ class Scene
                     $dstRect->w = $tileSize;
                     $dstRect->h = $tileSize;
 
+                    // found $textureTileset
+
+                    $indexTexture = (int)floor($tileValue*$tileSize / $maxWidth);
+                    if ($indexTexture > 0)
+                    {
+                        $debug = 1;
+                    }
+                    $textureTileSet = $texturesTileSet[$indexTexture]['texture'];
+
 
                     // with api native sdl
                     \SDL_RenderCopyEx(
                         $this->sdl->getRenderer()->getRenderer(),
-                        $this->sdl->getTextures('tileset' . $level->getLevel()),
+                        $textureTileSet,
                         $tileRect,
                         $dstRect,
                         0,

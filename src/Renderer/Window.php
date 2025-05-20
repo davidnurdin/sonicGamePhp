@@ -25,7 +25,7 @@ class Window
         return self::$instance;
     }
 
-    public function __construct(int $width, int $height, string $title,$fullscreen = false)
+    public function __construct(int $width = 0, int $height = 0 , string $title = "",$fullscreen = false)
     {
 
         $this->isFullScreen = $fullscreen;

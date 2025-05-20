@@ -17,11 +17,11 @@ class Sdl
 
     }
 
-    public function initSDL($fullscreen = false ,$title='xxx',$width = 800,$height = 600)
+    public function initSDL($fullscreen = false ,$title='xxx',$width = 800,$height = 600,$vsync = true)
     {
         \SDL_Init(\SDL_INIT_VIDEO);
         \SDL_SetHint("SDL_RENDER_SCALE_QUALITY", "0");
-        $this->createSdlObjects($title,$fullscreen,$width,$height);
+        $this->createSdlObjects($title,$fullscreen,$width,$height,$vsync);
 
         // TODO : voir
         return [$this->window->getWindow(), $this->renderer->getRenderer()];  // Retourne la fenêtre et le renderer
@@ -73,13 +73,13 @@ class Sdl
         $this->window->destroy();
     }
 
-    private function createSdlObjects($title,$fullscreen = false,$width = 800,$height = 600)
+    private function createSdlObjects($title,$fullscreen = false,$width = 800,$height = 600,$vsync = true)
     {
         $this->createWindow($title,$fullscreen,$width,$height);
         // Création de la fenêtre SDL
         $window = $this->window ;
         // Création du renderer SDL associé à la fenêtre
-        $renderer = $this->renderer->createRenderer($window);
+        $renderer = $this->renderer->createRenderer($window,$vsync);
 
         return [$window, $renderer];
     }

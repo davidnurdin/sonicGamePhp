@@ -21,7 +21,7 @@ class Game extends EventEmitter
 
 
     public function __construct(
-        private GameLoop $gameLoop,
+        public GameLoop $gameLoop,
         private InputManager $inputManager,
         private Sdl $sdl,
         private Player $player,
@@ -52,7 +52,8 @@ class Game extends EventEmitter
     {
         $vars = [] ;
         // Init SDL
-        $this->sdl->initSDL(fullscreen: false, title: 'SonicGame',width:500,height:230);
+        // TODO : voir vsync ce qu'on fait.
+        $this->sdl->initSDL(fullscreen: false, title: 'SonicGame',width:500,height:230,vsync: false);
 
         $this->soundManager->Init();
         $sound = new Sound(
@@ -66,11 +67,8 @@ class Game extends EventEmitter
         $this->sdl->loadFont('sonic','fonts/NiseSegaSonic.TTF') ;
 
         $this->levelManager->loadLevels();
-
-
-
         $this->registerEvents();
-        $frameDuration = 1 / 60; // 60Hz
+        $frameDuration = 0 ; // 1 /60 ; // 0 ; // 60Hz
         $inputDuration = 1 / 600; // 240Hz
 
         $vars['fps'] = 0;
@@ -85,16 +83,8 @@ class Game extends EventEmitter
             $vars['deltaSum'] = 0.0;
         });
 
-
-//        $this->gameLoop->addPeriodicTimer(1/1, function (TimerInterface $timer) use (&$vars) {
-//            // DUmp the key pressed
-//            $keyPressed = $this->inputManager->getKeyboard()->getCurrentKeysPressed();
-//            dump($keyPressed);
-//        });
-
-
-        // Event LOOP Inputs
-        $this->gameLoop->addPeriodicTimer($inputDuration, function (TimerInterface $timer) use (&$vars) {
+        $closureInputs = function() use (&$vars)
+        {
             $this->inputManager->poll();
 
             // Force emit keyPress to have key with $inputDuration
@@ -105,11 +95,10 @@ class Game extends EventEmitter
             }
 
             $this->inputManager->getKeyboard()->resetTransientStates();
-        });
+        };
+        $closureDisplay = function() use (&$vars)
+        {
 
-
-        // Event LOOP Display
-        $this->gameLoop->addPeriodicTimer($frameDuration, function (TimerInterface $timer) use (&$vars) {
             $now = microtime(true);
             $delta = $now - $vars['lastTime'];
             $vars['lastTime'] = $now;
@@ -166,13 +155,22 @@ class Game extends EventEmitter
 
             // Update the player
 
+        };
+
+        $this->gameLoop->addPeriodicTimer($inputDuration, function (TimerInterface $timer) use ($closureInputs) {
+            $closureInputs();
         });
 
-//        while (true) {
-//            $this->gameLoop->start(1);
-//        }
-//
-//        echo "ok" ;
+        $this->gameLoop->addPeriodicTimer($frameDuration, function (TimerInterface $timer) use ($closureDisplay) {
+            $closureDisplay();
+        });
+
+//        $tickID = $this->gameLoop->eachTick(function ()
+//        {
+//            echo "Tick\n";
+//        }) ;
+//        $this->gameLoop->pauseEachTick($tickID);
+
         $this->gameLoop->start();
         $this->sdl->exitSDL($this->sdl->getWindow()->getWindow(), $this->sdl->getRenderer()->getRenderer());
     }

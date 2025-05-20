@@ -13,12 +13,17 @@ class Renderer
     private $renderTexture ;
 
 
-    public function createRenderer(Window $window)
+    public function createRenderer(Window $window,bool $vsync = true)
     {
 //        $this->renderer = \SDL_CreateRenderer($window, -1, \SDL_RENDERER_ACCELERATED);
-        $this->renderer = \SDL_CreateRenderer($window->getWindow(), -1, \SDL_RENDERER_ACCELERATED | \SDL_RENDERER_PRESENTVSYNC);
+        if ($vsync)
+            $this->renderer = \SDL_CreateRenderer($window->getWindow(), -1, \SDL_RENDERER_ACCELERATED | \SDL_RENDERER_PRESENTVSYNC);
+        else
+            $this->renderer = \SDL_CreateRenderer($window->getWindow(), -1, \SDL_RENDERER_ACCELERATED);
+
         $this->renderTexture = \SDL_CreateTexture($this->renderer, \SDL_PIXELFORMAT_RGBA8888, \SDL_TEXTUREACCESS_TARGET, $window->getWidth(), $window->getHeight());
 
+		$GLOBALS['renderer'] = &$this->renderer ; // WASM SUPPORT
         return $this->renderer;
     }
 

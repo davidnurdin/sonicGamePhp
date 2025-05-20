@@ -8,6 +8,8 @@ use React\EventLoop\LoopInterface;
 class GameLoop
 {
 
+    private array $eachTicks = [] ;
+
     public function __construct(private ?LoopInterface $loop)
     {
         $this->init();
@@ -15,10 +17,7 @@ class GameLoop
 
     public static function nextTick(\Closure $closure): void
     {
-        Loop::futureTick(function () use ($closure) {
-            // Code to execute on the next tick
-            $closure();
-        });
+        Loop::futureTick($closure);
 
     }
 
@@ -66,5 +65,42 @@ class GameLoop
     public function stop()
     {
         $this->loop->stop();
+    }
+
+    public function deleteEachTick(string $eachTickId)
+    {
+        if (isset($this->eachTicks[$eachTickId])) {
+            unset($this->eachTicks[$eachTickId]);
+        }
+    }
+
+    public function pauseEachTick(string $eachTickId)
+    {
+        if (isset($this->eachTicks[$eachTickId])) {
+            $this->eachTicks[$eachTickId] = false;
+        }
+    }
+
+    public function resumeEachTick(string $eachTickId)
+    {
+        if (isset($this->eachTicks[$eachTickId])) {
+            $this->eachTicks[$eachTickId] = true;
+        }
+    }
+
+    public function eachTick(\Closure $closure)
+    {
+        $eachTickId = uniqid('eachTick_', true);
+        $this->eachTicks[$eachTickId] = true ;
+
+        $loop = Loop::get();
+        $loop->futureTick($tickFunction = function () use (&$tickFunction, $loop,$closure,$eachTickId) {
+            $closure();
+            // Re-planifie pour le tick suivant
+            if ($this->eachTicks[$eachTickId])
+                $loop->futureTick($tickFunction);
+        });
+
+        return $eachTickId ;
     }
 }

@@ -15,19 +15,30 @@ class TileSet
 
     }
 
-    public function generateTiles($texture): void {
+    public function generateTiles($textures): void {
 
         $this->tiles = [];
 
         $width = $height = 0;
-        $format = null ;
-        $access = null ;
-        \SDL_QueryTexture($texture, $format , $access , $width, $height);
+//        \SDL_QueryTexture($texture, $format , $access , $width, $height);
+
+        foreach ($textures as $texture) {
+            $width += $texture['width'];
+            $height += $texture['height'];
+        }
+
+        // $texture = $texture['texture'] ;
+        $maxWidth = floor(4096 / 32) * 32; // = 4064
 
         for ($y = 0; $y < $height; $y += $this->tileHeight) {
             for ($x = 0; $x < $width; $x += $this->tileWidth) {
+
+                // found $textureTileset
+                $indexTexture = (int)floor($x / $maxWidth);
+
+
                 $tileRect = new \SDL_Rect();
-                $tileRect->x = $x;
+                $tileRect->x = $x - ($indexTexture * $maxWidth);
                 $tileRect->y = $y;
                 $tileRect->w = $this->tileWidth;
                 $tileRect->h = $this->tileHeight;

@@ -35,3 +35,4 @@ $input = new ArrayInput([
 // Exécution (avec Input/Output gérés automatiquement)
 /** @var $application Application */
 $application->doRun($input, new Symfony\Component\Console\Output\ConsoleOutput());
+return $command ;

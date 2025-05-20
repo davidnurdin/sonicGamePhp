@@ -13,7 +13,7 @@ class DefaultCommand extends Command
 {
     protected static $defaultName = 'default';
 
-    public function __construct(private Game $game)
+    public function __construct(public Game $game)
     {
         parent::__construct(self::$defaultName);
     }
