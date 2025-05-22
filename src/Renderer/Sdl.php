@@ -9,7 +9,7 @@ class Sdl
     private $textures = [];
     private $fonts = [];
     public function __construct(
-        private Renderer $renderer,
+        public Renderer $renderer,
         private SdlImage $sdlImage,
         private SdlTtf $sdlFont,
     )

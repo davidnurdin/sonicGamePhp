@@ -9,7 +9,7 @@ use SonicGame\Scene\Scene;
 class Renderer
 {
 
-    private $renderer ;
+    public $renderer = null ;
     private $renderTexture ;
 
 
@@ -23,7 +23,6 @@ class Renderer
 
         $this->renderTexture = \SDL_CreateTexture($this->renderer, \SDL_PIXELFORMAT_RGBA8888, \SDL_TEXTUREACCESS_TARGET, $window->getWidth(), $window->getHeight());
 
-		$GLOBALS['renderer'] = &$this->renderer ; // WASM SUPPORT
         return $this->renderer;
     }
 

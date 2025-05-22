@@ -19,11 +19,13 @@ class Game extends EventEmitter
 
     private int $debugMode = 0 ;
 
+	public bool $disableSdl = false ;
+
 
     public function __construct(
         public GameLoop $gameLoop,
         private InputManager $inputManager,
-        private Sdl $sdl,
+        public Sdl $sdl,
         private Player $player,
         private Scene $scene,
         private LevelManager $levelManager,
@@ -68,7 +70,7 @@ class Game extends EventEmitter
 
         $this->levelManager->loadLevels();
         $this->registerEvents();
-        $frameDuration = 0 ; // 1 /60 ; // 0 ; // 60Hz
+        $frameDuration = 0 ; // 1 / 60; // 60Hz
         $inputDuration = 1 / 600; // 240Hz
 
         $vars['fps'] = 0;
@@ -82,6 +84,10 @@ class Game extends EventEmitter
             $vars['fps'] = 0;
             $vars['deltaSum'] = 0.0;
         });
+
+		$this->gameLoop->addPeriodicTimer(1/150, function (TimerInterface $timer) use (&$vars) {
+			$this->player->moveRight();
+		});
 
         $closureInputs = function() use (&$vars)
         {
@@ -104,6 +110,8 @@ class Game extends EventEmitter
             $vars['lastTime'] = $now;
             ++$vars['fps'];
             $vars['deltaSum'] += $delta;
+			if (!$this->disableSdl) {
+//			var_dump( count($this->levelManager->getCurrentLevel()->getTileSet()->getTiles()));
 
             // Rendu de la scène
             $this->scene->setDebugMode($this->debugMode);
@@ -155,24 +163,24 @@ class Game extends EventEmitter
 
             // Update the player
 
-        };
-
-        $this->gameLoop->addPeriodicTimer($inputDuration, function (TimerInterface $timer) use ($closureInputs) {
-            $closureInputs();
-        });
+			}
+		} ;
 
         $this->gameLoop->addPeriodicTimer($frameDuration, function (TimerInterface $timer) use ($closureDisplay) {
             $closureDisplay();
         });
 
-//        $tickID = $this->gameLoop->eachTick(function ()
-//        {
-//            echo "Tick\n";
-//        }) ;
-//        $this->gameLoop->pauseEachTick($tickID);
+        $this->gameLoop->addPeriodicTimer($inputDuration, function (TimerInterface $timer) use ($closureInputs) {
+            $closureInputs();
+        });
 
-        $this->gameLoop->start();
-        $this->sdl->exitSDL($this->sdl->getWindow()->getWindow(), $this->sdl->getRenderer()->getRenderer());
+//        while (true) {
+//            $this->gameLoop->start(1);
+//        }
+//
+//        echo "ok" ;
+//        $this->gameLoop->start();
+//        $this->sdl->exitSDL($this->sdl->getWindow()->getWindow(), $this->sdl->getRenderer()->getRenderer());
     }
 
     // Renders your game objects here
