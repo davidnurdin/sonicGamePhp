@@ -2,14 +2,16 @@
 
 namespace SonicGame\InputManager;
 
+use AllowDynamicProperties;
 use Evenement\EventEmitter;
 
 class InputManager extends EventEmitter
 {
 
-    public function __construct(private InputKeyboard $inputKeyboard)
+    public function __construct(private InputKeyboard $inputKeyboard,private InputTouchpad $inputTouchpad)
     {
     }
+
 
     public function poll()
     {
@@ -21,6 +23,10 @@ class InputManager extends EventEmitter
             }
 
             switch ($event->type) {
+				case SDL_FINGERDOWN:
+				case SDL_FINGERUP:
+				case SDL_FINGERMOTION:
+					$this->inputTouchpad->handle($event);
                 case \SDL_KEYDOWN:
                 case \SDL_KEYUP:
                     $this->inputKeyboard->handle($event);
@@ -35,4 +41,9 @@ class InputManager extends EventEmitter
     {
         return $this->inputKeyboard;
     }
+
+	public function getTouchpad()
+	{
+		return $this->inputTouchpad;
+	}
 }

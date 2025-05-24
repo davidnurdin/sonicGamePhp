@@ -18,12 +18,13 @@ class InputKeyboard
     public function handle($event): void
     {
         $type = $event->type;
-        $key = $event->key->keysym->sym;
 
 //        dump(count(  $this->lastKeyPressed));
 
         if ($type === SDL_KEYDOWN) {
-            if (!isset($this->held[$key])) {
+			$key = $event->key->keysym->sym;
+
+			if (!isset($this->held[$key])) {
                 $this->pressed[$key] = true;
                 // add $key if not exist
                 if (!in_array($key, $this->lastKeyPressed)) {
@@ -34,7 +35,9 @@ class InputKeyboard
             }
             $this->held[$key] = true;
         } elseif ($type === SDL_KEYUP) {
-            $this->released[$key] = true;
+			$key = $event->key->keysym->sym;
+
+			$this->released[$key] = true;
             if (isset($this->held[$key])) {
                 unset($this->held[$key]);
                 // search $key in $lastKeyPressed and delete it

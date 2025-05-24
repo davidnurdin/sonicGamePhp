@@ -1,5 +1,9 @@
 <?php
 
+$_SERVER['PHP_SELF'] = __FILE__;
+$_SERVER['SCRIPT_NAME'] = __FILE__;
+$_SERVER['SCRIPT_FILENAME'] = __FILE__;
+
 require __DIR__.'/vendor/autoload.php';
 
 use SonicGame\Command\DefaultCommand;

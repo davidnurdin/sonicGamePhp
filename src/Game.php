@@ -7,6 +7,7 @@ use React\EventLoop\TimerInterface;
 use SonicGame\Entities\Player;
 use SonicGame\InputManager\InputKeyboard;
 use SonicGame\InputManager\InputManager;
+use SonicGame\InputManager\InputTouchpad;
 use SonicGame\Level\LevelManager;
 use SonicGame\Loop\GameLoop;
 use SonicGame\Renderer\Sdl;
@@ -39,6 +40,7 @@ class Game extends EventEmitter
     {
         $this->inputManager->on('exitGame', fn() => $this->eventExitGame());
         $this->inputManager->on('keyPress', fn($keyboard, $key) => $this->eventKeyPressed($keyboard, $key));
+        $this->inputManager->on('touchPressed', fn($touchpad, $action) => $this->eventTouchPressed($touchpad, $action));
         $this->levelManager->on('levelChanged', fn($level) => $this->levelReload($level));
 
     }
@@ -85,9 +87,9 @@ class Game extends EventEmitter
             $vars['deltaSum'] = 0.0;
         });
 
-		$this->gameLoop->addPeriodicTimer(1/150, function (TimerInterface $timer) use (&$vars) {
-			$this->player->moveRight();
-		});
+//		$this->gameLoop->addPeriodicTimer(1/150, function (TimerInterface $timer) use (&$vars) {
+//			$this->player->moveRight();
+//		});
 
         $closureInputs = function() use (&$vars)
         {
@@ -100,7 +102,22 @@ class Game extends EventEmitter
                 $this->inputManager->emit('keyPress', [$this->inputManager->getKeyboard(), $keyPressed]);
             }
 
+            // Same with Touchpad
+            if ( ($this->inputManager->getTouchpad()->haveOneFingerHelded()) || $this->inputManager->getTouchpad()->isActionPressed('jump'))
+			{
+				// get the last key pressed
+				 $fingerId = $this->inputManager->getTouchpad()->getLastFingerPressed();
+
+				 if ($fingerId == null) // jump
+					 $fingerId = 0 ;
+
+				 $this->inputManager->emit('touchPressed', [$this->inputManager->getTouchpad(), $fingerId]);
+			}
+
+
             $this->inputManager->getKeyboard()->resetTransientStates();
+            $this->inputManager->getTouchpad()->resetTransientStates();
+
         };
         $closureDisplay = function() use (&$vars)
         {
@@ -188,6 +205,61 @@ class Game extends EventEmitter
     {
         $this->gameLoop->stop();
     }
+
+    private function eventTouchPressed(InputTouchpad $touchpad, int $fingerID)
+	{
+        // TODO finir
+//		dump('Finger Pressed : ' . $fingerID);
+
+//        dump($this->inputManager->getTouchpad()->getActionsPressed());
+
+		$directions = ['left', 'right', 'up', 'down'];
+		$actions = ['jump', 'roll'];
+
+		$inputTouchpad = $this->inputManager->getTouchpad();
+//var_dump($this->inputManager->getTouchpad()->getActionsHelded());
+
+		foreach ($directions as $dir) {
+			if ($inputTouchpad->isActionHeld($dir)) {
+				$this->player->move($dir);
+//				echo "Direction maintenue: $dir\n";
+				break;
+			}
+		}
+
+		foreach ($actions as $action) {
+			if ($inputTouchpad->isActionPressed($action)) {
+				$this->player->action($action);
+				break;
+			}
+		}
+
+		/*
+		if ($touchpad->isActionHeld('right')) {
+			$this->player->moveRight();
+		}
+
+        if ($touchpad->isActionHeld('left')) {
+			$this->player->moveLeft();
+		}
+
+		if ($touchpad->isActionHeld('up')) {
+			$this->player->moveUp();
+		}
+				if ($touchpad->isActionHeld('down')) {
+			$this->player->moveDown();
+		}
+
+		if ($touchpad->isActionHeld('jump')) {
+			//$this->player->jump();
+            echo "JUMP" ;
+		}
+		*/
+
+
+	}
+
+
     private function eventKeyPressed(InputKeyboard $keyboard, ?int $keyPressed)
     {
 //        dump('KeyPress : ' . $keyPressed);

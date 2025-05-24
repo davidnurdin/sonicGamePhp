@@ -33,6 +33,7 @@ class Sound
         $music = \Mix_LoadMUS($this->path);
         \Mix_PlayMusic($music,0);
 
+
 //        $music2 = \Mix_LoadWAV(__DIR__ . '/../../assets/mixer/sound/level1.ogg');
 //        \Mix_PlayChannel(-1,$music2,0);
 //        usleep(100000);
