@@ -115,6 +115,11 @@ class Game extends EventEmitter
 			}
 
 
+            if ($this->inputManager->getKeyboard()->haveOneKeyPressed() === false)
+            {
+                $this->player->idle();
+            }
+
             $this->inputManager->getKeyboard()->resetTransientStates();
             $this->inputManager->getTouchpad()->resetTransientStates();
 
@@ -133,6 +138,7 @@ class Game extends EventEmitter
             $vars['lastTime'] = $now;
             ++$vars['fps'];
             $vars['deltaSum'] += $delta;
+
 			if (!$this->disableSdl) {
 
             // Rendu de la scène
@@ -188,9 +194,23 @@ class Game extends EventEmitter
 			}
 		} ;
 
+        $closureApplyPhysic = function() use (&$vars)
+        {
+            // Update the player
+            $now = microtime(true);
+            $delta = $now - $vars['lastTime'];
+            $this->player->update($delta);
+
+        };
+
         $this->gameLoop->addPeriodicTimer($frameDuration, function (TimerInterface $timer) use ($closureDisplay) {
             $closureDisplay();
         });
+
+        $this->gameLoop->addPeriodicTimer($frameDuration, function (TimerInterface $timer) use ($closureApplyPhysic) {
+            $closureApplyPhysic();
+        });
+
 
         $this->gameLoop->addPeriodicTimer($inputDuration, function (TimerInterface $timer) use ($closureInputs) {
             $closureInputs();
@@ -264,24 +284,29 @@ class Game extends EventEmitter
         {
             // use the last key
             if ($keyboard->getLastKeyPressed() == \SDLK_UP) {
-                $this->player->moveUp();
+                $this->player->watchUp();
                 // Move the player to up
             }
             else {
-                $this->player->moveDown();
+                $this->player->watchDown();
                 // Move the player to down
             }
         }
         else {
             if ($keyboard->isKeyHeld(\SDLK_UP)) {
-               $this->player->moveUp();
+               $this->player->watchUp();
                 // Move the player to up
             }
 
             if ($keyboard->isKeyHeld(\SDLK_DOWN)) {
-                $this->player->moveDown();
+                $this->player->watchDown();
                 // Move the player to down
             }
+        }
+
+        if ($keyboard->isKeyPressed(\SDLK_SPACE))
+        {
+            $this->player->jump();
         }
 
         if ($keyboard->isKeyPressed(\SDLK_F12))

@@ -7,16 +7,6 @@ use SonicGame\Renderer\Sdl;
 class Sprite extends Entity
 {
 	protected string $currentAnimation = 'idle';
-	protected array $animations = [
-		'idle' => [
-			[
-				'x' => 3 * 23*10,
-				'y' => 3,
-				'w' => 23,
-				'h' => 32,
-			],
-		]
-	];
 	protected int $frameIndex = 0;
 	protected float $frameTimer = 0;
 	protected float $frameDuration = 0.1; // 100ms par frame
@@ -26,7 +16,17 @@ class Sprite extends Entity
 	public function __construct(private Sdl $sdl)
 	{
 		parent::__construct(0,0);
-		$this->setAnimation('idle');
+		$this->setAnimation('idleRight');
+
+        // traite le tableau des animations afin de trouver tt les valeurs qui commence par "reverse"
+        foreach ($this->animations as $name => $frames) {
+            if (is_string($frames) && strpos($frames, 'reverse') === 0) {
+                // utilise substr pour obtenir le nom de l'animation sans le préfixe "reverse" et en enlevant la premiere majuscule
+                $this->animations[$name] = $this->animations[strtolower(substr($frames, 7,1)) . substr($frames, 8)];
+                // ajoute un flag pour savoir qu'on va faire un flip dans chacune des frames
+                $this->animations[$name]['flags']['flip'] = true ;
+            }
+        }
 	}
 
 	public function setAnimation(string $animation)
@@ -55,8 +55,16 @@ class Sprite extends Entity
 
 	public function draw(\SDL_Rect $destRect)
 	{
-		$srcRect = $this->getRectAnimation();
+        // applique la physique
+        $srcRect = $this->getRectAnimation();
 		$sonicTexture = $this->getTexture();
+        $animation = $this->getCurrentAnimation();
+        if (isset($animation['flags']['flip']) && $animation['flags']['flip']) {
+            // Si le frame a le flag flip, on doit faire un flip horizontal
+            $flip = \SDL_FLIP_HORIZONTAL;
+        } else {
+            $flip = \SDL_FLIP_NONE;
+        }
 
 		// with api native sdl
 		\SDL_RenderCopyEx(
@@ -66,7 +74,7 @@ class Sprite extends Entity
 			$destRect,
 			0,
 			null,
-			\SDL_FLIP_NONE
+            $flip
 		);
 	}
 
@@ -77,24 +85,31 @@ class Sprite extends Entity
 
 	public function update(float $deltaTime)
 	{
+        // call the parent
+        parent::update($deltaTime);
+
 		$this->frameTimer += $deltaTime;
 		if ($this->frameTimer >= $this->frameDuration) {
 			$this->frameTimer -= $this->frameDuration;
 			$this->frameIndex++;
 
-			if ($this->frameIndex >= count($this->animations[$this->currentAnimation])) {
+			if ($this->frameIndex >= count($this->animations[$this->currentAnimation]['coords'])) {
 				if ($this->loop) {
 					$this->frameIndex = 0;
 				} else {
-					$this->frameIndex = count($this->animations[$this->currentAnimation]) - 1;
+					$this->frameIndex = count($this->animations[$this->currentAnimation]['coords']) - 1;
 				}
 			}
 		}
 	}
 
-	public function getCurrentFrame(): string
+    public function getCurrentAnimation()
+    {
+        return $this->animations[$this->currentAnimation] ;
+    }
+	public function getCurrentFrame(): array
 	{
-		return $this->animations[$this->currentAnimation][$this->frameIndex];
+		return $this->getCurrentAnimation()['coords'][$this->frameIndex];
 	}
 
 	public function getTexture()
