@@ -2,7 +2,7 @@
 
 namespace SonicGame\Entities;
 
-class Enemy extends Entity
+class Enemy extends Sprite
 {
 
 }

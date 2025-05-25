@@ -18,3 +18,7 @@ services:
     arguments:
       $sdl: '@SonicGame\Renderer\Sdl'
       $assetManager: '@SonicGame\AssetManager\AssetManager'
+
+  SonicGame\Entities\Sprite:
+    arguments:
+      $sdl: '@SonicGame\Renderer\Sdl'

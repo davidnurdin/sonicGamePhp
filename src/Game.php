@@ -67,7 +67,7 @@ class Game extends EventEmitter
 
         // Init Textures
 
-        $this->sdl->loadTexture('sonic', 'tileset/sprites/tileset-sonic.png',['r' => 0 , 'g' => '72' , 'b' => 0]);
+		$this->player->initTexture($this->sdl);
         $this->sdl->loadFont('sonic','fonts/NiseSegaSonic.TTF') ;
 
         $this->levelManager->loadLevels();
@@ -122,13 +122,18 @@ class Game extends EventEmitter
         $closureDisplay = function() use (&$vars)
         {
 
+			// SDL_GetTicks
+			// sdl delay
+			// TODO : calculé sur WASM apparament le VSYNC ne fonctionne pas .. on veut avoir 60fps environ
+			// \SDL_Delay(12); // 1ms delay to avoid 100% CPU usage
+
+
             $now = microtime(true);
             $delta = $now - $vars['lastTime'];
             $vars['lastTime'] = $now;
             ++$vars['fps'];
             $vars['deltaSum'] += $delta;
 			if (!$this->disableSdl) {
-//			var_dump( count($this->levelManager->getCurrentLevel()->getTileSet()->getTiles()));
 
             // Rendu de la scène
             $this->scene->setDebugMode($this->debugMode);
@@ -191,13 +196,6 @@ class Game extends EventEmitter
             $closureInputs();
         });
 
-//        while (true) {
-//            $this->gameLoop->start(1);
-//        }
-//
-//        echo "ok" ;
-//        $this->gameLoop->start();
-//        $this->sdl->exitSDL($this->sdl->getWindow()->getWindow(), $this->sdl->getRenderer()->getRenderer());
     }
 
     // Renders your game objects here

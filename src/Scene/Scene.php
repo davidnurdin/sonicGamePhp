@@ -60,26 +60,9 @@ class Scene
         $destRect->w = 32;
         $destRect->h = 32;
 
-//        dump($destRect);
+		$player->draw($destRect);
 
-        $srcRect = new \SDL_Rect;
-        $srcRect->x = 3;
-        $srcRect->y = 3;
-        $srcRect->w = 23;
-        $srcRect->h = 32;
 
-        $sonicTexture = $this->sdl->getTextures('sonic')[0] ;
-
-        // with api native sdl
-        \SDL_RenderCopyEx(
-            $this->sdl->getRenderer()->getRenderer(),
-            $sonicTexture['texture'],
-            $srcRect,
-            $destRect,
-            0,
-            null,
-            \SDL_FLIP_NONE
-        );
 
     }
 

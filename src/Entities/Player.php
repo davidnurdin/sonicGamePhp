@@ -2,25 +2,27 @@
 
 namespace SonicGame\Entities;
 
+use SonicGame\Renderer\Sdl;
 use SonicGame\Utils\Vector;
 
-class Player extends Entity
+class Player extends Sprite
 {
-    public function moveUp()
+
+    public function moveUp(float $deltaTime = 1)
     {
-        $this->setY($this->getY() - 5);
+        $this->setY($this->getY() - 5* $deltaTime);
     }
-    public function moveDown()
+    public function moveDown(float $deltaTime = 1)
     {
-        $this->setY($this->getY() + 5);
+        $this->setY($this->getY() + 5 * $deltaTime);
     }
-    public function moveLeft()
+    public function moveLeft(float $deltaTime = 1)
     {
-        $this->setX($this->getX() - 5);
+        $this->setX($this->getX() - 5 * $deltaTime);
     }
-    public function moveRight()
+    public function moveRight(float $deltaTime = 1)
     {
-        $this->setX($this->getX() + 5);
+        $this->setX($this->getX() + 5 * $deltaTime);
     }
 
     public function move(string $dir)
@@ -57,6 +59,14 @@ class Player extends Entity
 	{
 		dump('ROLLL!!!');
 	}
+
+	public function initTexture(Sdl $sdl)
+	{
+		$this->sdl = $sdl;
+		$this->tilesetName = 'sonic' ;
+		$sdl->loadTexture($this->tilesetName, 'tileset/sprites/tileset-sonic.png',['r' => 0 , 'g' => '72' , 'b' => 0]);
+	}
+
 
 
 }
