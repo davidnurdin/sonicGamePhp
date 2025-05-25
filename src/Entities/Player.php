@@ -8,19 +8,19 @@ class Player extends Entity
 {
     public function moveUp()
     {
-        $this->setY($this->getY() - 1);
+        $this->setY($this->getY() - 5);
     }
     public function moveDown()
     {
-        $this->setY($this->getY() + 1);
+        $this->setY($this->getY() + 5);
     }
     public function moveLeft()
     {
-        $this->setX($this->getX() - 1);
+        $this->setX($this->getX() - 5);
     }
     public function moveRight()
     {
-        $this->setX($this->getX() + 1);
+        $this->setX($this->getX() + 5);
     }
 
     public function move(string $dir)

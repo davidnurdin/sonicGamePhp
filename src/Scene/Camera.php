@@ -22,7 +22,7 @@ class Camera
         $camera = $this ;
 
         // TODO : voir comment calculer le frameDuration et le $delta ... pour avoir un mouvement fluide quelque soit le framerate.
-        $frameDuration = 1 / 120; // 60Hz
+        $frameDuration = 0 ; //1 / 120; // 60Hz
 
         $noSmooth = false ;
 
@@ -35,8 +35,8 @@ class Camera
             if ($this->disableStick)
                 return ;
 
-            $cameraLerpSpeedY = 3.0;
-            $cameraLerpSpeedX = 3.0;
+            $cameraLerpSpeedY = 15.0;
+            $cameraLerpSpeedX = 15.0;
             $delta = 0.01 ; // TODO le calculé grace a GameLoop
 
             $sonicX = $entity->getX();
@@ -51,7 +51,7 @@ class Camera
             $targetCameraY = $cameraY;
             $targetCameraX = $cameraX;
 
-            $camDeadZoneUp = $winH * 0.40;
+            $camDeadZoneUp = $winH * 0.60;
             $camDeadZoneDown = $winH - ($winH * 0.35);
 
             $camDeadZoneLeft = $winW * 0.45;

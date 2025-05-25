@@ -57,7 +57,7 @@ class Game extends EventEmitter
         $vars = [] ;
         // Init SDL
         // TODO : voir vsync ce qu'on fait.
-        $this->sdl->initSDL(fullscreen: false, title: 'SonicGame',width:500,height:230,vsync: false);
+        $this->sdl->initSDL(fullscreen: false, title: 'SonicGame',width:240,height:226,vsync: true);
 
         $this->soundManager->Init();
         $sound = new Sound(
@@ -73,7 +73,7 @@ class Game extends EventEmitter
         $this->levelManager->loadLevels();
         $this->registerEvents();
         $frameDuration = 0 ; // 1 / 60; // 60Hz
-        $inputDuration = 1 / 600; // 240Hz
+        $inputDuration = 0 ; // 1 / 600; // 240Hz
 
         $vars['fps'] = 0;
         $vars['deltaSum'] = 0.0;
@@ -208,21 +208,14 @@ class Game extends EventEmitter
 
     private function eventTouchPressed(InputTouchpad $touchpad, int $fingerID)
 	{
-        // TODO finir
-//		dump('Finger Pressed : ' . $fingerID);
-
-//        dump($this->inputManager->getTouchpad()->getActionsPressed());
-
 		$directions = ['left', 'right', 'up', 'down'];
 		$actions = ['jump', 'roll'];
 
 		$inputTouchpad = $this->inputManager->getTouchpad();
-//var_dump($this->inputManager->getTouchpad()->getActionsHelded());
 
 		foreach ($directions as $dir) {
 			if ($inputTouchpad->isActionHeld($dir)) {
 				$this->player->move($dir);
-//				echo "Direction maintenue: $dir\n";
 				break;
 			}
 		}
@@ -233,28 +226,6 @@ class Game extends EventEmitter
 				break;
 			}
 		}
-
-		/*
-		if ($touchpad->isActionHeld('right')) {
-			$this->player->moveRight();
-		}
-
-        if ($touchpad->isActionHeld('left')) {
-			$this->player->moveLeft();
-		}
-
-		if ($touchpad->isActionHeld('up')) {
-			$this->player->moveUp();
-		}
-				if ($touchpad->isActionHeld('down')) {
-			$this->player->moveDown();
-		}
-
-		if ($touchpad->isActionHeld('jump')) {
-			//$this->player->jump();
-            echo "JUMP" ;
-		}
-		*/
 
 
 	}
@@ -354,7 +325,7 @@ class Game extends EventEmitter
 
         if ($keyboard->isKeyPressed(\SDLK_F3))
         {
-            // next level
+            // prev level
             $this->levelManager->previousLevel();
         }
 
@@ -362,27 +333,27 @@ class Game extends EventEmitter
         if ($keyboard->isKeyHeld(\SDLK_KP_2))
         {
             $this->scene->getCamera()->disableStick = true ;
-            $this->scene->getCamera()->setY($this->scene->getCamera()->getY() + 1);
+            $this->scene->getCamera()->setY($this->scene->getCamera()->getY() + 10);
         }
 
         if ($keyboard->isKeyHeld(\SDLK_KP_8))
         {
             $this->scene->getCamera()->disableStick = true ;
-            $this->scene->getCamera()->setY($this->scene->getCamera()->getY() - 1);
+            $this->scene->getCamera()->setY($this->scene->getCamera()->getY() - 10);
         }
 
         // key 2 numeric pad
         if ($keyboard->isKeyHeld(\SDLK_KP_4))
         {
             $this->scene->getCamera()->disableStick = true ;
-            $this->scene->getCamera()->setX($this->scene->getCamera()->getX() - 1);
+            $this->scene->getCamera()->setX($this->scene->getCamera()->getX() - 10);
         }
 
         // key 2 numeric pad
         if ($keyboard->isKeyHeld(\SDLK_KP_6))
         {
             $this->scene->getCamera()->disableStick = true ;
-            $this->scene->getCamera()->setX($this->scene->getCamera()->getX() +  1);
+            $this->scene->getCamera()->setX($this->scene->getCamera()->getX() +  10);
         }
 
         if ($keyboard->isKeyHeld(\SDLK_KP_5))

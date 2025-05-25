@@ -126,9 +126,11 @@ class Scene
 
         $texturesTileSet = $this->sdl->getTextures('tileset' . $level->getLevel()) ;
 
+		$previewMore = 10 ;
+
         $maxWidth = floor(4096 / 32) * 32; // = 4064
-        for ($y = $startRow; $y < $endRow; $y++) {
-            for ($x = $startCol; $x < $endCol; $x++) {
+        for ($y = $startRow; $y < $endRow + $previewMore; $y++) {
+            for ($x = $startCol; $x < $endCol + $previewMore; $x++) {
                 $tileValue = $level->getTile($x, $y);
                 if ($tileValue === null)
                     continue;
