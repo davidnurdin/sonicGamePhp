@@ -4,7 +4,7 @@ namespace SonicGame\Entities;
 
 use SonicGame\Renderer\Sdl;
 
-class Sprite extends Entity
+trait Sprite
 {
 	protected string $currentAnimation = 'idle';
 	protected int $frameIndex = 0;
@@ -15,6 +15,10 @@ class Sprite extends Entity
 
 	public function __construct(private Sdl $sdl)
 	{
+        if (!property_exists($this,'animations') || (count($this->animations) === 0)) {
+            throw new \InvalidArgumentException("Animations array must be defined in the class using the Sprite trait.");
+        }
+
 		parent::__construct(0,0);
 		$this->setAnimation('idleRight');
 

@@ -5,8 +5,10 @@ namespace SonicGame\Entities;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Utils\Vector;
 
-class Player extends Sprite
+class Player extends Entity
 {
+
+    use Sprite ;
 
     protected array $animations = [
         'idleRight' => [
@@ -240,7 +242,7 @@ class Player extends Sprite
 //        $this->setAcceleration(-$this->getSpeedX(), 0); // Arrête l'accélération
         $this->setAcceleration(0,0);
 //        $this->setVelocity(0, 0); // Arrête la vitesse
-//            $this->setFriction(0.95); // Réduit la friction pour ralentir le joueur
+            $this->setFriction(0.95); // Réduit la friction pour ralentir le joueur
         $this->setState('idle'); // Met l'état à idle
     }
 
