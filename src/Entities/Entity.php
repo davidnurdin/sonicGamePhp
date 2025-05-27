@@ -84,20 +84,23 @@ class Entity extends EventEmitter
         $this->vx += $this->ax * $deltaTime;
         $this->vy += $this->ay * $deltaTime;
 
-        if (abs($this->vx) < 0.01) {
-            $this->vx = 0;
-        }
-        if (abs($this->vy) < 0.01) {
-            $this->vy = 0;
-        }
-
         // Applique friction
         $this->vx *= $this->friction;
         $this->vy *= $this->friction;
 
+        if ($this->vx < 0) {
+            $newposX = ceil($this->vx * $deltaTime) ;
+            $newposY = ceil($this->vy * $deltaTime) ;
+        } else {
+            $newposX = floor($this->vx * $deltaTime) ;
+            $newposY = floor($this->vy * $deltaTime) ;
+
+        }
+
+
         // Met à jour la position
-        $this->setX($this->getX() + $this->vx * $deltaTime);
-        $this->setY($this->getY() + $this->vy * $deltaTime);
+        $this->setX($this->getX() + $newposX);
+        $this->setY($this->getY() + $newposY);
         $this->setAnimation($this->state . ucfirst($this->facing));
     }
 

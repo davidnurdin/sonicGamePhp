@@ -194,17 +194,17 @@ class InputTouchpad
 		return $this->releasedActions[$action] ?? false;
 	}
 
+    public function isOneActionHelded(): bool
+    {
+        return count($this->heldActions) > 0;
+    }
+
 	public function resetTransientStates(): void
 	{
 		$this->pressedActions = [];
 		$this->releasedActions = [];
 		$this->pressedFingers = [];
 		$this->releasedFingers = [];
-	}
-
-	public function haveOneFingerHeld(): bool
-	{
-		return count($this->heldFingers) > 0;
 	}
 
 	public function haveOneFingerPressed(): bool

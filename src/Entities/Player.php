@@ -212,6 +212,32 @@ class Player extends Entity
     public function moveDirection(string $direction, float $deltaTime = 1)
     {
 
+        // get current speed
+        $currentSpeed = $this->getSpeedX() ;
+
+//        dump('Move : ' . $direction . ' - Current Speed : ' . $currentSpeed . ' / Delta Time : ' . $deltaTime);
+
+        if ( ($this->getState() == 'run') || ($this->getState() == 'stopRun'))
+        {
+            // si on courrais à droite et qu'on va subitement a gauche on fait le stopWalk
+            if ($currentSpeed > 0 && $direction == 'left') {
+                    $this->setFacing('right');
+                    $this->setState('stopRun');
+                    $this->setFriction(0.95);
+                    $this->setAcceleration(-1000, 0); // Accélération de 100 px/s² vers la gauche
+                return;
+            }
+
+            // si on courrais à gauche et qu'on va subitement a droite on fait le stopWalk
+            if ($currentSpeed < 0 && $direction == 'right') {
+                    $this->setFacing('left');
+                    $this->setState('stopRun');
+                    $this->setFriction(0.95);
+                    $this->setAcceleration(1000, 0); // Accélération de 100 px/s² vers la droite
+                return;
+            }
+        }
+
         $this->setFriction(1);
         $factor = 1 ;
         if ($direction == 'left')
@@ -236,14 +262,25 @@ class Player extends Entity
 
     public function idle()
     {
-        // TODO : voir pourquoi la friction ne fonctionne pas pareil a gauche  & droite
-        var_dump($this->getSpeedX());
-        $this->setAnimation('idle' . ucfirst($this->getFacing()));
-//        $this->setAcceleration(-$this->getSpeedX(), 0); // Arrête l'accélération
+        $currentSpeed = abs($this->getSpeedX()) ;
+        $this->setFriction(0.95); // Réduit la friction pour ralentir le joueur
         $this->setAcceleration(0,0);
-//        $this->setVelocity(0, 0); // Arrête la vitesse
-            $this->setFriction(0.95); // Réduit la friction pour ralentir le joueur
-        $this->setState('idle'); // Met l'état à idle
+
+
+        if ($this->getState() === 'stopRun') {
+            if ($currentSpeed < 150)
+                $this->setState('idle');
+            return ;
+        }
+
+
+
+        if ($currentSpeed < 50)
+            $this->setState('idle');
+        elseif ($currentSpeed <= 300)
+            $this->setState('walk');
+
+
     }
 
     public function move(string $dir)
@@ -293,13 +330,13 @@ class Player extends Entity
 
     public function watchUp()
     {
-        $this->setAnimation('watchUp');
-        $this->update(0.03);
+//        $this->setAnimation('watchUp');
+//        $this->update(0.03);
     }
     public function watchDown()
     {
-        $this->setAnimation('watchDown');
-        $this->update(0.03);
+//        $this->setAnimation('watchDown');
+//        $this->update(0.03);
     }
 
 

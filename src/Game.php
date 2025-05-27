@@ -117,7 +117,10 @@ class Game extends EventEmitter
 
             if ($this->inputManager->getKeyboard()->haveOneKeyPressed() === false)
             {
-                $this->player->idle();
+                if ($this->inputManager->getTouchpad()->isOneActionHelded() === false)
+                {
+                    $this->player->idle();
+                    }
             }
 
             $this->inputManager->getKeyboard()->resetTransientStates();
@@ -207,7 +210,7 @@ class Game extends EventEmitter
             $closureDisplay();
         });
 
-        $this->gameLoop->addPeriodicTimer($frameDuration, function (TimerInterface $timer) use ($closureApplyPhysic) {
+        $this->gameLoop->addPeriodicTimer(0, function (TimerInterface $timer) use ($closureApplyPhysic) {
             $closureApplyPhysic();
         });
 
@@ -226,14 +229,14 @@ class Game extends EventEmitter
 
     private function eventTouchPressed(InputTouchpad $touchpad, int $fingerID)
 	{
-		$directions = ['left', 'right', 'up', 'down'];
+		$directions = ['left', 'right'] ; //, 'up', 'down'];
 		$actions = ['jump', 'roll'];
 
 		$inputTouchpad = $this->inputManager->getTouchpad();
 
 		foreach ($directions as $dir) {
 			if ($inputTouchpad->isActionHeld($dir)) {
-				$this->player->move($dir);
+                $this->player->move($dir);
 				break;
 			}
 		}
