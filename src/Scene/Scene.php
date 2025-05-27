@@ -42,7 +42,7 @@ class Scene
 
         $player = $this->player;
         // draw the scene
-        $this->drawTiles($level);
+         $this->drawTiles($level);
         $this->drawPlayer($player);
 
         if ($this->debugMode) {
@@ -74,6 +74,7 @@ class Scene
 
     public function drawTiles(Level $level)
     {
+	//	return ;
         $tileSet = $level->getTileSet();
         /** @var Level $level */
 

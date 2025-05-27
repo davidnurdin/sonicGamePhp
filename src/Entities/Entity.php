@@ -80,6 +80,7 @@ class Entity extends EventEmitter
     // --- Update global ---
     public function update(float $deltaTime)
     {
+		// $deltaTime = 0.001 ;
         // Applique accélération
         $this->vx += $this->ax * $deltaTime;
         $this->vy += $this->ay * $deltaTime;

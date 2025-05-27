@@ -120,7 +120,7 @@ class Game extends EventEmitter
                 if ($this->inputManager->getTouchpad()->isOneActionHelded() === false)
                 {
                     $this->player->idle();
-                    }
+				}
             }
 
             $this->inputManager->getKeyboard()->resetTransientStates();
@@ -129,6 +129,7 @@ class Game extends EventEmitter
         };
         $closureDisplay = function() use (&$vars)
         {
+
 
 			// SDL_GetTicks
 			// sdl delay
@@ -202,21 +203,29 @@ class Game extends EventEmitter
             // Update the player
             $now = microtime(true);
             $delta = $now - $vars['lastTime'];
-            $this->player->update($delta);
+			// $this->player->moveRight(); // debug
+
+			$this->player->update($delta);
 
         };
 
-        $this->gameLoop->addPeriodicTimer($frameDuration, function (TimerInterface $timer) use ($closureDisplay) {
+        $this->gameLoop->addPeriodicTimer(0, function (TimerInterface $timer) use ($closureDisplay,$closureApplyPhysic, $closureInputs) {
             $closureDisplay();
+
         });
 
-        $this->gameLoop->addPeriodicTimer(0, function (TimerInterface $timer) use ($closureApplyPhysic) {
-            $closureApplyPhysic();
+        $this->gameLoop->addPeriodicTimer(0, function (TimerInterface $timer) use ($closureDisplay,$closureApplyPhysic, $closureInputs) {
+			$closureInputs();
+			$closureApplyPhysic();
+          //  $closureApplyPhysic();
+//			$closureDisplay();
+//			$closureInputs();
+//			$closureApplyPhysic();
         });
 
 
         $this->gameLoop->addPeriodicTimer($inputDuration, function (TimerInterface $timer) use ($closureInputs) {
-            $closureInputs();
+		//	$closureInputs();
         });
 
     }

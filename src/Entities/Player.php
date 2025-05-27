@@ -212,6 +212,8 @@ class Player extends Entity
     public function moveDirection(string $direction, float $deltaTime = 1)
     {
 
+		$deltaTime = 7 ; // debug wasm
+
         // get current speed
         $currentSpeed = $this->getSpeedX() ;
 
@@ -224,7 +226,7 @@ class Player extends Entity
                     $this->setFacing('right');
                     $this->setState('stopRun');
                     $this->setFriction(0.95);
-                    $this->setAcceleration(-1000, 0); // Accélération de 100 px/s² vers la gauche
+                    $this->setAcceleration(-1000 * $deltaTime, 0); // Accélération de 100 px/s² vers la gauche
                 return;
             }
 
@@ -233,7 +235,7 @@ class Player extends Entity
                     $this->setFacing('left');
                     $this->setState('stopRun');
                     $this->setFriction(0.95);
-                    $this->setAcceleration(1000, 0); // Accélération de 100 px/s² vers la droite
+                    $this->setAcceleration(1000 * $deltaTime, 0); // Accélération de 100 px/s² vers la droite
                 return;
             }
         }
@@ -243,41 +245,43 @@ class Player extends Entity
         if ($direction == 'left')
             $factor = -1;
 
-        $this->setAcceleration($factor*1000, 0); // Accélération de 100 px/s² vers la droite
+
+        $this->setAcceleration($factor*1000*$deltaTime, 0); // Accélération de 100 px/s² vers la droite
         $this->setFacing($direction);
         $this->setState('walk');
 
-        if ($this->getSpeed() > 300) {
-            $this->setAcceleration($factor*1500,0);
+        if ($this->getSpeed() > 300 * $deltaTime) {
+            $this->setAcceleration($factor*1500 * $deltaTime,0);
             $this->setState('run');
-            if ($this->getSpeed() > 500)
+            if ($this->getSpeed() > 500 * $deltaTime)
             {
                 // run
-                $this->setVelocity( $factor*500, $this->vy); // Vitesse maximale de 100 px/s vers la droite
+                $this->setVelocity( $factor*500*$deltaTime, $this->vy); // Vitesse maximale de 100 px/s vers la droite
             }
 
         }
 
     }
 
-    public function idle()
+    public function idle($deltaTime = 1)
     {
+		$deltaTime = 7 ; // debug wasm
         $currentSpeed = abs($this->getSpeedX()) ;
         $this->setFriction(0.95); // Réduit la friction pour ralentir le joueur
         $this->setAcceleration(0,0);
 
 
         if ($this->getState() === 'stopRun') {
-            if ($currentSpeed < 150)
+            if ($currentSpeed < 150* $deltaTime)
                 $this->setState('idle');
             return ;
         }
 
 
 
-        if ($currentSpeed < 50)
+        if ($currentSpeed < 50* $deltaTime)
             $this->setState('idle');
-        elseif ($currentSpeed <= 300)
+        elseif ($currentSpeed <= 300* $deltaTime)
             $this->setState('walk');
 
 
@@ -301,8 +305,8 @@ class Player extends Entity
 
     public function roll()
     {
-        $this->setAnimation('rollRight');
-        $this->update(0.03);
+//        $this->setAnimation('rollRight');
+//        $this->update(0.03);
     }
 
 	public function action($action)
@@ -317,8 +321,8 @@ class Player extends Entity
 	}
 	public function jump()
 	{
-        $this->setAnimation('jump');
-        $this->update(0.03);
+//        $this->setAnimation('jump');
+//        $this->update(0.03);
 	}
 
 	public function initTexture(Sdl $sdl)

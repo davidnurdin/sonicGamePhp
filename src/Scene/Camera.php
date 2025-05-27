@@ -24,11 +24,12 @@ class Camera
         // TODO : voir comment calculer le frameDuration et le $delta ... pour avoir un mouvement fluide quelque soit le framerate.
         $frameDuration = 0 ; //1 / 120; // 60Hz
 
-        $noSmooth = false ;
+        $noSmooth = false ; // TODO : enlever et utilisé $deltaTime !!!
 
         if ($oneShoot)
             $noSmooth = true ;
 
+		$noSmooth = true ; // TODO enlever
         // TODO : center Entity par example pour le level 19 => (fin de sonic)
         $callable = function() use ($entity,$camera,$noSmooth,$centerEntity)
         {
