@@ -217,13 +217,16 @@ class Game extends EventEmitter
         };
 
         $this->gameLoop->addPeriodicTimer(0, function (TimerInterface $timer) use ($closureDisplay,$closureApplyPhysic, $closureInputs) {
-            $closureDisplay();
+			$closureInputs();
+			$closureApplyPhysic();
+			$closureDisplay();
+
 
         });
 
         $this->gameLoop->addPeriodicTimer(0, function (TimerInterface $timer) use ($closureDisplay,$closureApplyPhysic, $closureInputs) {
-			$closureInputs();
-			$closureApplyPhysic();
+//			$closureInputs();
+//			$closureApplyPhysic();
           //  $closureApplyPhysic();
 //			$closureDisplay();
 //			$closureInputs();
@@ -243,7 +246,7 @@ class Game extends EventEmitter
         $this->gameLoop->stop();
     }
 
-    private function eventTouchPressed(InputTouchpad $touchpad, int $fingerID)
+    private function eventTouchPressed(InputTouchpad $touchpad, int $fingerID,float $deltaTime)
 	{
 		$directions = ['left', 'right'] ; //, 'up', 'down'];
 		$actions = ['jump', 'roll'];
@@ -252,14 +255,14 @@ class Game extends EventEmitter
 
 		foreach ($directions as $dir) {
 			if ($inputTouchpad->isActionHeld($dir)) {
-                $this->player->move($dir);
+                $this->player->move($dir,$deltaTime);
 				break;
 			}
 		}
 
 		foreach ($actions as $action) {
 			if ($inputTouchpad->isActionPressed($action)) {
-				$this->player->action($action);
+				$this->player->action($action,$deltaTime);
 				break;
 			}
 		}

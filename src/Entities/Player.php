@@ -212,7 +212,7 @@ class Player extends Entity
     public function moveDirection(string $direction, float $deltaTime = 1)
     {
 		$deltaTime *= 100 ;
-		dump($deltaTime);
+//		dump($deltaTime);
 //		$deltaTime = 7 ; // debug wasm
 
         // get current speed
@@ -298,16 +298,16 @@ class Player extends Entity
 
     }
 
-    public function move(string $dir)
+    public function move(string $dir,float $deltaTime = 1)
     {
 		if ($dir === 'up') {
-			$this->moveUp();
+			$this->moveUp($deltaTime);
 		} elseif ($dir === 'down') {
-			$this->moveDown();
+			$this->moveDown($deltaTime);
 		} elseif ($dir === 'left') {
-			$this->moveLeft();
+			$this->moveLeft($deltaTime);
 		} elseif ($dir === 'right') {
-			$this->moveRight();
+			$this->moveRight($deltaTime);
 		} else {
 			throw new \InvalidArgumentException("Direction '$dir' is not valid.");
 
