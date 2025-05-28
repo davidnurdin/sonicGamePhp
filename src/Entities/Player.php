@@ -246,6 +246,16 @@ class Player extends Entity
             $factor = -1;
 
 
+		// set initial speed (from 0) (evite l'effet de patinage au démarrage)
+		if ($direction == 'right') {
+			if ($this->getVelocity()[0] < 100)
+				$this->setVelocity($factor * 100 * $deltaTime, $this->vy);
+		}
+		elseif ($direction == 'left') {
+			if ($this->getVelocity()[0] > -100)
+				$this->setVelocity($factor * 100 * $deltaTime, $this->vy);
+		}
+
         $this->setAcceleration($factor*1000*$deltaTime, 0); // Accélération de 100 px/s² vers la droite
         $this->setFacing($direction);
         $this->setState('walk');

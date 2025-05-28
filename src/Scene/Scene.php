@@ -37,7 +37,9 @@ class Scene
             // init player
             $this->getPlayer()->setXY($level->getCurrentPositionSoniceXinTile()*32,$level->getCurrentPositionSoniceYinTile()*32);
             // init camera
-            $this->camera->stickTo($this->player,true);
+			$this->camera->noSmooth = true;
+            $this->camera->stickTo($this->player);
+			$this->camera->update();
         }
 
         $player = $this->player;

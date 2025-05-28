@@ -11,34 +11,33 @@ class Camera
 {
     use Vector ;
 
+	public bool $noSmooth = false ;
+	public ?\Closure $cameraCallback = null;
+
     private ?Entity $stickedEntity = null;
     private ?Scene $scene = null;
 
     public bool $disableStick = false ;
 
-    public function stickTo(\SonicGame\Entities\Entity $entity,$oneShoot = false,$centerEntity = false)
+	public function update($deltaTime = 1)
+	{
+		$this->cameraCallback?->call($this,$deltaTime);
+
+	}
+    public function stickTo(\SonicGame\Entities\Entity $entity,$oneShoot = false,$centerEntity = false,$deltaTime = 1)
     {
         $this->stickedEntity = &$entity;
         $camera = $this ;
 
-        // TODO : voir comment calculer le frameDuration et le $delta ... pour avoir un mouvement fluide quelque soit le framerate.
-        $frameDuration = 0 ; //1 / 120; // 60Hz
-
-        $noSmooth = false ; // TODO : enlever et utilisé $deltaTime !!!
-
-        if ($oneShoot)
-            $noSmooth = true ;
-
-		$noSmooth = true ; // TODO enlever
         // TODO : center Entity par example pour le level 19 => (fin de sonic)
-        $callable = function() use ($entity,$camera,$noSmooth,$centerEntity)
+        $callable = function($delta) use ($entity,$camera,$centerEntity)
         {
+			//dump($delta);
             if ($this->disableStick)
                 return ;
 
-            $cameraLerpSpeedY = 15.0;
-            $cameraLerpSpeedX = 15.0;
-            $delta = 0.01 ; // TODO le calculé grace a GameLoop
+            $cameraLerpSpeedY = 70;
+            $cameraLerpSpeedX = 70;
 
             $sonicX = $entity->getX();
             $sonicY = $entity->getY() + 32 ;
@@ -99,13 +98,13 @@ class Camera
             }
 
 
-            if ($noSmooth == true) {
+            if ($this->noSmooth == true) {
                 $finalY = $cameraY + ($targetCameraY - $cameraY);
                 $finalX = $cameraX + ($targetCameraX - $cameraX);
             }
             else {
-                $finalY = $cameraY + ($targetCameraY - $cameraY) * min($cameraLerpSpeedY * $delta, 1.0);
-                $finalX = $cameraX + ($targetCameraX - $cameraX) * min($cameraLerpSpeedX * $delta, 1.0);
+                $finalY = $cameraY + ($targetCameraY - $cameraY) * ($cameraLerpSpeedY * $delta);
+                $finalX = $cameraX + ($targetCameraX - $cameraX) * ($cameraLerpSpeedX * $delta);
             }
 
             $camera->setXY((int) $finalX, (int) $finalY);
@@ -114,11 +113,7 @@ class Camera
 
         };
 
-        if ($oneShoot === false)
-            GameLoop::addPeriodicTimer($frameDuration, $callable);
-        else {
-            GameLoop::nextTick($callable);
-        }
+		$this->cameraCallback = $callable;
 
     }
 

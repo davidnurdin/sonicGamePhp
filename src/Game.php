@@ -203,9 +203,12 @@ class Game extends EventEmitter
             // Update the player
             $now = microtime(true);
             $delta = $now - $vars['lastTime'];
-			// $this->player->moveRight(); // debug
 
 			$this->player->update($delta);
+//			$this->scene->getCamera()->noSmooth = false; // bug sur wasm
+			$this->scene->getCamera()->update($delta);
+
+
 
         };
 
