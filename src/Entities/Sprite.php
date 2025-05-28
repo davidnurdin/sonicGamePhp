@@ -9,7 +9,7 @@ trait Sprite
 	protected string $currentAnimation = 'idle';
 	protected int $frameIndex = 0;
 	protected float $frameTimer = 0;
-	protected float $frameDuration = 0.1 / 7 ;// WASM debug ; // 100ms par frame
+	protected float $frameDuration = 0.1 ; /// 7 ;// WASM debug ; // 100ms par frame
 	protected bool $loop = true;
 	protected $tilesetName ;
 

@@ -39,8 +39,8 @@ class Game extends EventEmitter
     private function registerEvents()
     {
         $this->inputManager->on('exitGame', fn() => $this->eventExitGame());
-        $this->inputManager->on('keyPress', fn($keyboard, $key) => $this->eventKeyPressed($keyboard, $key));
-        $this->inputManager->on('touchPressed', fn($touchpad, $action) => $this->eventTouchPressed($touchpad, $action));
+        $this->inputManager->on('keyPress', fn($keyboard, $key,$deltaTime) => $this->eventKeyPressed($keyboard, $key,$deltaTime));
+        $this->inputManager->on('touchPressed', fn($touchpad, $action,$deltaTime) => $this->eventTouchPressed($touchpad, $action,$deltaTime));
         $this->levelManager->on('levelChanged', fn($level) => $this->levelReload($level));
 
     }
@@ -63,7 +63,7 @@ class Game extends EventEmitter
         $sound = new Sound(
             __DIR__ . '/../assets/mixer/music/level1.mp3'
         ) ;
-        $sound->play();
+        // TODO : remettre $sound->play();
 
         // Init Textures
 
@@ -93,13 +93,17 @@ class Game extends EventEmitter
 
         $closureInputs = function() use (&$vars)
         {
+			$now = microtime(true);
+			$deltaTime = $now - $vars['lastTime']; //WASMBUG
+			$deltaTime *= 1; //WASMBUG
+
             $this->inputManager->poll();
 
             // Force emit keyPress to have key with $inputDuration
             if ($this->inputManager->getKeyboard()->haveOneKeyPressed()) {
                 // get the last key pressed
                 $keyPressed = $this->inputManager->getKeyboard()->getLastKeyPressed();
-                $this->inputManager->emit('keyPress', [$this->inputManager->getKeyboard(), $keyPressed]);
+                $this->inputManager->emit('keyPress', [$this->inputManager->getKeyboard(), $keyPressed,$deltaTime]);
             }
 
             // Same with Touchpad
@@ -111,7 +115,7 @@ class Game extends EventEmitter
 				 if ($fingerId == null) // jump
 					 $fingerId = 0 ;
 
-				 $this->inputManager->emit('touchPressed', [$this->inputManager->getTouchpad(), $fingerId]);
+				 $this->inputManager->emit('touchPressed', [$this->inputManager->getTouchpad(), $fingerId,$deltaTime]);
 			}
 
 
@@ -119,6 +123,7 @@ class Game extends EventEmitter
             {
                 if ($this->inputManager->getTouchpad()->isOneActionHelded() === false)
                 {
+					// TODO : ajouter qu'il faut ni gauche ni droite
                     $this->player->idle();
 				}
             }
@@ -202,11 +207,10 @@ class Game extends EventEmitter
         {
             // Update the player
             $now = microtime(true);
-            $delta = $now - $vars['lastTime'];
-
-			$this->player->update($delta);
+			$deltaTime = $now - $vars['lastTime'];
+			$this->player->update($deltaTime*1); //WASMBUG
 //			$this->scene->getCamera()->noSmooth = false; // bug sur wasm
-			$this->scene->getCamera()->update($delta);
+			$this->scene->getCamera()->update($deltaTime*1);//WASMBUG
 
 
 
@@ -264,7 +268,7 @@ class Game extends EventEmitter
 	}
 
 
-    private function eventKeyPressed(InputKeyboard $keyboard, ?int $keyPressed)
+    private function eventKeyPressed(InputKeyboard $keyboard, ?int $keyPressed, float $deltaTime)
     {
 //        dump('KeyPress : ' . $keyPressed);
 
@@ -273,22 +277,22 @@ class Game extends EventEmitter
         {
             // use the last key
             if ($keyboard->getLastKeyPressed() == \SDLK_RIGHT) {
-                $this->player->moveRight();
+                $this->player->moveRight($deltaTime);
                 // Move the player to right
             }
             else {
-                $this->player->moveLeft();
+                $this->player->moveLeft($deltaTime);
                 // Move the player to left
             }
         }
         else {
             if ($keyboard->isKeyHeld(\SDLK_RIGHT)) {
-                $this->player->moveRight();
+                $this->player->moveRight($deltaTime);
                 // Move the player to right
             }
 
             if ($keyboard->isKeyHeld(\SDLK_LEFT)) {
-                $this->player->moveLeft();
+                $this->player->moveLeft($deltaTime);
                 // Move the player to left
             }
         }

@@ -211,8 +211,9 @@ class Player extends Entity
 
     public function moveDirection(string $direction, float $deltaTime = 1)
     {
-
-		$deltaTime = 7 ; // debug wasm
+		$deltaTime *= 100 ;
+		dump($deltaTime);
+//		$deltaTime = 7 ; // debug wasm
 
         // get current speed
         $currentSpeed = $this->getSpeedX() ;
@@ -275,7 +276,7 @@ class Player extends Entity
 
     public function idle($deltaTime = 1)
     {
-		$deltaTime = 7 ; // debug wasm
+//		$deltaTime = 7 ; // debug wasm
         $currentSpeed = abs($this->getSpeedX()) ;
         $this->setFriction(0.95); // Réduit la friction pour ralentir le joueur
         $this->setAcceleration(0,0);
