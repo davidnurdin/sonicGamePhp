@@ -8,9 +8,15 @@ use SonicGame\Utils\Vector;
 class Player extends Entity
 {
 
-    use Sprite ;
 
-    protected array $animations = [
+	use Sprite {
+		Sprite::update as updateSprite; // Crée un alias interne
+	}
+
+	public $isMovingFromInput = false ;
+
+
+	protected array $animations = [
         'idleRight' => [
             'flags' => [] ,
             'coords' => [
@@ -209,8 +215,21 @@ class Player extends Entity
 
     }
 
+	public function update(float $deltaTime)
+	{
+
+		if (!$this->isMovingFromInput)
+			$this->idle();
+
+		$this->isMovingFromInput = false ;
+		// call the trait Sprite update function
+		$this->updateSprite($deltaTime);
+	}
+
     public function moveDirection(string $direction, float $deltaTime = 1)
     {
+		$this->isMovingFromInput = true ;
+
 //		$deltaTime *= 100 ;
 //		dump($deltaTime);
 //		$deltaTime = 7 ; // debug wasm

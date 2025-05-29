@@ -93,6 +93,7 @@ class Game extends EventEmitter
 
         $closureInputs = function() use (&$vars)
         {
+
             $this->inputManager->poll();
 
             // Force emit keyPress to have key with $inputDuration
@@ -114,21 +115,7 @@ class Game extends EventEmitter
 				 $this->inputManager->emit('touchPressed', [$this->inputManager->getTouchpad(), $fingerId]);
 			}
 
-
-					if (
-						($this->inputManager->getKeyboard()->isKeyHeld(\SDLK_RIGHT) === false && $this->inputManager->getKeyboard()->isKeyHeld(\SDLK_LEFT) === false)
-						&&
-						($this->inputManager->getTouchpad()->isActionHeld('left') === false && $this->inputManager->getTouchpad()->isActionHeld('right') === false)
-						)
-					{
-						// Si on n'a pas de touche appuyée, on met le joueur en idle
-						$this->player->idle(); // cette logique ne devrais pas etre ici
-						// on devrais avoir une info dans player qui indique si le joueur demande a aller a droite ou a gauche
-						// et update dans player
-					}
-
-
-            $this->inputManager->getKeyboard()->resetTransientStates();
+			$this->inputManager->getKeyboard()->resetTransientStates();
             $this->inputManager->getTouchpad()->resetTransientStates();
 
         };
@@ -199,8 +186,8 @@ class Game extends EventEmitter
 			++$vars['fps'];
 			$vars['deltaSum'] += $deltaTime;
 
-			$this->player->update($deltaTime); // Update Player
 			$closureInputs(); // GET Inputs
+			$this->player->update($deltaTime); // Update Player
 			$this->scene->getCamera()->update($deltaTime); // UpdateCamera
 			$closureDisplay($deltaTime); // Update display
 
