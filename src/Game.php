@@ -63,7 +63,7 @@ class Game extends EventEmitter
         $sound = new Sound(
             __DIR__ . '/../assets/mixer/music/level1.mp3'
         ) ;
-        //$sound->play();
+        $sound->play();
 
         // Init Textures
 
@@ -115,14 +115,18 @@ class Game extends EventEmitter
 			}
 
 
-            if ($this->inputManager->getKeyboard()->haveOneKeyPressed() === false)
-            {
-                if ($this->inputManager->getTouchpad()->isOneActionHelded() === false)
-                {
-					// TODO : ajouter qu'il faut ni gauche ni droite
-                    $this->player->idle();
-				}
-            }
+					if (
+						($this->inputManager->getKeyboard()->isKeyHeld(\SDLK_RIGHT) === false && $this->inputManager->getKeyboard()->isKeyHeld(\SDLK_LEFT) === false)
+						&&
+						($this->inputManager->getTouchpad()->isActionHeld('left') === false && $this->inputManager->getTouchpad()->isActionHeld('right') === false)
+						)
+					{
+						// Si on n'a pas de touche appuyée, on met le joueur en idle
+						$this->player->idle(); // cette logique ne devrais pas etre ici
+						// on devrais avoir une info dans player qui indique si le joueur demande a aller a droite ou a gauche
+						// et update dans player
+					}
+
 
             $this->inputManager->getKeyboard()->resetTransientStates();
             $this->inputManager->getTouchpad()->resetTransientStates();
@@ -186,18 +190,8 @@ class Game extends EventEmitter
 			}
 		} ;
 
-        $closureApplyPhysic = function($deltaTime) use (&$vars)
-        {
-            // Update the player
-			//$this->player->update($deltaTime*1); //WASMBUG
-//			$this->scene->getCamera()->noSmooth = false; // bug sur wasm
-			//$this->scene->getCamera()->update($deltaTime*1);//WASMBUG
 
-
-
-        };
-
-        $this->gameLoop->addPeriodicTimer(1/120, function (TimerInterface $timer) use ($closureDisplay,$closureApplyPhysic, $closureInputs,&$vars) {
+        $this->gameLoop->addPeriodicTimer(1/120, function (TimerInterface $timer) use ($closureDisplay, $closureInputs,&$vars) {
 
 			$now = microtime(true);
 			$deltaTime = $now - $vars['lastTime'];
