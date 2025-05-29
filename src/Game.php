@@ -39,8 +39,8 @@ class Game extends EventEmitter
     private function registerEvents()
     {
         $this->inputManager->on('exitGame', fn() => $this->eventExitGame());
-        $this->inputManager->on('keyPress', fn($keyboard, $key,$deltaTime) => $this->eventKeyPressed($keyboard, $key,$deltaTime));
-        $this->inputManager->on('touchPressed', fn($touchpad, $action,$deltaTime) => $this->eventTouchPressed($touchpad, $action,$deltaTime));
+        $this->inputManager->on('keyPress', fn($keyboard, $key) => $this->eventKeyPressed($keyboard, $key));
+        $this->inputManager->on('touchPressed', fn($touchpad, $action) => $this->eventTouchPressed($touchpad, $action));
         $this->levelManager->on('levelChanged', fn($level) => $this->levelReload($level));
 
     }
@@ -63,7 +63,7 @@ class Game extends EventEmitter
         $sound = new Sound(
             __DIR__ . '/../assets/mixer/music/level1.mp3'
         ) ;
-        // TODO : remettre $sound->play();
+        //$sound->play();
 
         // Init Textures
 
@@ -93,17 +93,13 @@ class Game extends EventEmitter
 
         $closureInputs = function() use (&$vars)
         {
-			$now = microtime(true);
-			$deltaTime = $now - $vars['lastTime']; //WASMBUG
-			$deltaTime *= 1; //WASMBUG
-
             $this->inputManager->poll();
 
             // Force emit keyPress to have key with $inputDuration
             if ($this->inputManager->getKeyboard()->haveOneKeyPressed()) {
                 // get the last key pressed
                 $keyPressed = $this->inputManager->getKeyboard()->getLastKeyPressed();
-                $this->inputManager->emit('keyPress', [$this->inputManager->getKeyboard(), $keyPressed,$deltaTime]);
+                $this->inputManager->emit('keyPress', [$this->inputManager->getKeyboard(), $keyPressed]);
             }
 
             // Same with Touchpad
@@ -115,7 +111,7 @@ class Game extends EventEmitter
 				 if ($fingerId == null) // jump
 					 $fingerId = 0 ;
 
-				 $this->inputManager->emit('touchPressed', [$this->inputManager->getTouchpad(), $fingerId,$deltaTime]);
+				 $this->inputManager->emit('touchPressed', [$this->inputManager->getTouchpad(), $fingerId]);
 			}
 
 
@@ -132,21 +128,8 @@ class Game extends EventEmitter
             $this->inputManager->getTouchpad()->resetTransientStates();
 
         };
-        $closureDisplay = function() use (&$vars)
+        $closureDisplay = function($deltaTime) use (&$vars)
         {
-
-
-			// SDL_GetTicks
-			// sdl delay
-			// TODO : calculé sur WASM apparament le VSYNC ne fonctionne pas .. on veut avoir 60fps environ
-			// \SDL_Delay(12); // 1ms delay to avoid 100% CPU usage
-
-
-            $now = microtime(true);
-            $delta = $now - $vars['lastTime'];
-            $vars['lastTime'] = $now;
-            ++$vars['fps'];
-            $vars['deltaSum'] += $delta;
 
 			if (!$this->disableSdl) {
 
@@ -203,40 +186,33 @@ class Game extends EventEmitter
 			}
 		} ;
 
-        $closureApplyPhysic = function() use (&$vars)
+        $closureApplyPhysic = function($deltaTime) use (&$vars)
         {
             // Update the player
-            $now = microtime(true);
-			$deltaTime = $now - $vars['lastTime'];
-			$this->player->update($deltaTime*1); //WASMBUG
+			//$this->player->update($deltaTime*1); //WASMBUG
 //			$this->scene->getCamera()->noSmooth = false; // bug sur wasm
-			$this->scene->getCamera()->update($deltaTime*1);//WASMBUG
+			//$this->scene->getCamera()->update($deltaTime*1);//WASMBUG
 
 
 
         };
 
-        $this->gameLoop->addPeriodicTimer(0, function (TimerInterface $timer) use ($closureDisplay,$closureApplyPhysic, $closureInputs) {
-			$closureInputs();
-			$closureApplyPhysic();
-			$closureDisplay();
+        $this->gameLoop->addPeriodicTimer(1/120, function (TimerInterface $timer) use ($closureDisplay,$closureApplyPhysic, $closureInputs,&$vars) {
 
+			$now = microtime(true);
+			$deltaTime = $now - $vars['lastTime'];
+			$vars['lastTime'] = $now;
+			++$vars['fps'];
+			$vars['deltaSum'] += $deltaTime;
+
+			$this->player->update($deltaTime); // Update Player
+			$closureInputs(); // GET Inputs
+			$this->scene->getCamera()->update($deltaTime); // UpdateCamera
+			$closureDisplay($deltaTime); // Update display
 
         });
 
-        $this->gameLoop->addPeriodicTimer(0, function (TimerInterface $timer) use ($closureDisplay,$closureApplyPhysic, $closureInputs) {
-//			$closureInputs();
-//			$closureApplyPhysic();
-          //  $closureApplyPhysic();
-//			$closureDisplay();
-//			$closureInputs();
-//			$closureApplyPhysic();
-        });
 
-
-        $this->gameLoop->addPeriodicTimer($inputDuration, function (TimerInterface $timer) use ($closureInputs) {
-		//	$closureInputs();
-        });
 
     }
 
@@ -246,7 +222,7 @@ class Game extends EventEmitter
         $this->gameLoop->stop();
     }
 
-    private function eventTouchPressed(InputTouchpad $touchpad, int $fingerID,float $deltaTime)
+    private function eventTouchPressed(InputTouchpad $touchpad, int $fingerID)
 	{
 		$directions = ['left', 'right'] ; //, 'up', 'down'];
 		$actions = ['jump', 'roll'];
@@ -255,14 +231,14 @@ class Game extends EventEmitter
 
 		foreach ($directions as $dir) {
 			if ($inputTouchpad->isActionHeld($dir)) {
-                $this->player->move($dir,$deltaTime);
+                $this->player->move($dir);
 				break;
 			}
 		}
 
 		foreach ($actions as $action) {
 			if ($inputTouchpad->isActionPressed($action)) {
-				$this->player->action($action,$deltaTime);
+				$this->player->action($action);
 				break;
 			}
 		}
@@ -271,7 +247,7 @@ class Game extends EventEmitter
 	}
 
 
-    private function eventKeyPressed(InputKeyboard $keyboard, ?int $keyPressed, float $deltaTime)
+    private function eventKeyPressed(InputKeyboard $keyboard, ?int $keyPressed)
     {
 //        dump('KeyPress : ' . $keyPressed);
 
@@ -280,22 +256,22 @@ class Game extends EventEmitter
         {
             // use the last key
             if ($keyboard->getLastKeyPressed() == \SDLK_RIGHT) {
-                $this->player->moveRight($deltaTime);
+                $this->player->moveRight();
                 // Move the player to right
             }
             else {
-                $this->player->moveLeft($deltaTime);
+                $this->player->moveLeft();
                 // Move the player to left
             }
         }
         else {
             if ($keyboard->isKeyHeld(\SDLK_RIGHT)) {
-                $this->player->moveRight($deltaTime);
+                $this->player->moveRight();
                 // Move the player to right
             }
 
             if ($keyboard->isKeyHeld(\SDLK_LEFT)) {
-                $this->player->moveLeft($deltaTime);
+                $this->player->moveLeft();
                 // Move the player to left
             }
         }

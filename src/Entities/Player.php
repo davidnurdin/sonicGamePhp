@@ -211,7 +211,7 @@ class Player extends Entity
 
     public function moveDirection(string $direction, float $deltaTime = 1)
     {
-		$deltaTime *= 100 ;
+//		$deltaTime *= 100 ;
 //		dump($deltaTime);
 //		$deltaTime = 7 ; // debug wasm
 
