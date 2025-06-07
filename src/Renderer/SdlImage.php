@@ -28,6 +28,7 @@ class SdlImage
         $maxWidth = floor(4096 / 32) * 32; // = 4064
 
         $textures = [];
+		\SDL_SetHint(\SDL_HINT_RENDER_SCALE_QUALITY, "0"); // ou "0" pour pixel art
 
         if ($width <= $maxWidth) {
             // Image acceptable, chargement direct

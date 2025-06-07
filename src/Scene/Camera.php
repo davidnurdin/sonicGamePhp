@@ -36,8 +36,8 @@ class Camera
             if ($this->disableStick)
                 return ;
 
-            $cameraLerpSpeedY = 70;
-            $cameraLerpSpeedX = 70;
+            $cameraLerpSpeedY = 10;
+            $cameraLerpSpeedX = 10;
 
             $sonicX = $entity->getX();
             $sonicY = $entity->getY() + 32 ;
@@ -54,7 +54,7 @@ class Camera
             $camDeadZoneUp = $winH * 0.60;
             $camDeadZoneDown = $winH - ($winH * 0.35);
 
-            $camDeadZoneLeft = $winW * 0.45;
+            $camDeadZoneLeft = $winW * 0.20;
             $camDeadZoneRight = $winW - ($winW * 0.35);
 
             $sonicScreenY = $sonicY - $cameraY;
@@ -98,17 +98,36 @@ class Camera
             }
 
 
+//			 $this->noSmooth = true ; // TODO voir pk sonic "tremble"
             if ($this->noSmooth == true) {
-                $finalY = $cameraY + ($targetCameraY - $cameraY);
-                $finalX = $cameraX + ($targetCameraX - $cameraX);
+				$deltaY = ($targetCameraY - $cameraY);
+				$deltaX = ($targetCameraX - $cameraX);
             }
             else {
-                $finalY = $cameraY + ($targetCameraY - $cameraY) * ($cameraLerpSpeedY * $delta);
-                $finalX = $cameraX + ($targetCameraX - $cameraX) * ($cameraLerpSpeedX * $delta);
+				$deltaY = ($targetCameraY - $cameraY) * ($cameraLerpSpeedY * $delta);
+				$deltaX = ($targetCameraX - $cameraX) * ($cameraLerpSpeedX * $delta);
+
+
+				if ($deltaX > 0)
+					$deltaX = ceil($deltaX);
+				else
+					$deltaX = floor($deltaX);
+
+				if ($deltaY > 0)
+					$deltaY = ceil($deltaY);
+				else
+					$deltaY = floor($deltaY);
+
             }
+
+
+			$finalY = $cameraY + $deltaY ;
+			$finalX = $cameraX + $deltaX ;
+
 
             $camera->setXY((int) $finalX, (int) $finalY);
 
+			$this->noSmooth = false ;
 
 
         };

@@ -40,6 +40,7 @@ class Scene
 			$this->camera->noSmooth = true;
             $this->camera->stickTo($this->player);
 			$this->camera->update();
+
         }
 
         $player = $this->player;
@@ -55,7 +56,6 @@ class Scene
 
     public function drawPlayer(Player $player)
     {
-
         $destRect = new \SDL_Rect;
         $destRect->x = $player->getX() - $this->camera->getX();
         $destRect->y = $player->getY() - $this->camera->getY() + 16;
@@ -63,9 +63,6 @@ class Scene
         $destRect->h = 32;
 
 		$player->draw($destRect);
-
-
-
     }
 
     public function getCamera()
@@ -97,11 +94,11 @@ class Scene
 //        $maxHeight = floor($this->sdl->getWindow()->getHeight()/$tileSet->getHeight()) -1 ;
 
         $startCol = (int)floor($cameraX / $tileSize);
-        $endCol = (int)ceil(($cameraX + $winW) / $tileSize);
+        $endCol =  (int)ceil(($winW/$tileSize) + ($cameraX/$tileSize));
         $offsetX = -(int)($cameraX % $tileSize);
 
         $startRow = (int)floor($cameraY / $tileSize);
-        $endRow = (int)ceil(($cameraY + $winH) / $tileSize);
+        $endRow = (int)ceil(($winH/$tileSize) + ($cameraY/$tileSize));
         $offsetY = -(int)($cameraY % $tileSize);
 
         $startRow = max(0, $startRow);
@@ -112,7 +109,7 @@ class Scene
 
         $texturesTileSet = $this->sdl->getTextures('tileset' . $level->getLevel()) ;
 
-		$previewMore = 10 ;
+		$previewMore = 2 ;
 
         $maxWidth = floor(4096 / 32) * 32; // = 4064
         for ($y = $startRow; $y < $endRow + $previewMore; $y++) {

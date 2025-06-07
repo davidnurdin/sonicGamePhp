@@ -39,6 +39,9 @@ class Window
             $flag = \SDL_WINDOW_FULLSCREEN;
         }
 
+		//TODO : voir pk marche pas en web
+		$flag |= SDL_WINDOW_RESIZABLE ;
+
         $this->window = \SDL_CreateWindow(
             $this->title,
             \SDL_WINDOWPOS_UNDEFINED,
@@ -87,6 +90,18 @@ class Window
     {
         return $this->height;
     }
+
+//	public function setWidth(int $int)
+//	{
+//		$this->width = $int;
+//		//\SDL_SetWindowSize($this->window, $this->width, $this->height);
+//	}
+//
+//	public function setHeight(int $int)
+//	{
+//		$this->height = $int;
+//		//\SDL_SetWindowSize($this->window, $this->width, $this->height);
+//	}
 
 }
 

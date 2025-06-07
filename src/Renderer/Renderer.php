@@ -22,6 +22,7 @@ class Renderer
             $this->renderer = \SDL_CreateRenderer($window->getWindow(), -1, \SDL_RENDERER_ACCELERATED);
 
         $this->renderTexture = \SDL_CreateTexture($this->renderer, \SDL_PIXELFORMAT_RGBA8888, \SDL_TEXTUREACCESS_TARGET, $window->getWidth(), $window->getHeight());
+//		$this->renderTexture = \SDL_CreateTexture($this->renderer, \SDL_PIXELFORMAT_INDEX8, \SDL_TEXTUREACCESS_TARGET, $window->getWidth(), $window->getHeight());
 
         return $this->renderer;
     }

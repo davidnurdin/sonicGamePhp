@@ -32,11 +32,8 @@ class TileSet
 
         for ($y = 0; $y < $height; $y += $this->tileHeight) {
             for ($x = 0; $x < $width; $x += $this->tileWidth) {
-
                 // found $textureTileset
                 $indexTexture = (int)floor($x / $maxWidth);
-
-
                 $tileRect = new \SDL_Rect();
                 $tileRect->x = $x - ($indexTexture * $maxWidth);
                 $tileRect->y = $y;

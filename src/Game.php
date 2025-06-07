@@ -75,6 +75,15 @@ class Game extends EventEmitter
         $frameDuration = 0 ; // 1 / 60; // 60Hz
         $inputDuration = 0 ; // 1 / 600; // 240Hz
 
+
+//		$window = new \Vrzno;
+//		$response = vrzno_await($window->fetch('https://api.weather.gov/gridpoints/TOP/40,74/forecast'));
+//		$json = vrzno_await($response->json());
+//		// Module.getValue is not a function ...
+		// non on px pas utilisé vrzno il utilise php-wasm (phpbase.js entre autre)
+//		var_dump($json);
+//		dump($window);
+
         $vars['fps'] = 0;
         $vars['deltaSum'] = 0.0;
         $vars['lastTime'] = microtime(true);
@@ -124,10 +133,11 @@ class Game extends EventEmitter
 
 			if (!$this->disableSdl) {
 
+			\SDL_SetRenderTarget($this->sdl->getRenderer()->getRenderer(), $this->sdl->getRenderer()->getRenderTexture()); // draw to texture
+
             // Rendu de la scène
             $this->scene->setDebugMode($this->debugMode);
-
-            $this->sdl->getRenderer()->clear();
+			$this->sdl->getRenderer()->clear(); // 1
             $this->sdl->getRenderer()->createScene(
                 $this->scene,
                 $this->player,
@@ -135,44 +145,33 @@ class Game extends EventEmitter
                 $this->levelManager->getCurrentLevel()
             );
 
+			// TODO : voir pk en web fatal error sdl setrendertarget supplied resource is not a valid sdl texture resource ?? =>
+				$width = $height = 0 ;
 
-//            \SDL_SetRenderTarget($this->sdl->getRenderer()->getRenderer(), null);
+				\SDL_SetRenderTarget($this->sdl->getRenderer()->getRenderer(),NULL); // draw to window
+				\SDL_GetRendererOutputSize($this->sdl->getRenderer()->getRenderer(),$width,$height);
 
-//            \SDL_RenderCopy($this->sdl->getRenderer()->getRenderer(),$this->sdl->getRenderer()->getRenderTexture(), null, null);
-//            $this->sdl->getRenderer()->clear();
-//            \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(), $this->sdl->getRenderer()->getRenderTexture(), null, null, 0, null, \SDL_FLIP_NONE);
-            $this->sdl->getRenderer()->present();
+				$scaleX = $width / $this->sdl->getWindow()->getWidth();
+				$scaleY = $height / $this->sdl->getWindow()->getHeight();
 
+				$scale = min($scaleX, $scaleY);
+				$outputW = (int)($this->sdl->getWindow()->getWidth() * $scale);
+				$outputH = (int)($this->sdl->getWindow()->getHeight() * $scale);
+				$offsetX = (int)(($width - $outputW) / 2);
+				$offsetY = (int)(($height - $outputH) / 2);
 
-            $screenRect = new \SDL_Rect;
-            $screenRect->x = 0;
-            $screenRect->y = 0;
-            $screenRect->w = $this->sdl->getWindow()->getWidth();
-            $screenRect->h = $this->sdl->getWindow()->getHeight();
+				$dst = new \SDL_Rect;
+				$dst->x = $offsetX;
+				$dst->y = $offsetY;
+				$dst->w = $outputW;
+				$dst->h = $outputH;
 
-            /*
-             *
-             *     $sdl->SDL_GetRendererOutputSize($renderer, FFI::addr($actualW), FFI::addr($actualH));
+				$this->sdl->getRenderer()->clear();
+				\SDL_RenderCopy($this->sdl->getRenderer()->getRenderer(),$this->sdl->getRenderer()->getRenderTexture(), null, $dst); // on copie la texture dans le renderer
+				$this->sdl->getRenderer()->present();
 
-    $scaleX = $actualW->cdata / $winW;
-    $scaleY = $actualH->cdata / $winH;
-    $scale = min($scaleX, $scaleY);
-    $outputW = (int)($winW * $scale);
-    $outputH = (int)($winH * $scale);
-    $offsetX = (int)(($actualW->cdata - $outputW) / 2);
-    $offsetY = (int)(($actualH->cdata - $outputH) / 2);
+			// SDL_HINT_RENDER_SCALE_QUALITY ?
 
-    $screenRect = $sdl->new('SDL_Rect');
-    $screenRect->x = $offsetX;
-    $screenRect->y = $offsetY;
-    $screenRect->w = $outputW;
-    $screenRect->h = $outputH;
-
-             */
-//            \SDL_RenderCopy($this->sdl->getRenderer()->getRenderer(), $this->sdl->getRenderer()->getRenderTexture(), null, $screenRect); // DOUBLE BUFFERING
-//            $this->sdl->getRenderer()->present();
-
-            // Update the player
 
 			}
 		} ;
@@ -187,8 +186,10 @@ class Game extends EventEmitter
 			$vars['deltaSum'] += $deltaTime;
 
 			$closureInputs(); // GET Inputs
+
 			$this->player->update($deltaTime); // Update Player
 			$this->scene->getCamera()->update($deltaTime); // UpdateCamera
+
 			$closureDisplay($deltaTime); // Update display
 
         });
@@ -340,7 +341,7 @@ class Game extends EventEmitter
 
         if ($keyboard->isKeyHeld(\SDLK_KP_8))
         {
-            $this->scene->getCamera()->disableStick = true ;
+			$this->scene->getCamera()->disableStick = true ;
             $this->scene->getCamera()->setY($this->scene->getCamera()->getY() - 10);
         }
 
@@ -360,9 +361,23 @@ class Game extends EventEmitter
 
         if ($keyboard->isKeyHeld(\SDLK_KP_5))
         {
+
+			//$this->scene->getCamera()->noSmooth = false;
             $this->scene->getCamera()->disableStick = false ;
         }
 
+		if ($keyboard->isKeyPressed(\SDLK_KP_PLUS))
+		{
+			// zoom IN
+			dd('ok');
+
+		}
+
+		if ($keyboard->isKeyPressed(\SDLK_KP_MINUS))
+		{
+			// zoom OUT
+			dd('ok');
+		}
     }
 
 
