@@ -4,6 +4,7 @@ namespace SonicGame;
 
 use Evenement\EventEmitter;
 use React\EventLoop\TimerInterface;
+use SonicGame\Entities\Physics\CollisionSystem;
 use SonicGame\Entities\Player;
 use SonicGame\InputManager\InputKeyboard;
 use SonicGame\InputManager\InputManager;
@@ -31,7 +32,8 @@ class Game extends EventEmitter
         private Scene $scene,
         private LevelManager $levelManager,
         private SoundManager $soundManager,
-    )
+		private CollisionSystem $collisionSystem
+)
     {
         $scene->setPlayer($this->player);
     }
@@ -57,7 +59,8 @@ class Game extends EventEmitter
         $vars = [] ;
         // Init SDL
         // TODO : voir vsync ce qu'on fait.
-        $this->sdl->initSDL(fullscreen: false, title: 'SonicGame',width:240,height:226,vsync: true);
+        // $this->sdl->initSDL(fullscreen: false, title: 'SonicGame',width:240,height:226,vsync: true);
+		$this->sdl->initSDL(fullscreen: false, title: 'SonicGame',width:840,height:426,vsync: true);
 
         $this->soundManager->Init();
         $sound = new Sound(
@@ -188,6 +191,13 @@ class Game extends EventEmitter
 			$closureInputs(); // GET Inputs
 
 			$this->player->update($deltaTime); // Update Player
+
+			// NOUVEAU : Vérification des collisions après la mise à jour du joueur
+			if ($this->scene->getCurrentLevel()) {
+				$this->collisionSystem->checkCollisions($this->player, $this->scene->getCurrentLevel());
+			}
+
+
 			$this->scene->getCamera()->update($deltaTime); // UpdateCamera
 
 			$closureDisplay($deltaTime); // Update display

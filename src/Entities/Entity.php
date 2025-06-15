@@ -20,7 +20,8 @@ class Entity extends EventEmitter
     protected string $facing = 'right'; // ou 'left'
     protected string $state = 'idle';
 
-
+	protected int $width = 23;
+	protected int $height = 32;
 
     // --- Vitesse ---
     public function setVelocity(float $vx, float $vy)
@@ -77,7 +78,8 @@ class Entity extends EventEmitter
         return $this->state;
     }
 
-    // --- Update global ---
+
+	// --- Update global ---
     public function update(float $deltaTime)
     {
 		// $deltaTime = 0.001 ;

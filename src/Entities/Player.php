@@ -2,6 +2,8 @@
 
 namespace SonicGame\Entities;
 
+use SonicGame\Entities\Physics\Colision;
+use SonicGame\Entities\Physics\Gravity;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Utils\Vector;
 
@@ -12,6 +14,15 @@ class Player extends Entity
 	use Sprite {
 		Sprite::update as updateSprite; // Crée un alias interne
 	}
+
+	use Gravity {
+		Gravity::update as updateGravity;
+	}
+
+	use Colision {
+		Colision::update as updateColision;
+	}
+
 
 	public $isMovingFromInput = false ;
 
@@ -223,6 +234,8 @@ class Player extends Entity
 
 		$this->isMovingFromInput = false ;
 		// call the trait Sprite update function
+		$this->updateGravity($deltaTime);
+		$this->updateColision($deltaTime);
 		$this->updateSprite($deltaTime);
 	}
 
@@ -351,6 +364,11 @@ class Player extends Entity
 	}
 	public function jump()
 	{
+
+		$this->setVelocity($this->vx, -400); // Force de saut vers le haut
+//		$this->setGrounded(false);
+		$this->setState('jump');
+
 //        $this->setAnimation('jump');
 //        $this->update(0.03);
 	}
