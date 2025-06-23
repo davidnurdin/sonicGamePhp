@@ -322,8 +322,10 @@ class Game extends EventEmitter
         {
             if ( ($this->debugMode == 1) || ($this->debugMode == 0) )
                 $this->debugMode = 2 ;
-            else
-                $this->debugMode = 0 ;
+            elseif ($this->debugMode == 2)
+                $this->debugMode = 3 ;
+            elseif ($this->debugMode == 3)
+                $this->debugMode = 2 ;
         }
 
         if ($keyboard->isKeyPressed(\SDLK_F4))

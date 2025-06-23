@@ -169,31 +169,7 @@ class Scene
 
     private function drawDebug($fontTab)
     {
-        if ($this->debugMode == 1) {
-            // Afficher les valeurs des tiles au lieu des sprites
-            $this->drawDebugTiles($fontTab, 1);
-        } elseif ($this->debugMode == 2) {
-            // Afficher les valeurs de collision
-            $this->drawDebugTiles($fontTab, 2);
-        } else {
-            $char = '0';
-
-            $srcRectFont = new \SDL_Rect;
-            $srcRectFont->x = 0;
-            $srcRectFont->y = 0;
-            $srcRectFont->w = 32;
-            $srcRectFont->h = 32;
-
-            $dstRectFont = new \SDL_Rect;
-            $dstRectFont->x = 0;
-            $dstRectFont->y = 0;
-            $dstRectFont->w = 320;
-            $dstRectFont->h = 320;
-
-            dump('Debug mode is enabled : ' . $this->debugMode);
-            \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(),
-                $fontTab[substr($char, 0, 1)], $srcRectFont, $dstRectFont, 0, null, 0);
-        }
+        $this->drawDebugTiles($fontTab, $this->debugMode);
     }
 
     private function drawDebugTiles($fontTab, $debugType = 1)
@@ -334,36 +310,66 @@ class Scene
                     );
                 }
 
-                // En mode debug 2, afficher les pixels de collision aléatoires
-                if ($debugType == 2) {
+                // En mode debug 2, afficher les zones de collision
+                if ($debugType == 3) {
                     $tilesColision = $level->getTilesColision();
                     
                     if (isset($tilesColision[$tileValue])) {
-                        
+                        // Afficher les zones de collision
                         $tileColisionData = $tilesColision[$tileValue];
                         
-                        // Définir la couleur bleu cyan pétant pour les points de collision
-                        \SDL_SetRenderDrawColor($this->sdl->getRenderer()->getRenderer(), 0, 255, 255, 255);
+                        // Définir la couleur bleu cyan pétant pour les zones de collision
+                        \SDL_SetRenderDrawColor($this->sdl->getRenderer()->getRenderer(), 0, 255, 255, 128); // Semi-transparent
                         
-                        // Parcourir les pixels de la tile (32x32)
-                        for ($xTile = 0; $xTile < 32; $xTile++) {
-                            for ($yTile = 0; $yTile < 32; $yTile++) {
-                                // Vérifier si ce pixel a une collision (1 = collision)
-                                if (isset($tileColisionData[$yTile][$xTile]) && $tileColisionData[$yTile][$xTile] == 1) {
-                                    // Afficher aléatoirement pour éviter de surcharger l'écran
-                                    if (rand(1, 10) == 2) {
-                                        $screenX = $dstRect->x + $xTile;
-                                        $screenY = $dstRect->y + $yTile;
-                                        \SDL_RenderDrawPoint($this->sdl->getRenderer()->getRenderer(), $screenX, $screenY);
-                                    }
-                                }
-                            }
-                        }
+                        // Calculer les zones de collision et les remplir
+
+                        $this->fillCollisionZones($tileColisionData, $dstRect->x, $dstRect->y);
                         
                         // Remettre la couleur jaune pour les borders
                         \SDL_SetRenderDrawColor($this->sdl->getRenderer()->getRenderer(), 255, 255, 0, 255);
                     }
                 }
+            }
+        }
+    }
+
+    private function fillCollisionZones($tileColisionData, $tileX, $tileY)
+    {
+        // Algorithme simple : détecter les lignes horizontales de collision
+        for ($y = 0; $y < 32; $y++) {
+            $startX = -1;
+            $endX = -1;
+            
+            // Trouver le début et la fin de chaque ligne de collision
+            for ($x = 0; $x < 32; $x++) {
+                if (isset($tileColisionData[$y][$x]) && $tileColisionData[$y][$x] == 1) {
+                    if ($startX == -1) {
+                        $startX = $x;
+                    }
+                    $endX = $x;
+                } else {
+                    // Si on trouve un pixel sans collision, dessiner le rectangle précédent
+                    if ($startX != -1 && $endX != -1) {
+                        $rect = new \SDL_Rect;
+                        $rect->x = $tileX + $startX;
+                        $rect->y = $tileY + $y;
+                        $rect->w = $endX - $startX + 1;
+                        $rect->h = 1;
+                        \SDL_RenderFillRect($this->sdl->getRenderer()->getRenderer(), $rect);
+                        $startX = -1;
+                        $endX = -1;
+                    }
+                }
+            }
+            
+            // Dessiner le dernier rectangle de la ligne si nécessaire
+            if ($startX != -1 && $endX != -1) {
+                $rect = new \SDL_Rect;
+                $rect->x = $tileX + $startX;
+                $rect->y = $tileY + $y;
+                $rect->w = $endX - $startX + 1;
+                $rect->h = 1;
+                \SDL_RenderFillRect($this->sdl->getRenderer()->getRenderer(), $rect);
             }
         }
     }
