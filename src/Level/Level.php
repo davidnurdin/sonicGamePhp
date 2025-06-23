@@ -13,10 +13,18 @@ class Level
     private int $mapHeight;
     private int $currentPositionSoniceYinTile;
     private int $currentPositionSoniceXinTile;
+    private array $tilesColision = [];
+    private array $tilesColisionWay = [];
+    private array $solidity = [];
+    private static array $tileColData = [];
 
     public function __construct(private TileSet $tileSet,private int $level,Sdl $sdl,private AssetManager $assetManager)
     {
         $this->setTileSet($sdl->getTextures('tileset' . $level));
+        // Chargement unique de tileCol.data.php
+        if (empty(self::$tileColData)) {
+            self::$tileColData = require __DIR__ . '/../../assets/levels/tileCol.data.php';
+        }
     }
 
     public function setLevel(int $level)
@@ -41,7 +49,6 @@ class Level
 
     public function readLevelPositionTilesAndMeta()
     {
-
         $baseFile = $this->assetManager->getAssetFolder() . '/levels/' . 'level' . $this->level ;
         $level = file_get_contents($baseFile . '.bin');
         $levelMeta = eval('return ' . file_get_contents($baseFile .  '.meta') . ';' );
@@ -63,9 +70,39 @@ class Level
         }
 
         $this->tilemap = $tilemap;
+        // Lecture de la map de collision
+        $this->readTileColision();
+    }
 
+    private function readTileColision()
+    {
+        $baseFile = $this->assetManager->getAssetFolder() . '/levels/' . 'level' . $this->level ;
+        $colisionFile = $baseFile . '.solidity';
+        
+        if (!file_exists($colisionFile)) {
+            $this->tilesColision = [];
+            $this->tilesColisionWay = [];
+            $this->solidity = [];
+            return;
+        }
+        
+        $solidity = file_get_contents($colisionFile);
+        $this->solidity = str_split($solidity);
 
+        $tilesColision = [];
+        $tilesColisionWay = [];
 
+        foreach ($this->solidity as $key => $value)
+        {
+            $value = ord($value);
+            if (isset(self::$tileColData[$value])) {
+                $tilesColision[$key] = self::$tileColData[$value]['value'];
+                $tilesColisionWay[$key] = self::$tileColData[$value]['colisionWay'];
+            }
+        }
+
+        $this->tilesColision = $tilesColision;
+        $this->tilesColisionWay = $tilesColisionWay;
     }
 
     public function getTilemap()
@@ -102,6 +139,31 @@ class Level
         return $this->tilemap[$y][$x];
     }
 
+    /**
+     * Retourne le tableau des valeurs de collision (0/1 par pixel de la tuile 32x32)
+     * @return array
+     */
+    public function getTilesColision(): array
+    {
+        return $this->tilesColision;
+    }
 
+    /**
+     * Retourne le tableau des directions de collision (top/bottom/left/right)
+     * @return array
+     */
+    public function getTilesColisionWay(): array
+    {
+        return $this->tilesColisionWay;
+    }
+
+    /**
+     * Retourne le tableau des données brutes de solidité (données binaires du fichier .solidity)
+     * @return array
+     */
+    public function getSolidity(): array
+    {
+        return $this->solidity;
+    }
 
 }

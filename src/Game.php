@@ -66,7 +66,7 @@ class Game extends EventEmitter
         $sound = new Sound(
             __DIR__ . '/../assets/mixer/music/level1.mp3'
         ) ;
-        $sound->play();
+        // $sound->play();
 
         // Init Textures
 
@@ -312,9 +312,7 @@ class Game extends EventEmitter
 
         if ($keyboard->isKeyPressed(\SDLK_F1))
         {
-            // Take a screenshot
-
-            if ($this->debugMode == 0)
+            if ( ($this->debugMode == 0) || ($this->debugMode == 2) )
                 $this->debugMode = 1 ;
             else
                 $this->debugMode = 0 ;
@@ -322,11 +320,10 @@ class Game extends EventEmitter
 
         if ($keyboard->isKeyPressed(\SDLK_F2))
         {
-            // Take a screenshot
-            if ($this->debugMode == 1)
+            if ( ($this->debugMode == 1) || ($this->debugMode == 0) )
                 $this->debugMode = 2 ;
             else
-                $this->debugMode = 1 ;
+                $this->debugMode = 0 ;
         }
 
         if ($keyboard->isKeyPressed(\SDLK_F4))

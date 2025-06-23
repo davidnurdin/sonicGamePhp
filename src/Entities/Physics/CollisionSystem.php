@@ -23,13 +23,20 @@ class CollisionSystem
 		$startY = floor($entityRect['y'] / $this->tileSize);
 		$endY = floor(($entityRect['y'] + $entityRect['height']) / $this->tileSize);
 
+		// Récupère les données de collision
+		$tilesColision = $level->getTilesColision();
+
 		// Vérifie les collisions avec les tiles
 		for ($y = $startY; $y <= $endY; $y++) {
 			for ($x = $startX; $x <= $endX; $x++) {
-				$tileValue = $level->getTile($x, $y);
-
-				// Si la tile est solide (différent de 0 ou null)
-				if ($tileValue !== null && $tileValue !== 0) {
+				// Calcul de l'index linéaire
+				$index = $x + $y * $level->getMapWidth();
+				
+				// Vérifie si la tuile a des données de collision
+				/*
+				if (isset($tilesColision[$index])) {
+					echo "DEBUG checkCollisions: tile ($x, $y) has collision data\n";
+					
 					$tileRect = [
 						'x' => $x * $this->tileSize,
 						'y' => $y * $this->tileSize,
@@ -38,14 +45,20 @@ class CollisionSystem
 					];
 
 					if ($this->checkRectCollision($entityRect, $tileRect)) {
-						$this->resolveCollision($entity, $tileRect);
+						echo "DEBUG checkCollisions: collision detected at tile ($x, $y)\n";
+						// Détermine la direction de collision
+						$direction = $this->getCollisionDirection($entityRect, $tileRect);
+						$this->resolveCollision($entity, $tileRect, $tilesColision[$index], $direction);
 					}
+				} else {
+					echo "DEBUG checkCollisions: tile ($x, $y) has no collision data\n";
 				}
+					*/
 			}
 		}
 
 		// Vérifie les limites du niveau
-		$this->checkLevelBounds($entity, $level);
+		// $this->checkLevelBounds($entity, $level);
 	}
 
 	private function checkRectCollision(array $rect1, array $rect2): bool
@@ -56,32 +69,50 @@ class CollisionSystem
 			$rect1['y'] + $rect1['height'] > $rect2['y'];
 	}
 
-	private function resolveCollision(Entity|Player $entity, array $tileRect)
+	private function getCollisionDirection(array $entityRect, array $tileRect): string
 	{
-		$entityRect = $entity->getCollisionRect();
-		$velocity = $entity->getVelocity();
-
 		// Calcule les overlaps
 		$overlapX = min($entityRect['x'] + $entityRect['width'] - $tileRect['x'],
 			$tileRect['x'] + $tileRect['width'] - $entityRect['x']);
 		$overlapY = min($entityRect['y'] + $entityRect['height'] - $tileRect['y'],
 			$tileRect['y'] + $tileRect['height'] - $entityRect['y']);
 
-		// Résout la collision selon le plus petit overlap
+		// Retourne la direction selon le plus petit overlap
 		if ($overlapX < $overlapY) {
-			// Collision horizontale
-			if ($entityRect['x'] < $tileRect['x']) {
+			$direction = $entityRect['x'] < $tileRect['x'] ? 'right' : 'left';
+		} else {
+			$direction = $entityRect['y'] < $tileRect['y'] ? 'top' : 'bottom';
+		}
+		
+		return $direction;
+	}
+
+	private function resolveCollision(Entity|Player $entity, array $tileRect, array $tileColision, string $direction)
+	{
+		$entityRect = $entity->getCollisionRect();
+		$velocity = $entity->getVelocity();
+
+		// Pour l'instant, on considère qu'une tuile avec des données de collision est solide
+		// TODO: Implémenter la logique pixel par pixel plus tard
+		if (empty($tileColision)) {
+			return; // Pas de collision si pas de données
+		}
+
+		// Résout la collision selon la direction
+		switch ($direction) {
+			case 'right':
 				// Collision à droite
 //				$entity->setX($tileRect['x'] - $entityRect['width']);
-			} else {
+//				$entity->setVelocity(0, $velocity[1]);
+				break;
+
+			case 'left':
 				// Collision à gauche
 //				$entity->setX($tileRect['x'] + $tileRect['width']);
-			}
-//			$entity->setVelocity(0, $velocity[1]);
+//				$entity->setVelocity(0, $velocity[1]);
+				break;
 
-		} else {
-			// Collision verticale
-			if ($entityRect['y'] < $tileRect['y']) {
+			case 'top':
 				// Collision par le haut (atterrissage)
 				$entity->setY($tileRect['y'] - $entityRect['height']);
 //				$entity->setVelocity($velocity[0], 0);
@@ -91,12 +122,13 @@ class CollisionSystem
 				if ($entity->getState() === 'jump') {
 					$entity->setState('idle');
 				}
+				break;
 
-			} else {
+			case 'bottom':
 				// Collision par le bas (plafond)
 				$entity->setY($tileRect['y'] + $tileRect['height']);
 //				$entity->setVelocity($velocity[0], 0);
-			}
+				break;
 		}
 	}
 

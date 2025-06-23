@@ -16,7 +16,7 @@ trait Gravity
 		// Applique la gravité si activée et pas au sol
 		if (($this->applyGravity) && (!$this->isGrounded()))
 		{
-			$this->ay += $this->gravity ; // Accélération due à la gravité
+		//	$this->ay += $this->gravity ; // Accélération due à la gravité
 		}
 
 	}
