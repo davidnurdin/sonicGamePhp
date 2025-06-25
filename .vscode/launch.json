@@ -1,0 +1,29 @@
+{
+    // php -d 'extension=sdl.so' -d 'extension=sdl_image.so' -d 'extension=sdl_ttf.so' -d 'extension=sdl_mixer.so' app.php
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch app.php",
+            "type": "php",
+            "request": "launch",
+            "program": "${workspaceFolder}/app.php",
+            "cwd": "${workspaceFolder}",
+            "port": 0,
+            "runtimeExecutable": "/usr/bin/php",
+            "runtimeArgs": [
+                "-dxdebug.start_with_request=yes",
+                "-dextension=sdl.so",
+                "-dextension=sdl_image.so",
+                "-dextension=sdl_ttf.so",
+                "-dextension=sdl_mixer.so"
+            ],
+            "env": {
+                "XDEBUG_MODE": "debug,develop",
+                "XDEBUG_CONFIG": "client_port=${port}"
+            }
+        }
+    ]
+}

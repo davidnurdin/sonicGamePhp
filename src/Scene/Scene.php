@@ -312,21 +312,47 @@ class Scene
 
                 // En mode debug 2, afficher les zones de collision
                 if ($debugType == 3) {
-                    $tilesColision = $level->getTilesColision();
-                    
-                    if (isset($tilesColision[$tileValue])) {
-                        // Afficher les zones de collision
-                        $tileColisionData = $tilesColision[$tileValue];
-                        
-                        // Définir la couleur bleu cyan pétant pour les zones de collision
+
+                    if ($colision = $level->getTileColisionAt($x, $y))
+                    {
                         \SDL_SetRenderDrawColor($this->sdl->getRenderer()->getRenderer(), 0, 255, 255, 128); // Semi-transparent
-                        
+                            
                         // Calculer les zones de collision et les remplir
 
-                        $this->fillCollisionZones($tileColisionData, $dstRect->x, $dstRect->y);
+                        $this->fillCollisionZones($level->getTileColisionAt($x, $y) , $dstRect->x, $dstRect->y);
                         
+                        // $this->drawCollisionPixelRand($colision, $dstRect->x, $dstRect->y);
+
                         // Remettre la couleur jaune pour les borders
                         \SDL_SetRenderDrawColor($this->sdl->getRenderer()->getRenderer(), 255, 255, 0, 255);
+                    }
+
+
+                }
+            }
+        }
+    }
+
+
+    private function drawCollisionPixelRand($tileColisionData, $tileX, $tileY)
+    {
+        // Parcourir les 32x32 pixels de la tile
+        for ($y = 0; $y < 32; $y++) {
+            for ($x = 0; $x < 32; $x++) {
+                // Vérifier si rand(1,10) == 5 (10% de chance)
+                if (rand(1, 20) == 5) {
+                    // Vérifier si le pixel est dans une zone de collision
+                    if (isset($tileColisionData[$y][$x]) && $tileColisionData[$y][$x] == 1) {
+                        // Dessiner un pixel à cette position
+                        $pixelX = $tileX + $x;
+                        $pixelY = $tileY + $y;
+                        
+                        // Utiliser SDL_RenderDrawPoint pour dessiner un pixel
+                        \SDL_RenderDrawPoint(
+                            $this->sdl->getRenderer()->getRenderer(),
+                            $pixelX,
+                            $pixelY
+                        );
                     }
                 }
             }

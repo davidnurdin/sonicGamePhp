@@ -148,6 +148,48 @@ class Level
         return $this->tilesColision;
     }
 
+
+    public function getTileColisionAt(int $x, int $y): ?array
+    {
+        $tileValue = $this->getTile($x, $y);
+        
+        if ($tileValue === null) {
+            return null;
+        }
+        
+        $tilesColision = $this->getTilesColision();
+        
+        if (!isset($tilesColision[$tileValue])) {
+            return null;
+        }
+        
+        if (!isset($tilesColision[$tileValue])) {
+            return null;
+        }
+        
+        $tileColisionData = $tilesColision[$tileValue];
+        return $tileColisionData;
+    }
+
+    public function getTileColisionWayAt(int $x, int $y): ?array
+    {
+        $tileValue = $this->getTile($x, $y);
+        
+        if ($tileValue === null) {
+            return null;
+        }
+        
+        $tilesColisionWay = $this->getTilesColisionWay();
+        
+        if (!isset($tilesColisionWay[$tileValue])) {
+            return null;
+        }
+        
+        $tileColisionWayData = $tilesColisionWay[$tileValue];
+        return $tileColisionWayData;
+    }
+
+
     /**
      * Retourne le tableau des directions de collision (top/bottom/left/right)
      * @return array

@@ -25,6 +25,7 @@ trait Colision
 
 	public function getCollisionRect(): array
 	{
+
 		return [
 			'x' => $this->getX(),
 			'y' => $this->getY(),
