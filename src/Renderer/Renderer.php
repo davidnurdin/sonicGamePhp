@@ -12,7 +12,6 @@ class Renderer
     public $renderer = null ;
     private $renderTexture ;
 
-
     public function createRenderer(Window $window,bool $vsync = true)
     {
 //        $this->renderer = \SDL_CreateRenderer($window, -1, \SDL_RENDERER_ACCELERATED);

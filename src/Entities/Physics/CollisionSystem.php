@@ -2,11 +2,12 @@
 
 namespace SonicGame\Entities\Physics;
 
+use Evenement\EventEmitter;
 use SonicGame\Entities\Entity;
 use SonicGame\Entities\Player;
 use SonicGame\Level\Level;
 
-class CollisionSystem
+class CollisionSystem extends EventEmitter
 {
 	private int $tileSize = 32;
 
@@ -23,99 +24,112 @@ class CollisionSystem
 		$startY = floor($entityRect['y'] / $this->tileSize);
 		$endY = floor(($entityRect['y'] + $entityRect['height']) / $this->tileSize);
 
-		// Récupère les données de collision
-		$tilesColision = $level->getTilesColision();
-
-		// Vérifie les collisions avec les tiles
+		// Vérifie les collisions avec les tiles pixel par pixel
 		for ($y = $startY; $y <= $endY; $y++) {
 			for ($x = $startX; $x <= $endX; $x++) {
-				// Calcul de l'index linéaire
-				$index = $x + $y * $level->getMapWidth();
+				// Récupère les données de collision de la tile
+				$tileColisionData = $level->getTileColisionAt($x, $y);
 				
-				// Vérifie si la tuile a des données de collision
-				/*
-				if (isset($tilesColision[$index])) {
-					echo "DEBUG checkCollisions: tile ($x, $y) has collision data\n";
+		
+				if ($tileColisionData) {
+					// Émet un événement pour les tiles avec collision
+					$this->emit('collisionTile', [ [ 
+						'tileX' => $x, 
+						'tileY' => $y, 
+						'tileValue' => $level->getTile($x, $y), 
+						'collisionData' => $tileColisionData 
+					] ]);
 					
-					$tileRect = [
-						'x' => $x * $this->tileSize,
-						'y' => $y * $this->tileSize,
-						'width' => $this->tileSize,
-						'height' => $this->tileSize
-					];
-
-					if ($this->checkRectCollision($entityRect, $tileRect)) {
-						echo "DEBUG checkCollisions: collision detected at tile ($x, $y)\n";
-						// Détermine la direction de collision
-						$direction = $this->getCollisionDirection($entityRect, $tileRect);
-						$this->resolveCollision($entity, $tileRect, $tilesColision[$index], $direction);
-					}
-				} else {
-					echo "DEBUG checkCollisions: tile ($x, $y) has no collision data\n";
+					// Vérifie les collisions pixel par pixel
+					$this->checkPixelCollision($entity, $level, $x, $y, $tileColisionData);
 				}
-					*/
 			}
 		}
 
 		// Vérifie les limites du niveau
-		// $this->checkLevelBounds($entity, $level);
+		$this->checkLevelBounds($entity, $level);
 	}
 
-	private function checkRectCollision(array $rect1, array $rect2): bool
+	private function checkPixelCollision(Entity|Player $entity, Level $level, int $tileX, int $tileY, array $tileColisionData)
 	{
-		return $rect1['x'] < $rect2['x'] + $rect2['width'] &&
-			$rect1['x'] + $rect1['width'] > $rect2['x'] &&
-			$rect1['y'] < $rect2['y'] + $rect2['height'] &&
-			$rect1['y'] + $rect1['height'] > $rect2['y'];
-	}
-
-	private function getCollisionDirection(array $entityRect, array $tileRect): string
-	{
-		// Calcule les overlaps
-		$overlapX = min($entityRect['x'] + $entityRect['width'] - $tileRect['x'],
-			$tileRect['x'] + $tileRect['width'] - $entityRect['x']);
-		$overlapY = min($entityRect['y'] + $entityRect['height'] - $tileRect['y'],
-			$tileRect['y'] + $tileRect['height'] - $entityRect['y']);
-
-		// Retourne la direction selon le plus petit overlap
-		if ($overlapX < $overlapY) {
-			$direction = $entityRect['x'] < $tileRect['x'] ? 'right' : 'left';
-		} else {
-			$direction = $entityRect['y'] < $tileRect['y'] ? 'top' : 'bottom';
-		}
+		$entityRect = $entity->getCollisionRect();
+		$velocity = $entity->getVelocity();
 		
-		return $direction;
+		// Calcule la position relative de l'entité par rapport à la tile
+		$entityTileX = $entityRect['x'] - ($tileX * $this->tileSize);
+		$entityTileY = $entityRect['y'] - ($tileY * $this->tileSize);
+		
+		// Parcourt les pixels de l'entité qui peuvent entrer en collision avec la tile
+		$entityStartX = max(0, (int)$entityTileX);
+		$entityEndX = min($this->tileSize, (int)($entityTileX + $entityRect['width']));
+		$entityStartY = max(0, (int)$entityTileY);
+		$entityEndY = min($this->tileSize, (int)($entityTileY + $entityRect['height']));
+		
+		// Vérifie chaque pixel de l'entité
+		for ($y = $entityStartY; $y < $entityEndY; $y++) {
+			for ($x = $entityStartX; $x < $entityEndX; $x++) {
+				// Vérifie si le pixel de la tile a une collision (comme dans Scene.php)
+				if (isset($tileColisionData[$y][$x]) && $tileColisionData[$y][$x] == 1) {
+					// Émet un événement de collision pixel détectée
+					$this->emit('pixelCollision', [
+						'tileX' => $tileX,
+						'tileY' => $tileY,
+						'pixelX' => $x,
+						'pixelY' => $y,
+						'entityX' => $entityRect['x'],
+						'entityY' => $entityRect['y'],
+						'velocity' => $velocity
+					]);
+					
+					// Collision détectée ! Détermine la direction et résout
+					$direction = $this->getPixelCollisionDirection($entity, $tileX, $tileY, $x, $y, $velocity);
+					$this->resolvePixelCollision($entity, $tileX, $tileY, $direction);
+					return; // Une collision suffit
+				}
+			}
+		}
 	}
 
-	private function resolveCollision(Entity|Player $entity, array $tileRect, array $tileColision, string $direction)
+	private function getPixelCollisionDirection(Entity|Player $entity, int $tileX, int $tileY, int $pixelX, int $pixelY, array $velocity): string
+	{
+		$entityRect = $entity->getCollisionRect();
+		
+		// Calcule la position absolue du pixel de collision
+		$collisionPixelX = $tileX * $this->tileSize + $pixelX;
+		$collisionPixelY = $tileY * $this->tileSize + $pixelY;
+		
+		// Détermine la direction selon la vitesse et la position relative
+		if (abs($velocity[0]) > abs($velocity[1])) {
+			// Mouvement horizontal dominant
+			return $velocity[0] > 0 ? 'right' : 'left';
+		} else {
+			// Mouvement vertical dominant
+			return $velocity[1] > 0 ? 'bottom' : 'top';
+		}
+	}
+
+	private function resolvePixelCollision(Entity|Player $entity, int $tileX, int $tileY, string $direction)
 	{
 		$entityRect = $entity->getCollisionRect();
 		$velocity = $entity->getVelocity();
 
-		// Pour l'instant, on considère qu'une tuile avec des données de collision est solide
-		// TODO: Implémenter la logique pixel par pixel plus tard
-		if (empty($tileColision)) {
-			return; // Pas de collision si pas de données
-		}
-
-		// Résout la collision selon la direction
 		switch ($direction) {
 			case 'right':
-				// Collision à droite
-//				$entity->setX($tileRect['x'] - $entityRect['width']);
-//				$entity->setVelocity(0, $velocity[1]);
+				// Collision à droite - désactivée pour le moment
+				// $entity->setX($tileX * $this->tileSize - $entityRect['width']);
+				// $entity->setVelocity(0, $velocity[1]);
 				break;
 
 			case 'left':
-				// Collision à gauche
-//				$entity->setX($tileRect['x'] + $tileRect['width']);
-//				$entity->setVelocity(0, $velocity[1]);
+				// Collision à gauche - désactivée pour le moment
+				// $entity->setX(($tileX + 1) * $this->tileSize);
+				// $entity->setVelocity(0, $velocity[1]);
 				break;
 
 			case 'top':
-				// Collision par le haut (atterrissage)
-				$entity->setY($tileRect['y'] - $entityRect['height']);
-//				$entity->setVelocity($velocity[0], 0);
+				// Collision par le haut (atterrissage) - SEULE COLLISION ACTIVÉE
+				$entity->setY($tileY * $this->tileSize - $entityRect['height']);
+				$entity->setVelocity($velocity[0], 0);
 				$entity->setGrounded(true);
 
 				// Change l'état si le joueur était en saut
@@ -125,9 +139,9 @@ class CollisionSystem
 				break;
 
 			case 'bottom':
-				// Collision par le bas (plafond)
-				$entity->setY($tileRect['y'] + $tileRect['height']);
-//				$entity->setVelocity($velocity[0], 0);
+				// Collision par le bas (plafond) - désactivée pour le moment
+				// $entity->setY(($tileY + 1) * $this->tileSize);
+				// $entity->setVelocity($velocity[0], 0);
 				break;
 		}
 	}
@@ -139,15 +153,15 @@ class CollisionSystem
 
 		// Limite gauche
 		if ($entityRect['x'] < 0) {
-//			$entity->setX(0);
-//			$entity->setVelocity(0, $velocity[1]);
+			$entity->setX(0);
+			$entity->setVelocity(0, $velocity[1]);
 		}
 
 		// Limite droite
 		$maxX = $level->getMapWidth() * $this->tileSize - $entityRect['width'];
 		if ($entityRect['x'] > $maxX) {
-//			$entity->setX($maxX);
-//			$entity->setVelocity(0, $velocity[1]);
+			$entity->setX($maxX);
+			$entity->setVelocity(0, $velocity[1]);
 		}
 
 		// Limite bas (chute dans le vide)
@@ -161,9 +175,9 @@ class CollisionSystem
 	private function handleFallOffLevel(Entity|Player $entity, Level $level)
 	{
 		// Repositionne l'entité au point de spawn
-//		$entity->setX($level->getCurrentPositionSoniceXinTile() * $this->tileSize);
-//		$entity->setY($level->getCurrentPositionSoniceYinTile() * $this->tileSize);
-//		$entity->setVelocity(0, 0);
-//		$entity->setGrounded(false);
+		$entity->setX($level->getCurrentPositionSoniceXinTile() * $this->tileSize);
+		$entity->setY($level->getCurrentPositionSoniceYinTile() * $this->tileSize);
+		$entity->setVelocity(0, 0);
+		$entity->setGrounded(false);
 	}
 }

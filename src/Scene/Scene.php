@@ -2,16 +2,18 @@
 
 namespace SonicGame\Scene;
 
+use Evenement\EventEmitter;
 use SonicGame\Entities\Player;
 use SonicGame\Level\Level;
 use SonicGame\Level\LevelManager;
 use SonicGame\Renderer\Sdl;
 
-class Scene
+class Scene extends EventEmitter
 {
 
     private int $debugMode = 0;
     private ?Level $currentLevel = null ;
+    private array $collisionTiles = [];
 
     public function __construct(private Camera $camera, private Sdl $sdl,private Player $player)
     {
@@ -28,6 +30,58 @@ class Scene
     {
         return $this->currentLevel;
     }
+
+    /**
+     * Écoute l'événement collisionTile du CollisionSystem
+     */
+    public function listenToCollisionEvents($collisionSystem)
+    {
+        $collisionSystem->on('collisionTile', function($data) {
+            $this->handleCollisionTile($data);
+        });
+    }
+
+    /**
+     * Gère l'événement collisionTile
+     */
+    private function handleCollisionTile($data)
+    {
+        $tileKey = $data['tileX'] . ',' . $data['tileY'];
+        
+        // Stocke les informations de collision pour debug
+        $this->collisionTiles[$tileKey] = [
+            'tileX' => $data['tileX'],
+            'tileY' => $data['tileY'],
+            'tileValue' => $data['tileValue'],
+            'timestamp' => microtime(true)
+        ];
+
+        // Debug: affiche les informations de collision
+        echo "Scene: Collision tile détectée à ({$data['tileX']}, {$data['tileY']}) - Tile value: {$data['tileValue']}\n";
+        
+        // Émet un événement pour informer d'autres composants
+        $this->emit('collisionTileRendered', $data);
+    }
+
+    /**
+     * Récupère les tiles de collision pour debug
+     */
+    public function getCollisionTiles(): array
+    {
+        return $this->collisionTiles;
+    }
+
+    /**
+     * Nettoie les anciennes tiles de collision (plus de 1 seconde)
+     */
+    public function cleanupOldCollisionTiles()
+    {
+        $currentTime = microtime(true);
+        $this->collisionTiles = array_filter($this->collisionTiles, function($tile) use ($currentTime) {
+            return ($currentTime - $tile['timestamp']) < 1.0; // Garde seulement 1 seconde
+        });
+    }
+
     public function drawScene($font, Level $level)
     {
         if ($this->currentLevel === null)

@@ -54,7 +54,7 @@ class Level
         $levelMeta = eval('return ' . file_get_contents($baseFile .  '.meta') . ';' );
 
         $this->currentPositionSoniceXinTile = $levelMeta['SX'] ;
-        $this->currentPositionSoniceYinTile = $levelMeta['SY'] ;
+        $this->currentPositionSoniceYinTile = $levelMeta['SY'] - 3 ; // TODO : enlever je démarre expres plus haut
         $this->mapHeight = $levelMeta['FH'] ;
         $this->mapWidth = $levelMeta['FW'] ;
 

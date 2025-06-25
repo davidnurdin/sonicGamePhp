@@ -45,6 +45,8 @@ class Game extends EventEmitter
         $this->inputManager->on('touchPressed', fn($touchpad, $action) => $this->eventTouchPressed($touchpad, $action));
         $this->levelManager->on('levelChanged', fn($level) => $this->levelReload($level));
 
+        // Connecte le CollisionSystem à Scene pour les événements de debug
+        $this->scene->listenToCollisionEvents($this->collisionSystem);
     }
 
     private function levelReload(int $level)
