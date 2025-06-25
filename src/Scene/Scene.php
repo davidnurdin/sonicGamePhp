@@ -60,7 +60,7 @@ class Scene extends EventEmitter
         echo "Scene: Collision tile détectée à ({$data['tileX']}, {$data['tileY']}) - Tile value: {$data['tileValue']}\n";
         
         // Émet un événement pour informer d'autres composants
-        $this->emit('collisionTileRendered', $data);
+        // $this->emit('collisionTileRendered', $data);
     }
 
     /**
@@ -385,8 +385,96 @@ class Scene extends EventEmitter
                 }
             }
         }
+
+        // En mode debug 2, dessiner les rectangles multicolors autour des tiles en collision
+        if ($debugType == 2) {
+            $this->drawCollisionTilesMulticolor();
+        }
     }
 
+    /**
+     * Dessine des rectangles multicolors autour des tiles en collision
+     */
+    private function drawCollisionTilesMulticolor()
+    {
+        $cameraX = $this->camera->getX();
+        $cameraY = $this->camera->getY();
+        $tileSize = 32;
+
+        foreach ($this->collisionTiles as $tileKey => $tileData) {
+            $tileX = $tileData['tileX'];
+            $tileY = $tileData['tileY'];
+            
+            // Calculer la position à l'écran
+            $screenX = $tileX * $tileSize - $cameraX;
+            $screenY = $tileY * $tileSize - $cameraY;
+            
+            // Vérifier si la tile est visible à l'écran
+            if ($screenX >= -$tileSize && $screenX <= $this->sdl->getWindow()->getWidth() &&
+                $screenY >= -$tileSize && $screenY <= $this->sdl->getWindow()->getHeight()) {
+                
+                // Créer un rectangle multicolor (arc-en-ciel)
+                $this->drawRainbowBorder($screenX, $screenY, $tileSize);
+            }
+        }
+    }
+
+    /**
+     * Dessine une bordure arc-en-ciel autour d'une tile
+     */
+    private function drawRainbowBorder($x, $y, $size)
+    {
+        $colors = [
+            [255, 0, 0],    // Rouge
+            [255, 127, 0],  // Orange
+            [255, 255, 0],  // Jaune
+            [0, 255, 0],    // Vert
+            [0, 0, 255],    // Bleu
+            [75, 0, 130],   // Indigo
+            [148, 0, 211]   // Violet
+        ];
+        
+        $colorIndex = 0;
+        $borderWidth = 4;
+        
+        // Dessiner les 4 côtés avec des couleurs différentes
+        for ($i = 0; $i < 4; $i++) {
+            $color = $colors[$colorIndex % count($colors)];
+            \SDL_SetRenderDrawColor($this->sdl->getRenderer()->getRenderer(), $color[0], $color[1], $color[2], 255);
+            
+            $rect = new \SDL_Rect;
+            
+            switch ($i) {
+                case 0: // Haut
+                    $rect->x = $x;
+                    $rect->y = $y;
+                    $rect->w = $size;
+                    $rect->h = $borderWidth;
+                    break;
+                case 1: // Droite
+                    $rect->x = $x + $size - $borderWidth;
+                    $rect->y = $y;
+                    $rect->w = $borderWidth;
+                    $rect->h = $size;
+                    break;
+                case 2: // Bas
+                    $rect->x = $x;
+                    $rect->y = $y + $size - $borderWidth;
+                    $rect->w = $size;
+                    $rect->h = $borderWidth;
+                    break;
+                case 3: // Gauche
+                    $rect->x = $x;
+                    $rect->y = $y;
+                    $rect->w = $borderWidth;
+                    $rect->h = $size;
+                    break;
+            }
+            
+            \SDL_RenderFillRect($this->sdl->getRenderer()->getRenderer(), $rect);
+            $colorIndex++;
+        }
+    }
 
     private function drawCollisionPixelRand($tileColisionData, $tileX, $tileY)
     {
