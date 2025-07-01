@@ -57,7 +57,7 @@ class Scene extends EventEmitter
         ];
 
         // Debug: affiche les informations de collision
-        echo "Scene: Collision tile détectée à ({$data['tileX']}, {$data['tileY']}) - Tile value: {$data['tileValue']}\n";
+        // echo "Scene: Collision tile détectée à ({$data['tileX']}, {$data['tileY']}) - Tile value: {$data['tileValue']}\n";
         
         // Émet un événement pour informer d'autres composants
         // $this->emit('collisionTileRendered', $data);
@@ -118,7 +118,7 @@ class Scene extends EventEmitter
     {
         $destRect = new \SDL_Rect;
         $destRect->x = $player->getX() - $this->camera->getX();
-        $destRect->y = $player->getY() - $this->camera->getY() + 16;
+        $destRect->y = $player->getY() - $this->camera->getY() ; // + 16;
         $destRect->w = 32;
         $destRect->h = 32;
 
@@ -277,7 +277,18 @@ class Scene extends EventEmitter
                     if (strlen($char) == 1) {
                         $char = '0' . $char;
                     }
-                } else {
+                }
+                elseif ($debugType == 4)
+                {
+                    // Mode 4 : Coordonnées logiques des tiles (X/Y)
+                    // Afficher X et Y séparément, en limitant à un chiffre chacun pour la lisibilité
+                    $charX = substr((string)$x, -1); // Dernier chiffre de X
+                    $charY = substr((string)$y, -1); // Dernier chiffre de Y
+                    $char = $charX . $charY;
+                }
+                else {
+
+                    
                     // Mode 2 : Valeurs de collision
                     $solidity = $level->getSolidity();
 
@@ -364,6 +375,7 @@ class Scene extends EventEmitter
                     );
                 }
 
+                
                 // En mode debug 2, afficher les zones de collision
                 if ($debugType == 3) {
 
@@ -383,6 +395,8 @@ class Scene extends EventEmitter
 
 
                 }
+
+                
             }
         }
 
@@ -434,8 +448,11 @@ class Scene extends EventEmitter
             [148, 0, 211]   // Violet
         ];
         
+        
+        shuffle($colors);
+        
         $colorIndex = 0;
-        $borderWidth = 4;
+        $borderWidth = 2;
         
         // Dessiner les 4 côtés avec des couleurs différentes
         for ($i = 0; $i < 4; $i++) {

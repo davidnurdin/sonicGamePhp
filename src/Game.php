@@ -93,12 +93,18 @@ class Game extends EventEmitter
         $vars['deltaSum'] = 0.0;
         $vars['lastTime'] = microtime(true);
 
+
         // Boucle principale
         $this->gameLoop->addPeriodicTimer(1, function (TimerInterface $timer) use (&$vars) {
             $deltaMoyen = $vars['fps'] > 0 ? $vars['deltaSum'] / $vars['fps'] : 0;
             echo sprintf("FPS réel : %d | Δ moyen : %.3f ms", $vars['fps'], $deltaMoyen * 1000) . PHP_EOL;
             $vars['fps'] = 0;
             $vars['deltaSum'] = 0.0;
+        });
+
+        // Nettoyage périodique des anciennes tiles de collision (toutes les 100 ms)
+        $this->gameLoop->addPeriodicTimer(0.1, function () {
+            $this->scene->cleanupOldCollisionTiles();
         });
 
 //		$this->gameLoop->addPeriodicTimer(1/150, function (TimerInterface $timer) use (&$vars) {
@@ -182,6 +188,8 @@ class Game extends EventEmitter
 		} ;
 
 
+    
+
         $this->gameLoop->addPeriodicTimer(1/120, function (TimerInterface $timer) use ($closureDisplay, $closureInputs,&$vars) {
 
 			$now = microtime(true);
@@ -192,11 +200,18 @@ class Game extends EventEmitter
 
 			$closureInputs(); // GET Inputs
 
+            
 			$this->player->update($deltaTime); // Update Player
 
 			// NOUVEAU : Vérification des collisions après la mise à jour du joueur
+            // TODO : ne devrais pas etre là ? plutot dans le updateColision dans Player.php
+            
 			if ($this->scene->getCurrentLevel()) {
+                for ($j=0; $j < 10 ; $j++) { // TODO voir comment géré ca !
 				$this->collisionSystem->checkCollisions($this->player, $this->scene->getCurrentLevel());
+                $this->player->update($deltaTime); // Update Player
+                }
+
 			}
 
 
@@ -327,7 +342,10 @@ class Game extends EventEmitter
             elseif ($this->debugMode == 2)
                 $this->debugMode = 3 ;
             elseif ($this->debugMode == 3)
+                $this->debugMode = 4 ;
+            elseif ($this->debugMode == 4)
                 $this->debugMode = 2 ;
+
         }
 
         if ($keyboard->isKeyPressed(\SDLK_F4))
