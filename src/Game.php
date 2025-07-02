@@ -198,21 +198,66 @@ class Game extends EventEmitter
 			++$vars['fps'];
 			$vars['deltaSum'] += $deltaTime;
 
+            // $deltaTime = 0.01 ; // Pour debug
+
 			$closureInputs(); // GET Inputs
 
-            
+            /*
+            if ($this->scene->getCurrentLevel()) {
+                $this->collisionSystem->checkCollisions($this->player, $this->scene->getCurrentLevel());
+            }
+                */
+
+                    
+			if ($this->scene->getCurrentLevel()) {
+                
+                if ($this->player->isGrounded())
+                {
+                    $debug = 2 ;
+                }
+
+                $result = $this->collisionSystem->checkCollisions($this->player, $this->scene->getCurrentLevel(), $deltaTime);
+            }
+
+            if ($this->player->isGrounded())
+            {
+                $debug = 1 ;
+            }
+
+
 			$this->player->update($deltaTime); // Update Player
 
 			// NOUVEAU : Vérification des collisions après la mise à jour du joueur
             // TODO : ne devrais pas etre là ? plutot dans le updateColision dans Player.php
             
+            
 			if ($this->scene->getCurrentLevel()) {
-                for ($j=0; $j < 10 ; $j++) { // TODO voir comment géré ca !
+                //$result = $this->collisionSystem->checkCollisions($this->player, $this->scene->getCurrentLevel());
+
+/*
+                $cpt = 0 ;
+                do
+                {
+                    $result = $this->collisionSystem->checkCollisions($this->player, $this->scene->getCurrentLevel());
+                    $cpt++ ;
+
+                    if ($cpt > 20)
+                        break ;
+
+                    if ($result == true)
+                        $this->player->update($deltaTime); // Update Player
+
+                } while ($result == true);
+*/
+                
+
+                /*for ($j=0; $j < 10 ; $j++) { // TODO voir comment géré ca !
 				$this->collisionSystem->checkCollisions($this->player, $this->scene->getCurrentLevel());
                 $this->player->update($deltaTime); // Update Player
-                }
+                }*/
 
 			}
+               
 
 
 			$this->scene->getCamera()->update($deltaTime); // UpdateCamera

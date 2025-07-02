@@ -19,8 +19,13 @@ trait Colision
 
 	public function update(float $deltaTime)
 	{
-//		dump($this->grounded);
-//		dump('apply colision grounded?');
+		
+		if ($this->grounded) // si on touche le sol, on annule vitesse et acceleration
+		{
+			$this->ay = 0 ;
+			$this->vy = 0;
+		}
+
 	}
 
 	public function getCollisionRect(): array

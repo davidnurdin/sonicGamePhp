@@ -234,8 +234,9 @@ class Player extends Entity
 
 		$this->isMovingFromInput = false ;
 		// call the trait Sprite update function
+        //$this->updateColision($deltaTime);
 		$this->updateGravity($deltaTime);
-		$this->updateColision($deltaTime);
+        $this->updateColision($deltaTime);
 		$this->updateSprite($deltaTime);
 	}
 

@@ -11,11 +11,15 @@ class CollisionSystem extends EventEmitter
 {
 	private int $tileSize = 32;
 
-	public function checkCollisions(Entity|Player $entity, Level $level)
+	public function checkCollisions(Entity|Player $entity, Level $level, float $deltaTime)
 	{
+		$oldGrounded = $entity->isGrounded();
 		$colisionHit = false ;
 		$entityRect = $entity->getCollisionRect();
 
+	//	dump($entity->isGrounded());
+				
+				
 		// Reset grounded state
 		$entity->setGrounded(false);
 
@@ -49,6 +53,53 @@ class CollisionSystem extends EventEmitter
 
 		// Vérifie les limites du niveau
 		$this->checkLevelBounds($entity, $level);
+
+		// --- STICK TO GROUND SI ON VIENT DE QUITTER LE SOL ---
+		if (!$entity->isGrounded() && $oldGrounded) {
+
+			// TODO snap to ground !!
+			
+			/*
+			$speedX = abs($entity->getVelocity()[0]);
+			$snapMax = max($this->tileSize*2, min(ceil($speedX * $deltaTime * 1.5), $this->tileSize));
+			$entityRect = $entity->getCollisionRect();
+			$feetLeft = $entityRect['x'] + 1;
+			$feetRight = $entityRect['x'] + $entityRect['width'] - 2;
+			$feetY = $entityRect['y'] + $entityRect['height'];
+
+			$vx = $entity->getVelocity()[0];
+			$feetToCheck = [];
+			if ($vx > 0) {
+				$feetToCheck[] = $feetRight;
+				dump('right');
+			} elseif ($vx < 0) {
+				$feetToCheck[] = $feetLeft;
+				dump('left');
+			} else {
+				$feetToCheck = [$feetLeft, $feetRight];
+			}
+
+			for ($dy = 1; $dy <= $snapMax; $dy++) {
+				foreach ($feetToCheck as $footX) {
+					$tileX = floor($footX / $this->tileSize);
+					$tileY = floor(($feetY + $dy) / $this->tileSize);
+					$tileCol = $level->getTileColisionAt($tileX, $tileY);
+
+					if ($tileCol) {
+						$pixelY = ($feetY + $dy) % $this->tileSize;
+						$pixelX = $footX % $this->tileSize;
+						if (isset($tileCol[$pixelY][$pixelX]) && $tileCol[$pixelY][$pixelX] == 1) {
+							$entity->setY($entityRect['y'] + $dy);
+							$entity->setGrounded(true);
+							break 2;
+						}
+					}
+				}
+			}*/
+
+			dump('snap to ground');
+		}
+
 		return $colisionHit;
 	}
 
@@ -73,6 +124,8 @@ class CollisionSystem extends EventEmitter
 		$entityStartY = max(0, (int)$entityTileY);
 		$entityEndY = min($this->tileSize, (int)($entityTileY + $entityRect['height']));
 		
+
+		/*
 		// Vérification prédictive : si l'entité monte, vérifier aussi les pixels au-dessus
 		if ($velocity[1] < 0) { // Mouvement vers le haut
 			$entityStartY = max(0, (int)($entityTileY + $velocity[1]));
@@ -92,6 +145,7 @@ class CollisionSystem extends EventEmitter
 		if ($velocity[0] > 0) { // Mouvement vers la droite
 			$entityEndX = min($this->tileSize, (int)($entityTileX + $entityRect['width'] + $velocity[0]));
 		}
+			*/
 		
 		// Vérifie chaque pixel de l'entité
 		for ($y = $entityStartY; $y < $entityEndY; $y++) {
@@ -116,8 +170,17 @@ class CollisionSystem extends EventEmitter
 					]);
 					
 					// Collision détectée ! Détermine la direction et résout
-					$direction = $this->getPixelCollisionDirection($entity, $realTileX, $realTileY, $realPixelX, $realPixelY, $velocity);
-					$this->resolvePixelCollision($entity, $realTileX, $realTileY, $realPixelX, $realPixelY, $direction);
+					// $direction = $this->getPixelCollisionDirection($entity, $realTileX, $realTileY, $realPixelX, $realPixelY, $velocity);
+					// probleme ici quand on est grounded => renvoi "top" a la place de "bottom" ou les 4 a faire ?
+
+
+					// il ne faudrais pas faire ça mais faire en fonction de la tuile en cours de test et de ses metas si elle est traversable par un coté (ou non) ou pleine.
+					foreach (['top', 'bottom', 'left', 'right'] as $direction)
+					{
+						$this->resolvePixelCollision($entity, $realTileX, $realTileY, $realPixelX, $realPixelY, $direction);
+					}
+
+					
 					return true; // Une collision suffit
 				}
 			}
@@ -152,36 +215,22 @@ class CollisionSystem extends EventEmitter
 		
 		switch ($direction) {
 			case 'right':
-				// Collision à droite - désactivée pour le moment
-				// $entity->setX($tileX * $this->tileSize - $entityRect['width']);
-				// $entity->setVelocity(0, $velocity[1]);
+			
 				break;
 
 			case 'left':
-				// Collision à gauche - désactivée pour le moment
-				// $entity->setX(($tileX + 1) * $this->tileSize);
-				// $entity->setVelocity(0, $velocity[1]);
+				
 				break;
 
 			case 'top':
-				// Collision par le haut (atterrissage) - SEULE COLLISION ACTIVÉE
-				/*$entity->setY($tileY * $this->tileSize - $entityRect['height']);
-				$entity->setVelocity($velocity[0], 0);
-				$entity->setGrounded(true);
-
-				// Change l'état si le joueur était en saut
-				if ($entity->getState() === 'jump') {
-					$entity->setState('idle');
-				}*/
+				
 				break;
 
 			case 'bottom':
-				// Collision par le bas (plafond) - désactivée pour le moment
-				// $entity->setY( (($tileY-1) * $this->tileSize ) );
-				$entity->setY( (($tileY-1) * $this->tileSize ) + $pixelY );
-				// disable gravity
+				// Collision par le bas (sol) 
+				$entity->setY( (($tileY-1) * $this->tileSize ) + $pixelY+1 ); // on va forcer la position de l'entité a la position du sol
 				$entity->setGrounded(true);
-				$entity->setVelocity($velocity[0], 0);
+
 				break;
 		}
 	}

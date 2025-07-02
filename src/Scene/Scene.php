@@ -28,7 +28,7 @@ class Scene extends EventEmitter
 
     public function getCurrentLevel()
     {
-        return $this->currentLevel;
+         return $this->currentLevel;
     }
 
     /**
