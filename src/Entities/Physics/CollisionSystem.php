@@ -14,7 +14,6 @@ class CollisionSystem extends EventEmitter
 	public function checkCollisions(Entity|Player $entity, Level $level, float $deltaTime)
 	{
 		$oldGrounded = $entity->isGrounded();
-		$colisionHit = false ;
 		$entityRect = $entity->getCollisionRect();
 
 	//	dump($entity->isGrounded());
@@ -44,9 +43,24 @@ class CollisionSystem extends EventEmitter
 						'tileValue' => $level->getTile($x, $y), 
 						'collisionData' => $tileColisionData 
 					] ]);
-					
+
+					//dump('Colision : '.$x.' '.$y);
+
 					// Vérifie les collisions pixel par pixel
-					$colisionHit = $this->checkPixelCollision($entity, $level, $x, $y, $tileColisionData);
+					$checkPixelCollision = $this->checkPixelCollision($entity, $level, $x, $y, $tileColisionData);
+					if ($checkPixelCollision)
+					{
+						foreach ($checkPixelCollision as $pixelCollisionResolved)
+						{
+							if (isset($pixelCollisionResolved['bottom']))
+							{
+								//var_dump($pixelCollisionResolved);
+								$entity->setY($pixelCollisionResolved['bottom']);
+								$entity->setGrounded(true);
+							}
+						}
+					}
+
 				}
 			}
 		}
@@ -55,13 +69,13 @@ class CollisionSystem extends EventEmitter
 		$this->checkLevelBounds($entity, $level);
 
 		// --- STICK TO GROUND SI ON VIENT DE QUITTER LE SOL ---
-		if (!$entity->isGrounded() && $oldGrounded) {
+		if (!$entity->isGrounded() && $oldGrounded)
+		{
 
-			// TODO snap to ground !!
-			
-			/*
+
+
 			$speedX = abs($entity->getVelocity()[0]);
-			$snapMax = max($this->tileSize*2, min(ceil($speedX * $deltaTime * 1.5), $this->tileSize));
+			$snapMax = 16 ; // max($this->tileSize*2, min(ceil($speedX * $deltaTime * 1.5), $this->tileSize));
 			$entityRect = $entity->getCollisionRect();
 			$feetLeft = $entityRect['x'] + 1;
 			$feetRight = $entityRect['x'] + $entityRect['width'] - 2;
@@ -79,38 +93,74 @@ class CollisionSystem extends EventEmitter
 				$feetToCheck = [$feetLeft, $feetRight];
 			}
 
-			for ($dy = 1; $dy <= $snapMax; $dy++) {
-				foreach ($feetToCheck as $footX) {
-					$tileX = floor($footX / $this->tileSize);
-					$tileY = floor(($feetY + $dy) / $this->tileSize);
-					$tileCol = $level->getTileColisionAt($tileX, $tileY);
 
-					if ($tileCol) {
+			$feetToCheck = [ $entityRect['x'] ] ; // TODO voir si on prend pied gauche pied droit ?  position de sonic ?
+
+			for ($dy = 0; $dy <= $snapMax; $dy++) {
+				foreach ($feetToCheck as $footX) {
+					$tileX = floor($footX / $this->tileSize) ;
+					$tileY = floor(($feetY + $dy) / $this->tileSize);
+					$tileColisionData = $level->getTileColisionAt($tileX, $tileY);
+
+					if ($tileColisionData)
+					{
+						// IDEA : tester la tuile au dessus si on est aussi en collision ? (dans checkPixelCollision) , ca permet de "remonter" sur la plus haute..
+						
+						// TODO : voir comment on trouve la position du sol en X
+							// Vérifie les collisions pixel par pixels
+							$checkPixelCollision = $this->checkPixelCollision($entity, $level, $tileX,$tileY, $tileColisionData,$footX,($feetY + $dy)); // TODO 
+							if ($checkPixelCollision)
+							{
+								foreach ($checkPixelCollision as $pixelCollisionResolved)
+								{
+									if (isset($pixelCollisionResolved['bottom']))
+									{
+										//var_dump($pixelCollisionResolved);
+										//dump('Force stick to : '.$pixelCollisionResolved['bottom']);
+										$entity->setY($pixelCollisionResolved['bottom'] - $entityRect['height'] - $dy );
+										$entity->setGrounded(true);
+										break 2 ;
+									}
+								}
+							}
+					}
+
+
+					/* if ($tileCol) {
 						$pixelY = ($feetY + $dy) % $this->tileSize;
 						$pixelX = $footX % $this->tileSize;
 						if (isset($tileCol[$pixelY][$pixelX]) && $tileCol[$pixelY][$pixelX] == 1) {
-							$entity->setY($entityRect['y'] + $dy);
-							$entity->setGrounded(true);
+							//$entity->setY($entityRect['y'] + $dy);
+							//$entity->setGrounded(true);
 							break 2;
 						}
-					}
+					} */
 				}
-			}*/
+			}
 
 			dump('snap to ground');
 		}
 
-		return $colisionHit;
+		return true;
 	}
 
-	private function checkPixelCollision(Entity|Player $entity, Level $level, int $tileX, int $tileY, array $tileColisionData)
+	private function checkPixelCollision(Entity|Player $entity, Level $level, int $tileX, int $tileY, array $tileColisionData,int $posX = null,int $posY = null) : array|bool
 	{
 		// TODO enlever (voir pk j'ai un décallage de 16px)
 		//$entity->setX(690);
 		//$entity->setY(0);
 		//return ;
 
+		
+
 		$entityRect = $entity->getCollisionRect();
+
+		if ($posX && $posY)
+		{
+			$entityRect['x'] = $posX;
+			$entityRect['y'] = $posY;
+		}
+
 		$velocity = $entity->getVelocity();
 		
 		// Calcule la position relative de l'entité par rapport à la tile
@@ -170,18 +220,21 @@ class CollisionSystem extends EventEmitter
 					]);
 					
 					// Collision détectée ! Détermine la direction et résout
-					// $direction = $this->getPixelCollisionDirection($entity, $realTileX, $realTileY, $realPixelX, $realPixelY, $velocity);
+					$directions = $this->getPixelCollisionDirection($entity, $realTileX, $realTileY, $realPixelX, $realPixelY, $velocity);
 					// probleme ici quand on est grounded => renvoi "top" a la place de "bottom" ou les 4 a faire ?
 
 
 					// il ne faudrais pas faire ça mais faire en fonction de la tuile en cours de test et de ses metas si elle est traversable par un coté (ou non) ou pleine.
-					foreach (['top', 'bottom', 'left', 'right'] as $direction)
+					$pixelsCollisionResolved = [] ;
+
+					foreach ($directions as $direction)
 					{
-						$this->resolvePixelCollision($entity, $realTileX, $realTileY, $realPixelX, $realPixelY, $direction);
+						$pixelCollisionResolved = $this->resolvePixelCollision($entity, $realTileX, $realTileY, $realPixelX, $realPixelY, $direction);
+						$pixelsCollisionResolved[] = $pixelCollisionResolved ;
 					}
 
 					
-					return true; // Une collision suffit
+					return $pixelsCollisionResolved; // Une collision suffit
 				}
 			}
 		}
@@ -189,25 +242,25 @@ class CollisionSystem extends EventEmitter
 		return false;
 	}
 
-	private function getPixelCollisionDirection(Entity|Player $entity, int $tileX, int $tileY, int $pixelX, int $pixelY, array $velocity): string
+	private function getPixelCollisionDirection(Entity|Player $entity, int $tileX, int $tileY, int $pixelX, int $pixelY, array $velocity): array
 	{
-		$entityRect = $entity->getCollisionRect();
 		
-		// Calcule la position absolue du pixel de collision
-		$collisionPixelX = $tileX * $this->tileSize + $pixelX;
-		$collisionPixelY = $tileY * $this->tileSize + $pixelY;
-		
-		// Détermine la direction selon la vitesse et la position relative
-		if (abs($velocity[0]) > abs($velocity[1])) {
-			// Mouvement horizontal dominant
-			return $velocity[0] > 0 ? 'right' : 'left';
-		} else {
-			// Mouvement vertical dominant
-			return $velocity[1] > 0 ? 'bottom' : 'top';
-		}
+		$toTest = [] ;
+		// en fonction de la vélocity X
+		if ($velocity[0] > 0)
+			$toTest[] = 'right' ;
+		if ($velocity[0] < 0)
+			$toTest[] = 'left' ;
+		if ($velocity[1] >= 0)
+			$toTest[] = 'bottom' ;
+		if ($velocity[1] < 0)
+			$toTest[] = 'top' ;
+			
+		return $toTest ;
+
 	}
 
-	private function resolvePixelCollision(Entity|Player $entity, int $tileX, int $tileY, int $pixelX, int $pixelY, string $direction)
+	private function resolvePixelCollision(Entity|Player $entity, int $tileX, int $tileY, int $pixelX, int $pixelY, string $direction): array|bool
 	{
 		$entityRect = $entity->getCollisionRect();
 		$velocity = $entity->getVelocity();
@@ -228,11 +281,16 @@ class CollisionSystem extends EventEmitter
 
 			case 'bottom':
 				// Collision par le bas (sol) 
-				$entity->setY( (($tileY-1) * $this->tileSize ) + $pixelY+1 ); // on va forcer la position de l'entité a la position du sol
-				$entity->setGrounded(true);
+				return [$direction => (($tileY-1) * $this->tileSize ) + $pixelY+1] ;
+
+				//$entity->setY( (($tileY-1) * $this->tileSize ) + $pixelY+1 ); // on va forcer la position de l'entité a la position du sol
+				//$entity->setGrounded(true);
 
 				break;
 		}
+
+		return false ;
+
 	}
 
 	private function checkLevelBounds(Entity|Player $entity, Level $level)
