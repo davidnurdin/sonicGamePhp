@@ -68,6 +68,8 @@ class CollisionSystem extends EventEmitter
 		// Vérifie les limites du niveau
 		$this->checkLevelBounds($entity, $level);
 
+		return true ;
+		
 		// --- STICK TO GROUND SI ON VIENT DE QUITTER LE SOL ---
 		if (!$entity->isGrounded() && $oldGrounded)
 		{
@@ -105,7 +107,7 @@ class CollisionSystem extends EventEmitter
 					if ($tileColisionData)
 					{
 						// IDEA : tester la tuile au dessus si on est aussi en collision ? (dans checkPixelCollision) , ca permet de "remonter" sur la plus haute..
-						
+
 						// TODO : voir comment on trouve la position du sol en X
 							// Vérifie les collisions pixel par pixels
 							$checkPixelCollision = $this->checkPixelCollision($entity, $level, $tileX,$tileY, $tileColisionData,$footX,($feetY + $dy)); // TODO 
