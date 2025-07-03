@@ -54,9 +54,9 @@ class CollisionSystem extends EventEmitter
 						{
 							if (isset($pixelCollisionResolved['bottom']))
 							{
-								//var_dump($pixelCollisionResolved);
-								$entity->setY($pixelCollisionResolved['bottom']);
-								$entity->setGrounded(true);
+								// s'arrete a la premiere collision trouvée
+								$entity->setGrounded(true,$pixelCollisionResolved['bottom']);
+								return true;
 							}
 						}
 					}

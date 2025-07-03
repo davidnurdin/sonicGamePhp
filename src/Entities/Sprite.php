@@ -90,7 +90,7 @@ trait Sprite
 	public function update(float $deltaTime)
 	{
         // call the parent
-        parent::update($deltaTime);
+//        parent::update($deltaTime);
 
 		$this->frameTimer += $deltaTime;
 		if ($this->frameTimer >= $this->frameDuration) {

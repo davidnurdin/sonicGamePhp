@@ -210,22 +210,9 @@ class Game extends EventEmitter
 
                     
 			if ($this->scene->getCurrentLevel()) {
-                
-                if ($this->player->isGrounded())
-                {
-                    $debug = 2 ;
-                }
-
-                $result = $this->collisionSystem->checkCollisions($this->player, $this->scene->getCurrentLevel(), $deltaTime);
+                $this->collisionSystem->checkCollisions($this->player, $this->scene->getCurrentLevel(), $deltaTime);
+                $this->player->update($deltaTime); // Update Player
             }
-
-            if ($this->player->isGrounded())
-            {
-                $debug = 1 ;
-            }
-
-
-			$this->player->update($deltaTime); // Update Player
 
 			// NOUVEAU : Vérification des collisions après la mise à jour du joueur
             // TODO : ne devrais pas etre là ? plutot dans le updateColision dans Player.php

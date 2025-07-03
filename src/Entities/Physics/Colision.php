@@ -5,11 +5,18 @@ trait Colision
 {
 
 	protected bool $grounded = false;
+	protected int $groundedY ;
 
 	// --- Collision ---
-	public function setGrounded(bool $grounded)
+	public function setGrounded(bool $grounded,int $groundY = null)
 	{
 		$this->grounded = $grounded;
+		if ($grounded)
+		{
+			$this->groundedY = $groundY;
+			dump("Ground : " . $this->groundedY);
+			//$this->setY($this->groundedY);
+		}
 	}
 
 	public function isGrounded(): bool
@@ -24,6 +31,8 @@ trait Colision
 		{
 			$this->ay = 0 ;
 			$this->vy = 0;
+			$this->setY($this->groundedY);
+
 		}
 
 	}
