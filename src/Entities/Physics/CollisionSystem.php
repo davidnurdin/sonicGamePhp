@@ -68,7 +68,7 @@ class CollisionSystem extends EventEmitter
 		// Vérifie les limites du niveau
 		$this->checkLevelBounds($entity, $level);
 
-		return true ;
+		//return true ;
 		
 		// --- STICK TO GROUND SI ON VIENT DE QUITTER LE SOL ---
 		if (!$entity->isGrounded() && $oldGrounded)
@@ -77,7 +77,7 @@ class CollisionSystem extends EventEmitter
 
 
 			$speedX = abs($entity->getVelocity()[0]);
-			$snapMax = 16 ; // max($this->tileSize*2, min(ceil($speedX * $deltaTime * 1.5), $this->tileSize));
+			$snapMax =  max($this->tileSize*2, min(ceil($speedX * $deltaTime * 1.5), $this->tileSize));
 			$entityRect = $entity->getCollisionRect();
 			$feetLeft = $entityRect['x'] + 1;
 			$feetRight = $entityRect['x'] + $entityRect['width'] - 2;
@@ -119,9 +119,9 @@ class CollisionSystem extends EventEmitter
 									{
 										//var_dump($pixelCollisionResolved);
 										//dump('Force stick to : '.$pixelCollisionResolved['bottom']);
-										$entity->setY($pixelCollisionResolved['bottom'] - $entityRect['height'] - $dy );
-										$entity->setGrounded(true);
-										break 2 ;
+										$entity->setGrounded(true,$pixelCollisionResolved['bottom']);
+										//break 2 ;
+										return true ;
 									}
 								}
 							}
