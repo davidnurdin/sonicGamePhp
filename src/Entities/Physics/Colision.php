@@ -40,6 +40,20 @@ trait Colision
 	public function getCollisionRect(): array
 	{
 
+		
+		// en fonction du sens de sonic (ay > 0)
+		/*
+		$deltaFeet = 0;
+		if ($this->vx > 0)
+		{
+			$deltaFeet = -32;
+		}
+		elseif ($this->vx < 0)
+		{
+			$deltaFeet = 32;
+		}
+		*/
+
 		return [
 			'x' => $this->getX(),
 			'y' => $this->getY(),

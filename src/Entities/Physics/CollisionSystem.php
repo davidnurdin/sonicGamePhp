@@ -47,7 +47,9 @@ class CollisionSystem extends EventEmitter
 					//dump('Colision : '.$x.' '.$y);
 
 					// Vérifie les collisions pixel par pixel
-					$checkPixelCollision = $this->checkPixelCollision($entity, $level, $x, $y, $tileColisionData);
+					$entityRect = $entity->getCollisionRect();
+
+					$checkPixelCollision = $this->checkPixelCollision($entity, $level, $x, $y, $tileColisionData, $entityRect['x'], $entityRect['y']);
 					if ($checkPixelCollision)
 					{
 						foreach ($checkPixelCollision as $pixelCollisionResolved)
@@ -75,72 +77,34 @@ class CollisionSystem extends EventEmitter
 		{
 
 
-
 			$speedX = abs($entity->getVelocity()[0]);
-			$snapMax =  max($this->tileSize*2, min(ceil($speedX * $deltaTime * 1.5), $this->tileSize));
+			$snapMax = max($this->tileSize * 2, min(ceil($speedX * $deltaTime * 1.5), $this->tileSize));
 			$entityRect = $entity->getCollisionRect();
-			$feetLeft = $entityRect['x'] + 1;
-			$feetRight = $entityRect['x'] + $entityRect['width'] - 2;
 			$feetY = $entityRect['y'] + $entityRect['height'];
-
-			$vx = $entity->getVelocity()[0];
-			$feetToCheck = [];
-			if ($vx > 0) {
-				$feetToCheck[] = $feetRight;
-				dump('right');
-			} elseif ($vx < 0) {
-				$feetToCheck[] = $feetLeft;
-				dump('left');
-			} else {
-				$feetToCheck = [$feetLeft, $feetRight];
-			}
-
-
-			$feetToCheck = [ $entityRect['x'] ] ; // TODO voir si on prend pied gauche pied droit ?  position de sonic ?
-
+			
+			
 			for ($dy = 0; $dy <= $snapMax; $dy++) {
-				foreach ($feetToCheck as $footX) {
-					$tileX = floor($footX / $this->tileSize) ;
-					$tileY = floor(($feetY + $dy) / $this->tileSize);
-					$tileColisionData = $level->getTileColisionAt($tileX, $tileY);
+				$tileX = floor($entityRect['x'] / $this->tileSize);
+				$tileY = floor(($feetY + $dy) / $this->tileSize);
+				$tileColisionData = $level->getTileColisionAt($tileX, $tileY);
 
-					if ($tileColisionData)
+				if ($tileColisionData)
+				{
+					
+					$checkPixelCollision = $this->checkPixelCollision($entity, $level, $tileX, $tileY, $tileColisionData, $entityRect['x'], ($feetY + $dy)); // TODO 
+					if ($checkPixelCollision)
 					{
-						// IDEA : tester la tuile au dessus si on est aussi en collision ? (dans checkPixelCollision) , ca permet de "remonter" sur la plus haute..
-
-						// TODO : voir comment on trouve la position du sol en X
-							// Vérifie les collisions pixel par pixels
-							$checkPixelCollision = $this->checkPixelCollision($entity, $level, $tileX,$tileY, $tileColisionData,$footX,($feetY + $dy)); // TODO 
-							if ($checkPixelCollision)
+						foreach ($checkPixelCollision as $pixelCollisionResolved)
+						{
+							if (isset($pixelCollisionResolved['bottom']))
 							{
-								foreach ($checkPixelCollision as $pixelCollisionResolved)
-								{
-									if (isset($pixelCollisionResolved['bottom']))
-									{
-										//var_dump($pixelCollisionResolved);
-										//dump('Force stick to : '.$pixelCollisionResolved['bottom']);
-										$entity->setGrounded(true,$pixelCollisionResolved['bottom']);
-										//break 2 ;
-										return true ;
-									}
-								}
+								$entity->setGrounded(true, $pixelCollisionResolved['bottom']);
+								return true ;
 							}
-					}
-
-
-					/* if ($tileCol) {
-						$pixelY = ($feetY + $dy) % $this->tileSize;
-						$pixelX = $footX % $this->tileSize;
-						if (isset($tileCol[$pixelY][$pixelX]) && $tileCol[$pixelY][$pixelX] == 1) {
-							//$entity->setY($entityRect['y'] + $dy);
-							//$entity->setGrounded(true);
-							break 2;
 						}
-					} */
+					}
 				}
 			}
-
-			dump('snap to ground');
 		}
 
 		return true;
@@ -162,6 +126,8 @@ class CollisionSystem extends EventEmitter
 			$entityRect['x'] = $posX;
 			$entityRect['y'] = $posY;
 		}
+
+		// $entityRect['x'] = $entityRect['x'] + 16 ;
 
 		$velocity = $entity->getVelocity();
 		
