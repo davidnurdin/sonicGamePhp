@@ -4,11 +4,11 @@ namespace SonicGame\Utils;
 
 trait Vector
 {
-    public function __construct(protected int $x = 0, protected int $y = 0)
+    public function __construct(protected float $x = 0, protected float $y = 0)
     {
     }
 
-    public function setXY(int $x, int $y): void
+    public function setXY(float $x, float $y): void
     {
         $this->x = $x;
         $this->y = $y;
@@ -19,15 +19,15 @@ trait Vector
 
     public function getX(): int
     {
-        return $this->x;
+        return (int)round($this->x);
     }
 
     public function getY(): int
     {
-        return $this->y;
+        return (int)round($this->y);
     }
 
-    public function setX(int $x): void
+    public function setX(float $x): void
     {
         $this->x = $x;
         if (is_callable([$this, 'emit'])) {
@@ -35,13 +35,12 @@ trait Vector
         }
     }
 
-    public function setY(int $y): void
+    public function setY(float $y): void
     {
         $this->y = $y;
         if (is_callable([$this, 'emit'])) {
             $this->emit('positionChanged', [$this->x, $this->y]);
         }
     }
-
 
 }

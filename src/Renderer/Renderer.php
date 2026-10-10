@@ -26,6 +26,14 @@ class Renderer
         return $this->renderer;
     }
 
+    /** New render target for a new view size (zoom, window resized, fullscreen). */
+    public function resizeTarget(int $width, int $height): void
+    {
+        \SDL_DestroyTexture($this->renderTexture);
+        \SDL_SetHint(\SDL_HINT_RENDER_SCALE_QUALITY, "0"); // nearest: crisp pixels
+        $this->renderTexture = \SDL_CreateTexture($this->renderer, \SDL_PIXELFORMAT_RGBA8888, \SDL_TEXTUREACCESS_TARGET, $width, $height);
+    }
+
     public function getRenderTexture()
     {
         return $this->renderTexture;

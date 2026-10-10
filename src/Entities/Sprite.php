@@ -12,9 +12,11 @@ trait Sprite
 	protected float $frameDuration = 0.1 ; /// 7 ;// WASM debug ; // 100ms par frame
 	protected bool $loop = true;
 	protected $tilesetName ;
+	protected Sdl $sdl;
 
-	public function __construct(private Sdl $sdl)
+	public function __construct(Sdl $sdl)
 	{
+		$this->sdl = $sdl;
         if (!property_exists($this,'animations') || (count($this->animations) === 0)) {
             throw new \InvalidArgumentException("Animations array must be defined in the class using the Sprite trait.");
         }
@@ -31,6 +33,11 @@ trait Sprite
                 $this->animations[$name]['flags']['flip'] = true ;
             }
         }
+	}
+
+	public function hasAnimation(string $animation): bool
+	{
+		return array_key_exists($animation, $this->animations);
 	}
 
 	public function setAnimation(string $animation)
@@ -57,13 +64,13 @@ trait Sprite
 		return $srcRect ;
 	}
 
-	public function draw(\SDL_Rect $destRect)
+	public function draw(\SDL_Rect $destRect, bool $forceFlip = false)
 	{
         // applique la physique
         $srcRect = $this->getRectAnimation();
 		$sonicTexture = $this->getTexture();
         $animation = $this->getCurrentAnimation();
-        if (isset($animation['flags']['flip']) && $animation['flags']['flip']) {
+        if ($forceFlip || (isset($animation['flags']['flip']) && $animation['flags']['flip'])) {
             // Si le frame a le flag flip, on doit faire un flip horizontal
             $flip = \SDL_FLIP_HORIZONTAL;
         } else {

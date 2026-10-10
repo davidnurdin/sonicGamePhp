@@ -17,6 +17,10 @@ class Level
     private array $tilesColisionWay = [];
     private array $solidity = [];
     private static array $tileColData = [];
+    private array $objects = [];
+    private int $solidityIndex = 0;
+    private array $meta = [];
+    private array $originalTilemap = [];
 
     public function __construct(private TileSet $tileSet,private int $level,Sdl $sdl,private AssetManager $assetManager)
     {
@@ -54,9 +58,12 @@ class Level
         $levelMeta = eval('return ' . file_get_contents($baseFile .  '.meta') . ';' );
 
         $this->currentPositionSoniceXinTile = $levelMeta['SX'] ;
-        $this->currentPositionSoniceYinTile = $levelMeta['SY'] - 2 ; // TODO : enlever je démarre expres plus haut
+        // loadObjectLayout: Sonic is loaded like any object, at (SX * 32, SY * 32)
+        $this->currentPositionSoniceYinTile = $levelMeta['SY'] ;
         $this->mapHeight = $levelMeta['FH'] ;
         $this->mapWidth = $levelMeta['FW'] ;
+        $this->solidityIndex = (int)($levelMeta['SP'] ?? 0);
+        $this->meta = $levelMeta;
 
         $tilemap = [];
 
@@ -70,8 +77,9 @@ class Level
         }
 
         $this->tilemap = $tilemap;
-        // Lecture de la map de collision
+        $this->originalTilemap = $tilemap;
         $this->readTileColision();
+        $this->readObjects();
     }
 
     private function readTileColision()
@@ -94,7 +102,8 @@ class Level
 
         foreach ($this->solidity as $key => $value)
         {
-            $value = ord($value);
+            // Bit 7 = block drawn in front of sprites; the collision shape is the low 6 bits (the game does `and $3F`).
+            $value = ord($value) & 0x3F;
             if (isset(self::$tileColData[$value])) {
                 $tilesColision[$key] = self::$tileColData[$value]['value'];
                 $tilesColisionWay[$key] = self::$tileColData[$value]['colisionWay'];
@@ -103,6 +112,26 @@ class Level
 
         $this->tilesColision = $tilesColision;
         $this->tilesColisionWay = $tilesColisionWay;
+    }
+
+    private function readObjects(): void
+    {
+        $objectsFile = $this->assetManager->getAssetFolder() . '/levels/level' . $this->level . '.objects.php';
+        if (file_exists($objectsFile)) {
+            $this->objects = require $objectsFile;
+        } else {
+            $this->objects = [];
+        }
+    }
+
+    public function getObjects(): array
+    {
+        return $this->objects;
+    }
+
+    public function getObjectsByType(int $type): array
+    {
+        return array_filter($this->objects, fn($obj) => $obj['type'] === $type);
     }
 
     public function getTilemap()
@@ -128,6 +157,49 @@ class Level
     public function getMapHeight()
     {
         return $this->mapHeight;
+    }
+
+    public function isSolidAt(int $x, int $y): bool
+    {
+        if ($x < 0 || $y < 0) return false;
+        $col = $this->getTileColisionAt(intdiv($x, 32), intdiv($y, 32));
+        return !empty($col[$y % 32][$x % 32]);
+    }
+
+    public function findSurfaceY(int $x, int $fromY, int $maxDistance): ?int
+    {
+        if ($this->isSolidAt($x, $fromY)) {
+            for ($y = $fromY - 1; $y >= $fromY - $maxDistance; $y--) {
+                if (!$this->isSolidAt($x, $y)) return $y + 1;
+            }
+            return null;
+        }
+        for ($y = $fromY + 1; $y <= $fromY + $maxDistance; $y++) {
+            if ($this->isSolidAt($x, $y)) return $y;
+        }
+        return null;
+    }
+
+    public function getMeta(string $key, int $default = 0): int
+    {
+        return (int)($this->meta[$key] ?? $default);
+    }
+
+    public function getSolidityIndex(): int
+    {
+        return $this->solidityIndex;
+    }
+
+    public function setTile(int $x, int $y, int $value): void
+    {
+        if (isset($this->tilemap[$y][$x])) {
+            $this->tilemap[$y][$x] = $value;
+        }
+    }
+
+    public function resetTilemap(): void
+    {
+        $this->tilemap = $this->originalTilemap;
     }
 
     public function getTile(int $x, int $y)
@@ -203,9 +275,15 @@ class Level
      * Retourne le tableau des données brutes de solidité (données binaires du fichier .solidity)
      * @return array
      */
+    public function isForegroundBlock(int $tileValue): bool
+    {
+        return isset($this->solidity[$tileValue]) && (ord($this->solidity[$tileValue]) & 0x80) !== 0;
+    }
+
     public function getSolidity(): array
     {
         return $this->solidity;
     }
+
 
 }

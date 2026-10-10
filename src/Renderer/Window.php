@@ -36,7 +36,7 @@ class Window
 
         $flag = \SDL_WINDOW_SHOWN;
         if ($fullscreen) {
-            $flag = \SDL_WINDOW_FULLSCREEN;
+            $flag = \SDL_WINDOW_FULLSCREEN_DESKTOP;
         }
 
 		//TODO : voir pk marche pas en web
@@ -74,11 +74,20 @@ class Window
     {
         $this->isFullScreen = $this->isFullScreen ? false : true ;
 
+        // desktop fullscreen: no video mode change (a 840x426 mode was stretched by the monitor),
+        // the game view is then sized to the screen ratio by Game::updateView()
         if ($this->isFullScreen)
-            \SDL_SetWindowFullscreen($this->window, \SDL_WINDOW_FULLSCREEN);
+            \SDL_SetWindowFullscreen($this->window, \SDL_WINDOW_FULLSCREEN_DESKTOP);
         else
             \SDL_SetWindowFullscreen($this->window, 0);
 
+    }
+
+    /** Size of the game view (render target), in game pixels: getWidth() / getHeight() return it. */
+    public function setViewSize(int $width, int $height): void
+    {
+        $this->width = $width;
+        $this->height = $height;
     }
 
     public function getWidth()

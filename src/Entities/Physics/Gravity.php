@@ -4,21 +4,21 @@ namespace SonicGame\Entities\Physics;
 trait Gravity
 {
 
-	// --- Gravité et collision ---
-	protected float $gravity = 980.0; // pixels/s² (équivalent à 9.8m/s² si 1 pixel = 1cm)
+	protected float $gravity = 1400.0;
 	protected bool $applyGravity = true;
-	protected float $maxFallSpeed = 600.0; // Vitesse de chute maximale
+	protected float $maxFallSpeed = 960.0;
 
-
-	// --- Gravité ---
 	public function update(float $deltaTime)
 	{
-		// Applique la gravité si activée et pas au sol
 		if (($this->applyGravity) && (!$this->isGrounded()))
 		{
-			$this->ay += $this->gravity ; // Accélération due à la gravité
-		}
+			$this->ay = $this->gravity;
 
+			if ($this->vy > $this->maxFallSpeed) {
+				$this->vy = $this->maxFallSpeed;
+				$this->ay = 0;
+			}
+		}
 	}
 
 	public function setGravity(float $gravity)

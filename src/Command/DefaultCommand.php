@@ -25,7 +25,22 @@ class DefaultCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $this->game->run();
+        // an exception or a fatal error closes the window: keep what happened in crash.log
+        $log = dirname(__DIR__, 2) . '/crash.log';
+        register_shutdown_function(function () use ($log) {
+            $error = error_get_last();
+            if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+                @file_put_contents($log, date('c') . " fatal: {$error['message']} in {$error['file']}:{$error['line']}\n", FILE_APPEND);
+            }
+        });
+        try {
+            $this->game->run();
+            // run the loop here (not in ReactPHP's shutdown function) so that its exceptions are caught
+            Loop::get()->run();
+        } catch (\Throwable $e) {
+            @file_put_contents($log, date('c') . ' ' . $e . "\n\n", FILE_APPEND);
+            throw $e;
+        }
         return Command::SUCCESS;
     }
 }

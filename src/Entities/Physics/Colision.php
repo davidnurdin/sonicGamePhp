@@ -5,17 +5,15 @@ trait Colision
 {
 
 	protected bool $grounded = false;
-	protected int $groundedY ;
+	protected float $groundedY = 0;
+	protected bool $inWater = false;
 
-	// --- Collision ---
-	public function setGrounded(bool $grounded,int $groundY = null)
+	public function setGrounded(bool $grounded, float $groundY = null)
 	{
 		$this->grounded = $grounded;
-		if ($grounded)
+		if ($grounded && $groundY !== null)
 		{
 			$this->groundedY = $groundY;
-			dump("Ground : " . $this->groundedY);
-			//$this->setY($this->groundedY);
 		}
 	}
 
@@ -26,37 +24,28 @@ trait Colision
 
 	public function update(float $deltaTime)
 	{
-		
-		if ($this->grounded) // si on touche le sol, on annule vitesse et acceleration
+		if ($this->grounded)
 		{
-			$this->ay = 0 ;
+			$this->ay = 0;
 			$this->vy = 0;
-			$this->setY($this->groundedY);
-
 		}
+	}
 
+	public function setInWater(bool $inWater)
+	{
+		$this->inWater = $inWater;
+	}
+
+	public function isInWater(): bool
+	{
+		return $this->inWater;
 	}
 
 	public function getCollisionRect(): array
 	{
-
-		
-		// en fonction du sens de sonic (ay > 0)
-		/*
-		$deltaFeet = 0;
-		if ($this->vx > 0)
-		{
-			$deltaFeet = -32;
-		}
-		elseif ($this->vx < 0)
-		{
-			$deltaFeet = 32;
-		}
-		*/
-
 		return [
-			'x' => $this->getX(),
-			'y' => $this->getY(),
+			'x' => $this->x,
+			'y' => $this->y,
 			'width' => $this->width,
 			'height' => $this->height
 		];

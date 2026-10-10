@@ -82,29 +82,19 @@ class Entity extends EventEmitter
 	// --- Update global ---
     public function update(float $deltaTime)
     {
-		// $deltaTime = 0.001 ;
-        // Applique accélération
         $this->vx += $this->ax * $deltaTime;
         $this->vy += $this->ay * $deltaTime;
 
-        // Applique friction
         $this->vx *= $this->friction;
-        $this->vy *= $this->friction;
 
-        if ($this->vx < 0) {
-            $newposX = ceil($this->vx * $deltaTime) ;
-            $newposY = ceil($this->vy * $deltaTime) ;
-        } else {
-            $newposX = floor($this->vx * $deltaTime) ;
-            $newposY = floor($this->vy * $deltaTime) ;
+        $this->x += $this->vx * $deltaTime;
+        $this->y += $this->vy * $deltaTime;
 
+        $animName = $this->state . ucfirst($this->facing);
+        if (method_exists($this, 'hasAnimation') && !$this->hasAnimation($animName)) {
+            $animName = $this->state;
         }
-
-
-        // Met à jour la position
-        $this->setX($this->getX() + $newposX);
-        $this->setY($this->getY() + $newposY);
-        $this->setAnimation($this->state . ucfirst($this->facing));
+        $this->setAnimation($animName);
     }
 
 

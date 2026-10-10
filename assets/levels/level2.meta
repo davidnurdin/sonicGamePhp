@@ -26,4 +26,8 @@ array (
   'TL' => 32,
   'Unknown_00' => 0,
   'MU' => 0,
+  'LEFT' => 1,
+  'RIGHT' => 3232,
+  'TOP' => 1,
+  'BOTTOM' => 832,
 )
