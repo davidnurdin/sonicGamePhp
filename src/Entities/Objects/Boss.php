@@ -87,6 +87,10 @@ class Boss extends GameObject
     private float $liftY = 0;
     /** Top of our real view: the Scrap Brain lift carries Sonic until he has left it (the ROM screen is lower). */
     public float $viewTop = -INF;
+    /** Original camera (top-left of the 256x192 screen), set every frame by the object manager. */
+    public ?array $romCamera = null;
+    /** Scrap Brain flight: RAM_LEVEL_LEFT follows the camera X, the screen can't go back left. */
+    private float $fleeLeft = 0x340;
     private float $carriedY = 0;
     private array $events = [];
     private array $player = ['x' => 0, 'y' => 0, 'width' => 0, 'height' => 0];
@@ -160,7 +164,8 @@ class Boss extends GameObject
         // Sky Base: the screen stays locked on the teleporter after Robotnik has gone (_7c8c)
         if ($this->kind === self::SKY_BASE && $this->phase === 'teleport') return [0x550, 0x120];
         if (!$this->started || $this->gone) return null;
-        if ($this->kind === self::SCRAP_BRAIN && $this->phase === 'flee') return null;
+        // Scrap Brain flight: LEFT = camera X every frame, RIGHT = $540, the camera goes to Y = $220
+        if ($this->kind === self::SCRAP_BRAIN && $this->phase === 'flee') return [$this->fleeLeft, 0x220, 0x540];
         // Sky Base: 15 frames after the glass broke the level right becomes $550, Sonic runs after Robotnik
         if ($this->kind === self::SKY_BASE && $this->phase === 'escape' && $this->frames >= 0x0F) {
             return [self::ARENA[self::SKY_BASE][0], self::ARENA[self::SKY_BASE][1], 0x550];
@@ -172,9 +177,7 @@ class Boss extends GameObject
     public function getPlayerBounds(): ?array
     {
         $lock = $this->getCameraLock();
-        if ($lock === null) {
-            return $this->kind === self::SCRAP_BRAIN && $this->started ? [0x340, 0x540 + 256 - 24] : null;
-        }
+        if ($lock === null) return null;
         return [$lock[0], ($lock[2] ?? $lock[0]) + 256 - 24];
     }
 
@@ -217,7 +220,10 @@ class Boss extends GameObject
         return match ($this->kind) {
             // Jungle: Sonic has climbed to the top of the waterfall
             self::JUNGLE => $py < 0xE0 && $px > 0x1F0 - 64,
-            self::SCRAP_BRAIN => $px > 0x340,
+            // the object only runs inside its activity window (_31e6): Sonic is in the corridor of the lift,
+            // not anywhere right of $340 (he starts far below)
+            self::SCRAP_BRAIN => $this->romCamera !== null
+                && ActivityWindow::contains($this->kind, $this->homeX, $this->homeY, $this->romCamera),
             default => $px >= self::ARENA[$this->kind][0] - 32 && $px <= self::ARENA[$this->kind][0] + 256
                 && $py >= self::ARENA[$this->kind][1] - 64 && $py <= self::ARENA[$this->kind][1] + 192,
         };
@@ -547,6 +553,7 @@ class Boss extends GameObject
                 $this->phase = 'flee';
                 // no break
             case 'flee':
+                if ($this->romCamera !== null) $this->fleeLeft = max($this->fleeLeft, min(0x540, $this->romCamera[0]));
                 $close = $this->x - $sonicX < 0x40 && $this->playerVx >= 0;
                 $this->vx = ($close ? $this->playerVx / self::F : -0.5) * self::F + self::F;
                 $this->liftVisible = true;

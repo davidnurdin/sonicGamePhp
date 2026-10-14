@@ -15,13 +15,14 @@ class CollisionSystem extends EventEmitter
 
 	private float $springForce = -1100.0;
 	private float $horizontalSpringForce = 600.0;
-	private float $slopeFactor = 500.0;
 	private float $bumperBounceForce = 700.0;
 
 	// Original speeds are px/frame at 60Hz. Vertical launches keep the original heights in pixels:
 	// original gravity is $38/256 px/frame² (787.5 px/s²) vs 1400 here, so v = v60 * sqrt(1400 / 787.5) = v * 80.
 	private const VERTICAL_SCALE = 80.0;
 	private const FRAME_SPEED = 60.0;
+	/** Engine px/s for 1 px/frame of the original horizontal speeds (500 px/s = the original 3 px/frame). */
+	private const ROM_SPEED_TO_ENGINE = 500 / 3;
 
 	private const B_SPIKES = 1;
 	private const B_RAMP = 2;
@@ -135,16 +136,6 @@ class CollisionSystem extends EventEmitter
 		// --- Block behaviours from the ROM table (springs, spikes, ramps, conveyors...) ---
 		$this->applyBlockBehaviour($entity, $level, $deltaTime);
 
-		// --- Slope acceleration (when grounded) ---
-		if ($entity->isGrounded() && !$onObject) {
-			$slope = $this->calculateGroundSlope($entity, $level);
-			if (abs($slope) > 0.05) {
-				$slopeAccel = $this->slopeFactor * $slope;
-				$v = $entity->getVelocity();
-				$entity->setVelocity($v[0] + $slopeAccel * $deltaTime, $v[1]);
-			}
-		}
-
 		// --- Snap to ground (was grounded, walked off slope/edge) ---
 		$currentVel = $entity->getVelocity();
 		if (!$entity->isGrounded() && $oldGrounded && $currentVel[1] >= 0) {
@@ -157,54 +148,49 @@ class CollisionSystem extends EventEmitter
 			}
 		}
 
+		// --- Slope acceleration (when grounded) ---
+		// _32e2: standing on a block adds the value of its solidity type ($3F90 table) to the X speed every frame
+		if ($entity->isGrounded() && !$onObject) {
+			$slopeAccel = $this->romSlopeAccel($entity, $level);
+			if ($slopeAccel != 0) {
+				$v = $entity->getVelocity();
+				$entity->setVelocity($v[0] + $slopeAccel * $deltaTime, $v[1]);
+			}
+		}
+
 		// --- Water detection ---
 		$this->detectWater($entity, $level);
 
 		$this->checkLevelBounds($entity, $level);
 	}
 
-	private function calculateGroundSlope(Entity|Player $entity, Level $level): float
+	/**
+	 * $3F90 + solidity type, in 1/256 px/frame²: $1C on the 45° slopes ($01-$04), $12 on the gentle ones
+	 * ($05-$0A, $29/$2A), positive = to the right (downhill), nothing on the other shapes.
+	 */
+	private const SLOPE_ACCEL = [
+		0x01 => 0x1C, 0x02 => 0x1C, 0x03 => -0x1C, 0x04 => -0x1C,
+		0x05 => 0x12, 0x06 => 0x12, 0x07 => 0x12, 0x08 => -0x12, 0x09 => -0x12, 0x0A => -0x12,
+		0x29 => 0x12, 0x2A => -0x12,
+	];
+	/** 1/256 px/frame² -> engine px/s², same scale as Sonic's ground acceleration (Player::GROUND_SCALE). */
+	private const ROM_ACCEL_TO_ENGINE = Player::GROUND_SCALE;
+
+	/** Slope acceleration of the block under Sonic's feet (centre, like the ROM probe at X + width / 2). */
+	private function romSlopeAccel(Entity|Player $entity, Level $level): float
 	{
 		$rect = $entity->getCollisionRect();
-		$feetY = $rect['y'] + $rect['height'] + 2;
-		$centerX = (int)floor($rect['x'] + $rect['width'] / 2);
-
-		$sampleDist = $this->tileSize + 8;
-		$leftX = $centerX - $sampleDist;
-		$rightX = $centerX + $sampleDist;
-
-		$leftSurfaceY = $this->getSurfaceYAt($leftX, $feetY, $level, 3);
-		$rightSurfaceY = $this->getSurfaceYAt($rightX, $feetY, $level, 3);
-
-		if ($leftSurfaceY === null || $rightSurfaceY === null) return 0.0;
-
-		$dx = $rightX - $leftX;
-		if ($dx == 0) return 0.0;
-
-		return ($rightSurfaceY - $leftSurfaceY) / $dx;
-	}
-
-	private function getSurfaceYAt(int $x, float $feetY, Level $level, int $searchRange = 1): ?float
-	{
-		$tileX = (int)floor($x / $this->tileSize);
-		$pixelX = $x - ($tileX * $this->tileSize);
-		$tileYAtFeet = (int)floor($feetY / $this->tileSize);
-
-		$best = null;
-		$bestDist = PHP_FLOAT_MAX;
-
-		for ($ty = max(0, $tileYAtFeet - $searchRange); $ty <= $tileYAtFeet + $searchRange; $ty++) {
-			$surfaceY = $this->findSurfaceYForGround($level, $tileX, $ty, $pixelX);
-			if ($surfaceY === null) continue;
-
-			$dist = abs($feetY - $surfaceY);
-			if ($dist < $bestDist) {
-				$bestDist = $dist;
-				$best = $surfaceY;
-			}
+		$x = (int)floor($rect['x'] + $rect['width'] / 2);
+		$feet = $rect['y'] + $rect['height'];
+		$solidity = $level->getSolidity();
+		foreach ([(int)floor($feet) + 1, (int)floor($feet) - 2] as $y) {
+			$block = $level->getTile(intdiv($x, $this->tileSize), intdiv(max(0, $y), $this->tileSize));
+			if ($block === null || !isset($solidity[$block])) continue;
+			$type = ord($solidity[$block]) & 0x3F;
+			if ($type === 0) continue;
+			return (self::SLOPE_ACCEL[$type] ?? 0) * self::ROM_ACCEL_TO_ENGINE;
 		}
-
-		return $best;
+		return 0.0;
 	}
 
 	private function detectWater(Entity|Player $entity, Level $level): void
@@ -270,8 +256,12 @@ class CollisionSystem extends EventEmitter
 				break;
 
 			case self::B_RAMP:
-				if ($xInBlock >= 26 && $vx >= 3 * self::FRAME_SPEED) {
-					$this->launch($entity, $vx, -2 * ($vx / self::FRAME_SPEED) * self::VERTICAL_SCALE, SoundManager::SFX_LAUNCH);
+				// _54ce: only a rolling or jumping Sonic ($D414 bit 0 / 2) going right at $0301 or more is thrown,
+				// Y speed = -2 x the whole px/frame of his X speed; he stays a ball (no spring pose)
+				$romVx = $vx / self::ROM_SPEED_TO_ENGINE;
+				$ball = method_exists($entity, 'getState') && in_array($entity->getState(), ['roll', 'jump'], true);
+				if ($xInBlock >= 26 && $ball && $romVx >= 0x301 / 256) {
+					$this->launch($entity, $vx, -2 * floor($romVx) * self::VERTICAL_SCALE, SoundManager::SFX_LAUNCH, false);
 				}
 				break;
 
@@ -364,7 +354,7 @@ class CollisionSystem extends EventEmitter
 		}
 	}
 
-	private function launch(Entity|Player $entity, float $vx, float $vy, int $sfx = SoundManager::SFX_SPRING): void
+	private function launch(Entity|Player $entity, float $vx, float $vy, int $sfx = SoundManager::SFX_SPRING, bool $springPose = true): void
 	{
 		$this->sfx($sfx);
 		$entity->setGrounded(false);
@@ -372,7 +362,7 @@ class CollisionSystem extends EventEmitter
 		if (method_exists($entity, 'setState')) {
 			$entity->setState('jump');
 		}
-		if ($vy < 0 && method_exists($entity, 'setSprung')) {
+		if ($springPose && $vy < 0 && method_exists($entity, 'setSprung')) {
 			$entity->setSprung();
 		}
 	}
@@ -438,6 +428,7 @@ class CollisionSystem extends EventEmitter
 	{
 		$colData = $level->getTileColisionAt($tileX, $tileY);
 		if (!$colData) return null;
+		if (($level->getTileColisionWayAt($tileX, $tileY)['floor'] ?? true) === false) return null;
 
 		for ($row = 0; $row < $this->tileSize; $row++) {
 			if (isset($colData[$row][$pixelX]) && $colData[$row][$pixelX] == 1) {

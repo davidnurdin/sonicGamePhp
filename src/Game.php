@@ -744,6 +744,9 @@ class Game extends EventEmitter
                 $this->objectManager->update($deltaTime, $this->player, $this->scene->getCurrentLevel());
                 $this->updateGhost();
 
+                // speed shoes: the song plays faster while they last (the driver's tickDivider1 + 1)
+                $this->soundManager->setFast($this->objectManager->hasSpeedShoes() && !$this->objectManager->isPlayerDead());
+
                 // a jingle (emerald...) has finished: back to the level music
                 if (!$this->objectManager->isPlayerDead() && !$this->objectManager->isLevelComplete()
                     && !$this->soundManager->isMusicPlaying()) {

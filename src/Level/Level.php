@@ -106,7 +106,12 @@ class Level
             $value = ord($value) & 0x3F;
             if (isset(self::$tileColData[$value])) {
                 $tilesColision[$key] = self::$tileColData[$value]['value'];
-                $tilesColisionWay[$key] = self::$tileColData[$value]['colisionWay'];
+                $way = self::$tileColData[$value]['colisionWay'];
+                // ROM collision tables of _32e2 ($41EC moving up, $448A moving down): $16 and $18-$28 stop
+                // Sonic from below (ceilings), $18-$26 are ceilings only, never stood on (Sky Base 3 slanted ceilings)
+                $way['top'] = $value === 0x16 || ($value >= 0x18 && $value <= 0x28);
+                $way['floor'] = !($value >= 0x18 && $value <= 0x26);
+                $tilesColisionWay[$key] = $way;
             }
         }
 

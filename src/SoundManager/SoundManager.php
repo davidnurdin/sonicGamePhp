@@ -54,6 +54,14 @@ class SoundManager
     private array $musicCache = [];
     private ?string $currentMusic = null;
     private ?string $pendingLoop = null;
+    /** Speed shoes: the "-fast" version of the song (tickDivider1 = tickDivider2 + 1 in the original driver). */
+    private bool $fast = false;
+    /** music/timing.json: frames of the intro / loop of every file and its tempo factor. */
+    private array $timing = [];
+    /** File playing ("greenhill", "greenhill-fast"...), its part ('intro' / 'loop') and when that part started. */
+    private ?string $playingFile = null;
+    private string $part = 'loop';
+    private float $partStart = 0;
     private array $sfxChannels = [];
 
     public function __construct()
@@ -74,6 +82,10 @@ class SoundManager
             $this->chunks[$index] = \Mix_LoadWAV($file);
         }
         \Mix_VolumeMusic(96);
+        $timing = $this->folder . '/music/timing.json';
+        if (file_exists($timing)) {
+            $this->timing = json_decode(file_get_contents($timing), true) ?: [];
+        }
         $this->ready = true;
     }
 
@@ -98,17 +110,63 @@ class SoundManager
     {
         if (!$this->ready || ($name === $this->currentMusic && !$restart)) return;
         $this->currentMusic = $name;
+        $this->startFile($this->fileFor($name), $loop, 'intro', 0.0);
+    }
+
+    /** The speed shoes start / stop: the song goes on at the same place, faster or back to normal. */
+    public function setFast(bool $fast): void
+    {
+        if ($fast === $this->fast) return;
+        $this->fast = $fast;
+        if (!$this->ready || $this->currentMusic === null || $this->playingFile === null) return;
+        $file = $this->fileFor($this->currentMusic);
+        if ($file === $this->playingFile) return;
+        $from = $this->timing[$this->playingFile] ?? null;
+        $to = $this->timing[$file] ?? null;
+        if ($from === null || $to === null) return;
+        // position in the part, in frames of the playing file -> in ticks of the song -> frames of the other one
+        $frames = (microtime(true) - $this->partStart) * 60;
+        if ($this->part === 'loop') {
+            $frames = fmod($frames, max(1, $from['loop']));
+        }
+        $frames = $frames * $from['speed'] / $to['speed'];
+        $part = $this->part;
+        if ($part === 'loop' || $to['intro'] === 0) {
+            $part = $to['intro'] === 0 ? 'intro' : 'loop';
+            $frames = fmod($frames, max(1, $to['loop']));
+        } elseif ($frames >= $to['intro']) {
+            $part = 'loop';
+            $frames = fmod($frames - $to['intro'], max(1, $to['loop']));
+        }
+        $this->startFile($file, true, $part, $frames / 60);
+    }
+
+    /** "{name}-fast" while the shoes last, when that version exists. */
+    private function fileFor(string $name): string
+    {
+        return $this->fast && isset($this->timing[$name . '-fast']) ? $name . '-fast' : $name;
+    }
+
+    /** Plays a part of a song file ('intro' then its loop, or the loop / a jingle) from $seconds. */
+    private function startFile(string $file, bool $loop, string $part, float $seconds): void
+    {
         $this->pendingLoop = null;
-        $intro = $this->folder . '/music/' . $name . '-intro.ogg';
-        if ($loop && file_exists($intro)) {
+        $this->playingFile = $file;
+        $intro = $this->folder . '/music/' . $file . '-intro.ogg';
+        if ($part === 'intro' && $loop && file_exists($intro)) {
             \Mix_PlayMusic($this->loadMusic($intro), 1);
-            $this->pendingLoop = $name;
-            return;
-        }
-        $music = $this->loadMusic($this->folder . '/music/' . $name . '.ogg');
-        if ($music) {
+            $this->pendingLoop = $file;
+            $this->part = 'intro';
+        } else {
+            $music = $this->loadMusic($this->folder . '/music/' . $file . '.ogg');
+            if (!$music) return;
             \Mix_PlayMusic($music, $loop ? -1 : 1);
+            $this->part = 'loop';
         }
+        if ($seconds > 0) {
+            \Mix_SetMusicPosition($seconds);
+        }
+        $this->partStart = microtime(true) - $seconds;
     }
 
     public function stopMusic(): void
@@ -117,6 +175,7 @@ class SoundManager
         \Mix_HaltMusic();
         $this->currentMusic = null;
         $this->pendingLoop = null;
+        $this->playingFile = null;
     }
 
     public function getCurrentMusic(): ?string
@@ -138,6 +197,8 @@ class SoundManager
             $this->pendingLoop = null;
             if ($music) {
                 \Mix_PlayMusic($music, -1);
+                $this->part = 'loop';
+                $this->partStart = microtime(true);
             }
         }
     }

@@ -107,6 +107,10 @@ class GameObjectManager extends EventEmitter
     // Level switch bit ($D317), flipped by the switch $1D, read by the switch doors $1E
     private bool $switchFlag = false;
     private ?FloorSwitch $onSwitch = null;
+    /** Sonic walked onto the switch he stands on (landing on it from a jump does not press it). */
+    private bool $switchWalked = false;
+    /** $D317+: one switch bit per level, kept for the whole game (getLevelBitFlag), so a room keeps its doors open. */
+    private array $switchFlags = [];
     // end of the game (level 19): object $53, then Sonic walks back (6 emeralds) and the emerald $54 rises
     private ?FinalShip $finalShip = null;
     private string $finalPhase = '';
@@ -145,8 +149,9 @@ class GameObjectManager extends EventEmitter
         $this->water = null;
         $this->underwater = false;
         $this->airFrames = 0;
-        $this->switchFlag = false;
+        $this->switchFlag = $this->switchFlags[$level->getLevel()] ?? false;
         $this->onSwitch = null;
+        $this->switchWalked = false;
         $this->finalShip = null;
         $this->finalPhase = '';
         $this->finalGlow = null;
@@ -211,7 +216,8 @@ class GameObjectManager extends EventEmitter
                     0x13 => new WarpZone($this->sdl, $tx, $ty),
                     0x14, 0x15 => new FireballCannon($this->sdl, $type, $o['typeName'], $tx, $ty),
                     0x16 => new FlameThrower($this->sdl, $tx, $ty),
-                    0x17, 0x18, 0x19, 0x1E => new Door($this->sdl, $type, $o['typeName'], $tx, $ty, $level->getTile($tx, $ty - 1)),
+                    0x17, 0x18, 0x19, 0x1E => (new Door($this->sdl, $type, $o['typeName'], $tx, $ty, $level->getTile($tx, $ty - 1)))
+                        ->settle($this->switchFlag),
                     0x1A => new ElectricSphere($this->sdl, $tx, $ty),
                     0x1D => new FloorSwitch($this->sdl, $tx, $ty, $level->findSurfaceY($tx * 32 + 16, $ty * 32 + 16, 48) ?? $ty * 32 + 32),
                     default => null,
@@ -259,7 +265,8 @@ class GameObjectManager extends EventEmitter
                 $feet = $rect['y'] + $rect['height'];
                 $top = $obj->getTop();
                 $overlapX = $rect['x'] + $rect['width'] > $obj->getPosX() + 3 && $rect['x'] < $obj->getPosX() + 13;
-                if ($overlapX && $feet >= $top - 2 && $feet <= $top + 10 && ($best === null || $top < $best['top'])) {
+                // _LABEL_3956_11 + _7CC1: touching it while not going up puts Sonic on top, so he steps onto it walking
+                if ($overlapX && $feet >= $top - 2 && $feet <= $obj->getBottom() + 2 && ($best === null || $top < $best['top'])) {
                     $best = ['top' => $top, 'dx' => 0, 'object' => $obj];
                 }
             } elseif ($obj instanceof BridgePiece) {
@@ -309,9 +316,14 @@ class GameObjectManager extends EventEmitter
         $this->standingOn = $best['object'] instanceof Platform ? $best['object'] : null;
         $this->onSeesaw = $best['object'] instanceof Seesaw ? $best['object'] : null;
         $this->onSeesaw?->stand($best['pad'], $vy);
-        $this->onSwitch = $best['object'] instanceof FloorSwitch ? $best['object'] : null;
+        $onSwitch = $best['object'] instanceof FloorSwitch ? $best['object'] : null;
+        if ($onSwitch !== null && $onSwitch !== $this->onSwitch) {
+            $this->switchWalked = $playerState !== 'jump' && $playerState !== 'hurt';
+        }
+        $this->onSwitch = $onSwitch;
         $dx = $best['dx'];
         if ($this->standingOn) {
+            $dx = $this->standingOn->takeDeltaX();
             $this->standingOn->touch();
             // $29 floating log: Sonic is held at its centre while it rolls
             $pin = $this->standingOn->getPinX();
@@ -419,7 +431,8 @@ class GameObjectManager extends EventEmitter
             $obj->update($deltaTime);
 
             if ($obj instanceof Monitor) {
-                $this->handleMonitor($obj, $player, $rect, $vel, $attacking);
+                // _5deb: only a jumping or rolling Sonic breaks it (invincibility doesn't), walking he is stopped
+                $this->handleMonitor($obj, $player, $rect, $vel, $state === 'jump' || $state === 'roll');
             } elseif ($obj instanceof ChaosEmerald && $obj->intersects($rect)) {
                 $obj->collect();
                 $this->emeralds++;
@@ -602,8 +615,9 @@ class GameObjectManager extends EventEmitter
             $player->setState('hurt');
             $this->sfx(SoundManager::SFX_HURT);
         }
-        if ($obj instanceof FloorSwitch && $obj->setPressed($this->onSwitch === $obj)) {
+        if ($obj instanceof FloorSwitch && $obj->setPressed($this->onSwitch === $obj && $this->switchWalked)) {
             $this->switchFlag = !$this->switchFlag;
+            $this->switchFlags[$this->currentLevel] = $this->switchFlag;
             $this->sfx(SoundManager::SFX_SWITCH);
         }
         if ($obj instanceof WarpZone && $obj->getTargetLevel() !== null && !$this->levelComplete
@@ -699,6 +713,7 @@ class GameObjectManager extends EventEmitter
     {
         [$vx, $vy] = $player->getVelocity();
         $boss->viewTop = $this->view[1] ?? -INF;
+        $boss->romCamera = $this->romCamera;
         $events = $boss->think($deltaTime, $rect, $vx, $attacking);
         if ($boss->isStarted() && !$this->bossMusic) {
             $this->bossMusic = true;
@@ -865,6 +880,7 @@ class GameObjectManager extends EventEmitter
             foreach (self::TELEPORTS as [$x, $y, $tx, $ty, $flag]) {
                 if ($inMiddle && $x === $bx && $y === $by) {
                     $this->teleport = ['frames' => 0x50, 'x' => $player->getX(), 'y' => $player->getY(), 'to' => [$tx, $ty, $flag]];
+                    $player->setTeleporting(true);
                     $this->teleportClock = 0;
                     $this->sfx(SoundManager::SFX_ROLL);
                     break;
@@ -876,20 +892,21 @@ class GameObjectManager extends EventEmitter
         // held in place
         $player->setXY($this->teleport['x'], $this->teleport['y']);
         $player->setVelocity(0, 0);
-        $player->setState('idle');
-        $player->setAnimation('roll' . ucfirst($player->getFacing()));   // animation $0F
         $this->teleportClock += $deltaTime;
         while ($this->teleport !== null && $this->teleportClock >= 1 / 60) {
             $this->teleportClock -= 1 / 60;
             $frames = --$this->teleport['frames'];
             if ($frames === 0x13) {
-                $beam = new Effect($this->sdl, $player->getX() + 12, $player->getY() + 24, RomSprites::TELEPORT_BEAM, 2 / 60);
+                // animation $0E: frames $19-$21 two frames each, the first one four, then held on $21
+                $beam = new Effect($this->sdl, $player->getX() + 12, $player->getY() + 24,
+                    [RomSprites::TELEPORT_BEAM[0], ...RomSprites::TELEPORT_BEAM], 2 / 60);
                 $beam->setTileset(RomSprites::SHEET);
                 $this->transient[] = $beam;
             }
             if ($frames > 0) continue;
             [$tx, $ty, $flag] = $this->teleport['to'];
             $this->teleport = null;
+            $player->setTeleporting(false);
             if ($flag === 0) {
                 // X = block * 32 + 8, Y = block * 32 (Sonic's 24x32 object)
                 $player->setXY($tx * 32 + 8, $ty * 32);
@@ -970,7 +987,12 @@ class GameObjectManager extends EventEmitter
             switch ($this->finalPhase) {
                 case 'appear':
                     $player->setVelocity(0, 0);
-                    if ($this->finalFrames >= 36) $this->finalPhase = 'fall';
+                    if ($this->finalFrames >= 36) {
+                        // _5193: at the end of the beam the rolling bit is set, Sonic falls onto Robotnik as a ball
+                        $this->finalPhase = 'fall';
+                        $player->setGrounded(false);
+                        $player->setState('jump');
+                    }
                     break;
                 case 'walk':
                     $romX = $player->getX();
@@ -1089,6 +1111,7 @@ class GameObjectManager extends EventEmitter
         $this->continuePending = false;
         $this->score = 0;
         $this->emeralds = 0;
+        $this->switchFlags = [];
         $this->checkpoint = null;
         $this->resetStats();
     }
@@ -1168,6 +1191,8 @@ class GameObjectManager extends EventEmitter
         if ($this->finalShip !== null) return true;
         // the sign has stopped: the joypad is forced (see signRun())
         if ($this->signStopped) return true;
+        // teleporter (_5117): Sonic's code skips the joypad while $D28A counts down
+        if ($this->teleport !== null) return true;
         return $this->boss !== null && $this->boss->isCutscene();
     }
 
@@ -1311,7 +1336,8 @@ class GameObjectManager extends EventEmitter
                 $this->emit('music', ['invincibility', true]);
                 break;
             case 'speed':
-                $this->speedShoesTimer = 20.0;
+                // $D411 = $F0, decremented every 4 frames (_4fec): 960 frames
+                $this->speedShoesTimer = 0xF0 * 4 / 60;
                 $player->setSpeedBoost(true);
                 $this->sfx(SoundManager::SFX_RING);
                 break;

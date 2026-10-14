@@ -37,6 +37,13 @@ class Player extends Entity
 	private const AIR_ACCEL = 0x10 / 256 * 3600 * self::ROM_TO_ENGINE;
 	private const AIR_REVERSE = 0x30 / 256 * 3600 * self::ROM_TO_ENGINE;
 	private const AIR_DRAG = 0x08 / 256 * 3600 * self::ROM_TO_ENGINE;
+	// On the ground the same ROM values (_4f01) are scaled by ROM_TO_ENGINE² like the slopes (CollisionSystem):
+	// the speeds are ROM_TO_ENGINE times the original's over the same pixels, so the distances to speed up,
+	// to stop or to climb a slope stay those of the original.
+	public const GROUND_SCALE = 3600 / 256 * self::ROM_TO_ENGINE * self::ROM_TO_ENGINE;
+	private const GROUND_ACCEL = 0x10 * self::GROUND_SCALE;
+	private const GROUND_REVERSE = 0x30 * self::GROUND_SCALE;
+	private const GROUND_DRAG = 0x08 * self::GROUND_SCALE;
 	private const REVERSE_MIN_SPEED = 60 * self::ROM_TO_ENGINE;
 
 	// Vertical physics of the ROM (_4b7f, _509d, tables $4DCB / $4DDD) at this engine's vertical scale
@@ -56,7 +63,8 @@ class Player extends Entity
 
 	public function setSpeedBoost(bool $enabled): void
 	{
-		$this->maxSpeed = $enabled ? 800.0 : 500.0;
+		// $D240: 3 px/frame, 6 px/frame with the speed shoes (same acceleration, table _4de6)
+		$this->maxSpeed = $enabled ? 1000.0 : 500.0;
 	}
 
 
@@ -332,6 +340,17 @@ class Player extends Entity
 
 	public function update(float $deltaTime)
 	{
+		// teleporter (_5117): speeds cleared, animation $0F = the ball frames $0C,$08-$0B one per frame (fast spin)
+		if ($this->teleporting) {
+			$this->vx = $this->vy = $this->ax = $this->ay = 0;
+			$this->sprung = false;
+			$this->breatheTimer = 0;
+			$this->frameDuration = 1 / 60;
+			$this->setAnimation('roll' . ucfirst($this->facing));
+			$this->updateSprite($deltaTime);
+			return;
+		}
+
 		// _51bc: landing ends the hurt state and stops Sonic
 		if ($this->state === 'hurt' && $this->isGrounded() && $this->vy >= 0) {
 			$this->vx = 0;
@@ -339,7 +358,7 @@ class Player extends Entity
 		}
 
 		if (!$this->isMovingFromInput && $this->state !== 'roll')
-			$this->idle();
+			$this->idle($deltaTime);
 
 		if (!$this->isGrounded() && !$this->isMovingFromInput) {
 			// no direction in the air: stop accelerating and apply the small drag of the original
@@ -416,6 +435,19 @@ class Player extends Entity
 	}
 
 	private float $breatheTimer = 0;
+	private bool $teleporting = false;
+
+	/** Held on a teleporter: spinning in place, nothing else updated (GameObjectManager::updateTeleport). */
+	public function setTeleporting(bool $teleporting): void
+	{
+		$this->teleporting = $teleporting;
+		if ($teleporting) {
+			$this->setState('roll');
+			$this->idleClock = 0;
+		} else {
+			$this->setState('idle');
+		}
+	}
 
 	/**
 	 * Thrown up by a spring or a balance: not rolling ($D414 bit 2 clear). Going up faster than 1 px/frame the
@@ -536,15 +568,14 @@ class Player extends Entity
 
         if ($movingOpposite) {
             $this->setState('stopRun');
-            $this->setAcceleration($factor * 2500, 0);
+            // _4f01: $30/256 px/frame² against the move
+            $this->setAcceleration($factor * self::GROUND_REVERSE, 0);
             return;
         }
 
-        if (abs($currentSpeed) < 60) {
-            $this->vx = $factor * 60;
-        }
-
-        $this->setAcceleration($factor * ($this->maxSpeed > 500 ? 400 : 250), 0);
+        // _4f01: +$10/256 px/frame² up to $D240, no start speed: without a run-up a slope (_32e2, up to
+        // $1C/256 px/frame² against him) is hard or impossible to climb
+        $this->setAcceleration($factor * self::GROUND_ACCEL, 0);
 
         if (abs($this->vx) > $this->maxSpeed) {
             $this->vx = $factor * $this->maxSpeed;
@@ -562,23 +593,15 @@ class Player extends Entity
         if (!$this->isGrounded()) return;
         if ($this->state === 'roll') return;
 
-        $currentSpeed = abs($this->getSpeedX());
         $this->setAcceleration(0, 0);
         $this->setFriction(1);
 
-        if ($currentSpeed < 15) {
-            $this->vx = 0;
-            $this->setState('idle');
-            return;
-        }
+        // $08/256 px/frame² towards 0 with no direction, stopping at 0: a slope (_32e2, $12 / $1C) is stronger,
+        // Sonic slides down it
+        $step = self::GROUND_DRAG * ($deltaTime == 1 ? 1.0 / 120 : $deltaTime);
+        $this->vx = abs($this->vx) <= $step ? 0.0 : $this->vx - ($this->vx > 0 ? $step : -$step);
 
-        $decel = 250;
-        if ($this->vx > 0) {
-            $this->vx = max(0, $this->vx - $decel * (1.0/120));
-        } else {
-            $this->vx = min(0, $this->vx + $decel * (1.0/120));
-        }
-
+        $currentSpeed = abs($this->vx);
         if ($currentSpeed > 300)
             $this->setState('run');
         elseif ($currentSpeed > 15)
@@ -648,7 +671,7 @@ class Player extends Entity
         $this->setFriction(1);
         $this->setAcceleration(0, 0);
 
-        $rollFriction = 120;
+        $rollFriction = 0x04 * self::GROUND_SCALE;   // _532e: $04/256 px/frame² while rolling
         if ($this->vx > 0) {
             $this->vx = max(0, $this->vx - $rollFriction * $deltaTime);
         } elseif ($this->vx < 0) {

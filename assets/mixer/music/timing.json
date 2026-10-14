@@ -1,0 +1,122 @@
+{
+ "actcomplete": {
+  "intro": 0,
+  "loop": 333,
+  "speed": 1
+ },
+ "allemeralds": {
+  "intro": 0,
+  "loop": 509,
+  "speed": 1
+ },
+ "boss": {
+  "intro": 10,
+  "loop": 3456,
+  "speed": 1
+ },
+ "boss-fast": {
+  "intro": 8,
+  "loop": 576,
+  "speed": 1.2
+ },
+ "bridge": {
+  "intro": 42,
+  "loop": 1536,
+  "speed": 1
+ },
+ "bridge-fast": {
+  "intro": 21,
+  "loop": 768,
+  "speed": 2.0
+ },
+ "death": {
+  "intro": 0,
+  "loop": 267,
+  "speed": 1
+ },
+ "emerald": {
+  "intro": 0,
+  "loop": 241,
+  "speed": 1
+ },
+ "ending": {
+  "intro": 0,
+  "loop": 5601,
+  "speed": 1
+ },
+ "greenhill": {
+  "intro": 912,
+  "loop": 2304,
+  "speed": 1
+ },
+ "greenhill-fast": {
+  "intro": 456,
+  "loop": 1152,
+  "speed": 2.0
+ },
+ "invincibility": {
+  "intro": 12,
+  "loop": 576,
+  "speed": 1
+ },
+ "invincibility-fast": {
+  "intro": 6,
+  "loop": 288,
+  "speed": 2.0
+ },
+ "jungle": {
+  "intro": 18,
+  "loop": 1728,
+  "speed": 1
+ },
+ "jungle-fast": {
+  "intro": 9,
+  "loop": 864,
+  "speed": 2.0
+ },
+ "labyrinth": {
+  "intro": 108,
+  "loop": 1728,
+  "speed": 1
+ },
+ "labyrinth-fast": {
+  "intro": 54,
+  "loop": 864,
+  "speed": 2.0
+ },
+ "map": {
+  "intro": 0,
+  "loop": 175,
+  "speed": 1
+ },
+ "scrapbrain": {
+  "intro": 32,
+  "loop": 3072,
+  "speed": 1
+ },
+ "scrapbrain-fast": {
+  "intro": 24,
+  "loop": 2304,
+  "speed": 1.3333333333333333
+ },
+ "skybase": {
+  "intro": 384,
+  "loop": 960,
+  "speed": 1
+ },
+ "skybase-fast": {
+  "intro": 192,
+  "loop": 480,
+  "speed": 2.0
+ },
+ "specialstage": {
+  "intro": 0,
+  "loop": 3604,
+  "speed": 1
+ },
+ "title": {
+  "intro": 0,
+  "loop": 486,
+  "speed": 1
+ }
+}

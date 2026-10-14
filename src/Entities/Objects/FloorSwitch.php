@@ -6,7 +6,8 @@ use SonicGame\Renderer\Sdl;
 
 /**
  * Switch (object $1D, doObjectCode_switch): X + 8, 10x17. Landing on it flips the level switch bit
- * ($D317) once with SFX $1A; it stays pressed while Sonic stands on it.
+ * ($D317) once with SFX $1A; it stays pressed while Sonic stands on it. Only walking onto it presses it
+ * (a jump landing on it leaves it up, so jumping on the spot can't flip the doors back).
  */
 class FloorSwitch extends Mechanism
 {
@@ -30,6 +31,12 @@ class FloorSwitch extends Mechanism
     public function getTop(): float
     {
         return $this->bottom - ($this->pressed ? 10 : 15);
+    }
+
+    /** Floor under the switch. */
+    public function getBottom(): float
+    {
+        return $this->bottom;
     }
 
     /** Called every frame with "is Sonic standing on it": returns true when the switch gets pressed. */

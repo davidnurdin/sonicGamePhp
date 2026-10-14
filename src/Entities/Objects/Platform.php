@@ -29,6 +29,7 @@ class Platform extends GameObject
     protected string $kind;
     protected bool $falling = false;
     protected float $deltaX = 0;
+    protected float $carryX = 0;
     protected float $deltaY = 0;
     // stood on since the last frame (set by touch())
     protected bool $touched = false;
@@ -96,6 +97,7 @@ class Platform extends GameObject
         }
 
         $this->deltaX = $this->x - $oldX;
+        $this->carryX = $this->deltaX;
         $this->deltaY = $this->y - $oldY;
         if ($this->kind === 'roll' && $this->stood) {
             // _7ee6: Sonic is held on the log (X = log X - 4 for his 24px wide object)
@@ -270,5 +272,16 @@ class Platform extends GameObject
     }
 
     public function getDeltaX(): float { return $this->deltaX; }
+
+    /**
+     * Horizontal move of the last update, handed out once: Sonic's collision runs several steps per frame,
+     * he must be carried by the platform once, not once per step (he slid along it).
+     */
+    public function takeDeltaX(): float
+    {
+        $dx = $this->carryX;
+        $this->carryX = 0;
+        return $dx;
+    }
     public function getDeltaY(): float { return $this->deltaY; }
 }

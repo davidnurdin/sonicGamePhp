@@ -30,6 +30,17 @@ class Door extends Mechanism
         $this->inverted = $inverted;
     }
 
+    /** Switch door created with the level switch already on: shown in its final position (no opening on screen). */
+    public function settle(bool $switchOn): static
+    {
+        if ($this->objectType === 0x1E) {
+            $this->switchOn = $switchOn;
+            $open = $this->inverted ? !$switchOn : $switchOn;
+            $this->counter = $open ? self::MAX : 0;
+        }
+        return $this;
+    }
+
     public function setSwitchFlag(bool $on): void
     {
         $this->switchOn = $on;

@@ -4,7 +4,13 @@
 The original sound driver (bank 3, mapped at $4000: update=$4000, playMusic=$4012, playSFX=$4015)
 is executed on a Z80 emulator; every write to the PSG port ($7F) is captured per 60Hz frame and fed
 to an SN76489 emulator. Loops are found by detecting when the driver RAM + PSG state repeats.
+
+Speed shoes: Sonic's code writes tickDivider1 ($DC0A) = tickDivider2 ($DC0C) + 1 every frame while they
+last (doObjectCode_Sonic, table _4de6), so every song advances one more tick per frame. The level songs
+are also rendered that way as "{name}-fast" files. music/timing.json gives the length of every part in
+frames, for the game to switch between both versions at the same place of the song.
 """
+import json
 import os
 import subprocess
 import sys
@@ -135,7 +141,7 @@ class PSG:
         return mix / 4
 
 
-def capture(kind, index, max_frames=60 * 240, find_loop=True):
+def capture(kind, index, max_frames=60 * 240, find_loop=True, fast=False):
     """Run the driver, return (per-frame PSG writes, loop_start_frame or None, end_frame)."""
     d = Driver()
     d.call(STOP)
@@ -147,6 +153,10 @@ def capture(kind, index, max_frames=60 * 240, find_loop=True):
     quiet, last_ptrs = 0, None
     for f in range(max_frames):
         d.writes = []
+        if fast and f > 0:
+            mem = d.m.memory
+            step = (mem[0xDC0C] | mem[0xDC0D] << 8) + 1
+            mem[0xDC0A], mem[0xDC0B] = step & 0xFF, step >> 8
         d.call(UPDATE)
         frames.append(d.writes)
         st = d.state()
@@ -213,21 +223,43 @@ MUSIC = {0x00: 'greenhill', 0x01: 'bridge', 0x02: 'jungle', 0x03: 'labyrinth', 0
          0x06: 'title', 0x07: 'map', 0x08: 'invincibility', 0x09: 'actcomplete', 0x0A: 'death', 0x0B: 'boss',
          0x0E: 'ending', 0x10: 'specialstage', 0x13: 'allemeralds', 0x14: 'emerald'}
 
+def tempo_factor(index):
+    """Speed of the "-fast" version: (tickDivider2 + 1) / tickDivider2, set by the song's tempo command."""
+    d = Driver()
+    d.call(STOP)
+    d.call(PLAY_MUSIC, index)
+    d.call(UPDATE)
+    divider = d.m.memory[0xDC0C] | d.m.memory[0xDC0D] << 8
+    return (divider + 1) / divider
+
+
+# songs that can be playing while Sonic has the speed shoes
+FAST = ('greenhill', 'bridge', 'jungle', 'labyrinth', 'scrapbrain', 'skybase', 'boss', 'invincibility')
+
 if __name__ == '__main__':
     os.makedirs(f'{OUT}/music', exist_ok=True)
     os.makedirs(f'{OUT}/sfx', exist_ok=True)
     only = sys.argv[2] if len(sys.argv) > 2 else None
+    timing_path = f'{OUT}/music/timing.json'
+    timing = json.load(open(timing_path)) if os.path.exists(timing_path) else {}
     for idx, name in MUSIC.items():
         if only and only != name:
             continue
-        frames, loop = capture('music', idx)
-        frames += [[]] * 20     # let the last notes release
-        if loop is not None and loop > 0:
-            save(synth(frames[:loop]), f'{OUT}/music/{name}-intro.ogg')
-            save(synth(frames[loop:], warm=frames[:loop]), f'{OUT}/music/{name}.ogg')
-        else:
-            save(synth(frames), f'{OUT}/music/{name}.ogg')
-        print(f'music {idx:02X} {name:14s} frames={len(frames):5d} loop={loop}')
+        for fast in (False, True):
+            if fast and name not in FAST:
+                continue
+            out = name + ('-fast' if fast else '')
+            frames, loop = capture('music', idx, fast=fast)
+            if loop is not None and loop > 0:
+                save(synth(frames[:loop]), f'{OUT}/music/{out}-intro.ogg')
+                save(synth(frames[loop:], warm=frames[:loop]), f'{OUT}/music/{out}.ogg')
+                timing[out] = {'intro': loop, 'loop': len(frames) - loop, 'speed': tempo_factor(idx) if fast else 1}
+            else:
+                frames += [[]] * 20     # let the last notes release (not in a loop: it would add a pause)
+                save(synth(frames), f'{OUT}/music/{out}.ogg')
+                timing[out] = {'intro': 0, 'loop': len(frames), 'speed': tempo_factor(idx) if fast else 1}
+            print(f'music {idx:02X} {out:19s} frames={len(frames):5d} loop={loop}')
+    json.dump(timing, open(timing_path, 'w'), indent=1, sort_keys=True)
     if not only:
         for idx in range(0x23):
             frames, _ = capture('sfx', idx, max_frames=60 * 6, find_loop=False)
