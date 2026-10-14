@@ -149,6 +149,9 @@ class Scene extends EventEmitter
         // Afficher les game objects (enemies, monitors, etc.)
         $this->drawGameObjects();
 
+        // ghost of the best run (title menu > options), behind Sonic
+        $this->drawGhost();
+
         // Afficher le joueur par-dessus
         $this->drawPlayer($player);
 
@@ -281,7 +284,7 @@ class Scene extends EventEmitter
             [$src->x, $src->y, $src->w, $src->h] = \SonicGame\Entities\Objects\RomSprites::SONIC_SLIDE[$slide];
             $dst = new \SDL_Rect;
             [$dst->x, $dst->y, $dst->w, $dst->h] = [$destRect->x + 4, $destRect->y, 24, 32];
-            \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(), $this->sdl->getTextures(\SonicGame\Entities\Objects\RomSprites::SHEET)[0]['texture'],
+            \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(), $this->sdl->getTextures($player->getRomSheet())[0]['texture'],
                 $src, $dst, 0, null, $player->getFacing() === 'left' ? \SDL_FLIP_HORIZONTAL : \SDL_FLIP_NONE);
             if ($this->objectManager && $this->objectManager->hasInvincibility()) {
                 $this->drawInvincibilityStars($destRect->x + 16, $destRect->y + 16);
@@ -293,7 +296,7 @@ class Scene extends EventEmitter
             [$src->x, $src->y, $src->w, $src->h] = \SonicGame\Entities\Objects\RomSprites::SONIC_SPRING;
             $dst = new \SDL_Rect;
             [$dst->x, $dst->y, $dst->w, $dst->h] = [$destRect->x + 4, $destRect->y, 24, 32];
-            \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(), $this->sdl->getTextures(\SonicGame\Entities\Objects\RomSprites::SHEET)[0]['texture'],
+            \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(), $this->sdl->getTextures($player->getRomSheet())[0]['texture'],
                 $src, $dst, 0, null, $player->getFacing() === 'left' ? \SDL_FLIP_HORIZONTAL : \SDL_FLIP_NONE);
             if ($this->objectManager && $this->objectManager->hasInvincibility()) {
                 $this->drawInvincibilityStars($destRect->x + 16, $destRect->y + 16);
@@ -308,7 +311,7 @@ class Scene extends EventEmitter
             [$src->x, $src->y, $src->w, $src->h] = \SonicGame\Entities\Objects\RomSprites::SONIC_WAIT[$wait];
             $dst = new \SDL_Rect;
             [$dst->x, $dst->y, $dst->w, $dst->h] = [$destRect->x + 4, $destRect->y, 24, 32];
-            \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(), $this->sdl->getTextures(\SonicGame\Entities\Objects\RomSprites::SHEET)[0]['texture'],
+            \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(), $this->sdl->getTextures($player->getRomSheet())[0]['texture'],
                 $src, $dst, 0, null, $player->getFacing() === 'left' ? \SDL_FLIP_HORIZONTAL : \SDL_FLIP_NONE);
             return;
         }
@@ -532,6 +535,27 @@ class Scene extends EventEmitter
         }
         $step = (int)floor(microtime(true) * 60 / $speed) % $count;
         return $base . '-cycle' . $step;
+    }
+
+    /** Ghost frame to draw this frame: [x, y, sx, sy, sw, sh, flip] (GhostRecorder), or null. */
+    private ?array $ghostFrame = null;
+
+    public function setGhostFrame(?array $frame): void
+    {
+        $this->ghostFrame = $frame;
+    }
+
+    private function drawGhost(): void
+    {
+        if ($this->ghostFrame === null) return;
+        [$x, $y, $sx, $sy, $sw, $sh, $flip] = $this->ghostFrame;
+        $src = new \SDL_Rect;
+        [$src->x, $src->y, $src->w, $src->h] = [$sx, $sy, $sw, $sh];
+        $dst = new \SDL_Rect;
+        // same place as Sonic's sprite (drawPlayer): 4px left of his 24px box, 32x32
+        [$dst->x, $dst->y, $dst->w, $dst->h] = [(int)round($x - 4 - $this->camera->getX()), (int)round($y - $this->camera->getY()), 32, 32];
+        \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(), $this->sdl->getTextures('sonic-ghost')[0]['texture'],
+            $src, $dst, 0, null, $flip ? \SDL_FLIP_HORIZONTAL : \SDL_FLIP_NONE);
     }
 
     public function setDebugMode(int $debugMode)

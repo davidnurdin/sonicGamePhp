@@ -720,7 +720,18 @@ class Player extends Entity
 		$sdl->loadTexture($this->tilesetName, 'tileset/sprites/tileset-sonic.png',['r' => 0 , 'g' => '72' , 'b' => 0]);
 		// debug invincibility (F5): red eyes, tools/sonicgod.py
 		$sdl->loadTexture('sonic-god', 'tileset/sprites/tileset-sonic-god.png',['r' => 0 , 'g' => '72' , 'b' => 0]);
+		$sdl->loadTextureVariant('sonic-god', 'tileset/sprites/tileset-sonic-god.png', '-water', ['r' => 0 , 'g' => '72' , 'b' => 0]);
+		// the frames drawn from the ROM sheet (waiting, spring, water slide)
+		$sdl->loadTexture('rom-god', 'tileset/sprites/tileset-rom-god.png', ['r' => 170, 'g' => 0, 'b' => 170]);
+		// ghost of the best run (tools/sonicghost.py): white metal, half transparent (alpha channel, no colour key)
+		$sdl->loadTexture('sonic-ghost', 'tileset/sprites/tileset-sonic-ghost.png');
 	}
+
+    /** Sheet of Sonic's frames drawn from the ROM art (RomSprites::SHEET, or its red-eyed copy). */
+    public function getRomSheet(): string
+    {
+        return $this->tilesetName === 'sonic-god' ? 'rom-god' : \SonicGame\Entities\Objects\RomSprites::SHEET;
+    }
 
     public function setGodLook(bool $on): void
     {

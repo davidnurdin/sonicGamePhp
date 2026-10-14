@@ -85,6 +85,9 @@ class Boss extends GameObject
     private bool $gone = false;
     private bool $liftVisible = false;
     private float $liftY = 0;
+    /** Top of our real view: the Scrap Brain lift carries Sonic until he has left it (the ROM screen is lower). */
+    public float $viewTop = -INF;
+    private float $carriedY = 0;
     private array $events = [];
     private array $player = ['x' => 0, 'y' => 0, 'width' => 0, 'height' => 0];
     private float $playerVx = 0;
@@ -138,6 +141,8 @@ class Boss extends GameObject
 
     public function isStarted(): bool { return $this->started; }
     public function isGone(): bool { return $this->gone; }
+    /** Scrap Brain: Sonic has been carried off the screen by the lift. */
+    public function hidesPlayer(): bool { return $this->kind === self::SCRAP_BRAIN && $this->phase === 'done'; }
     public function isDefeated(): bool { return $this->hits >= $this->maxHits; }
     public function getHits(): int { return $this->hits; }
     public function hasFled(): bool { return $this->phase === 'defeated' && $this->frames > 320; }
@@ -145,12 +150,15 @@ class Boss extends GameObject
     /** True while the player's controls are taken away (Scrap Brain lift). */
     public function isCutscene(): bool
     {
-        return $this->kind === self::SCRAP_BRAIN && in_array($this->phase, ['liftUp', 'liftDown', 'carry', 'done'], true);
+        return ($this->kind === self::SCRAP_BRAIN && in_array($this->phase, ['liftUp', 'liftDown', 'carry', 'done'], true))
+            || ($this->kind === self::SKY_BASE && $this->phase === 'teleport' && !$this->gone);
     }
 
     /** SMS camera position (top-left of the 256x192 view) while the boss is fought. */
     public function getCameraLock(): ?array
     {
+        // Sky Base: the screen stays locked on the teleporter after Robotnik has gone (_7c8c)
+        if ($this->kind === self::SKY_BASE && $this->phase === 'teleport') return [0x550, 0x120];
         if (!$this->started || $this->gone) return null;
         if ($this->kind === self::SCRAP_BRAIN && $this->phase === 'flee') return null;
         // Sky Base: 15 frames after the glass broke the level right becomes $550, Sonic runs after Robotnik
@@ -546,6 +554,7 @@ class Boss extends GameObject
                 if ($this->x >= 0x5A0) {
                     $this->x = 0x5A0;
                     $this->vx = 0;
+                    $this->events[] = ['knockback', 0];   // Sonic's X speed cleared, the joypad is ignored
                     $this->phase = 'liftUp';
                     $this->frames = 0;
                 }
@@ -555,24 +564,26 @@ class Boss extends GameObject
                 $this->y = 0x280 - $this->frames;
                 $this->liftY = 0x2AF - $this->frames;
                 if (($this->frames & 0x1F) === 0x0F) $this->events[] = ['sfx', 0x19];
-                if ($this->frames >= 0xC0) {
+                // $C0 frames: off the 256x192 screen; our taller view: on until he has left it too
+                if ($this->frames >= 0xC0 && ($this->y + 0x30 <= $this->viewTop || $this->y <= 0)) {
                     $this->robotnikShown = false;
                     $this->phase = 'liftDown';
+                    $this->carriedY = $this->liftY;
                     $this->frames = 0;
                 }
                 break;
             case 'liftDown':
-                $this->liftY = 0x2AF - 0xC0 + $this->frames;
+                $this->liftY = $this->carriedY + $this->frames;
                 if (($this->frames & 0x1F) === 0x0F) $this->events[] = ['sfx', 0x19];
-                if ($this->frames >= 0xC0) {
+                if ($this->liftY >= 0x2AF) {
                     $this->liftY = 0x2AF;
                     $this->phase = 'waitSonic';
                     $this->frames = 0;
                 }
                 break;
             case 'waitSonic':
-                $feet = $this->player['y'] + $this->player['height'];
-                if ($sonicX + 12 > 0x596 && $sonicX + 12 < 0x5C0 && $feet >= 0x2AF - 4) {
+                // $596 < Sonic X <= $5C0, Sonic Y >= $28D (down in the lift shaft)
+                if ($sonicX > 0x596 && $sonicX <= 0x5C0 && $this->player['y'] >= 0x28D) {
                     $this->phase = 'carry';
                     $this->frames = 0;
                 }
@@ -581,14 +592,19 @@ class Boss extends GameObject
                 $this->liftY = 0x2AF - $this->frames;
                 $this->events[] = ['carry', 0x5A0, $this->liftY];
                 if (($this->frames & 0x1F) === 0x0F) $this->events[] = ['sfx', 0x19];
-                if ($this->frames >= 0xC0) {
+                // $C0 frames take Sonic above the 256x192 screen; our taller view: on until he has left it too
+                if ($this->frames >= 0xC0 && ($this->liftY + 0x10 <= $this->viewTop || $this->liftY <= 0)) {
                     $this->events[] = ['music', 'actcomplete'];
                     $this->phase = 'done';
+                    $this->carriedY = $this->liftY;
                     $this->events[] = ['complete'];
                 }
                 break;
             case 'done':
-                $this->events[] = ['carry', 0x5A0, $this->liftY];
+                // Sonic is put off the screen (camera X + 256), the empty lift goes back down
+                $this->events[] = ['carry', 0x5A0, $this->carriedY];
+                $this->liftY = min(0x2AF, $this->liftY + 1);
+                if ($this->liftY < 0x2AF && ((int)$this->liftY & 0x1F) === 0x0F) $this->events[] = ['sfx', 0x19];
                 break;
         }
         $this->vy = 0;
@@ -654,6 +670,10 @@ class Boss extends GameObject
             return;
         }
 
+        if ($this->phase === 'teleport') {
+            $this->skyBaseTeleport();
+            return;
+        }
         if ($this->phase !== 'escape') {
             $this->phase = 'escape';
             $this->frames = 0;
@@ -678,10 +698,31 @@ class Boss extends GameObject
                 }
             }
         }
-        if ($this->x >= 0x5E0 && $this->frames > 120) {
-            $this->visible = false;
-            $this->gone = true;
-            $this->events[] = ['complete'];
+        // on the teleporter block ($49) at $5E0: he stops there, the screen is locked on ($550, $120)
+        if ($this->x >= 0x5E0 && $this->vy == 0) {
+            $this->phase = 'teleport';
+            $this->frames = 0;
+            $this->x = 0x5E0;
+            $this->y = 0x160;
+            $this->vx = 0;
+        }
+    }
+
+    /**
+     * _b821 bit 3: the joypad is ignored; every 8 frames he swaps between pose 0 and pose 1 (2px lower, _b99f),
+     * from step $2C the teleport frame _bb77, at step $30 he has gone and 64 frames later the object is
+     * removed: Sonic can then take the teleporter (block behaviour 11, $FF = to the end of the game).
+     */
+    private function skyBaseTeleport(): void
+    {
+        $this->vx = $this->vy = 0;
+        $step = intdiv($this->frames, 8);
+        if ($step >= 0x30) {
+            $this->robotnikShown = false;
+            if ($this->frames >= 0x30 * 8 + 0x40) {
+                $this->gone = true;
+                $this->visible = false;
+            }
         }
     }
 
@@ -742,9 +783,14 @@ class Boss extends GameObject
                 'jump' => $p . '_f2',
                 'fire' => $p . '_f1',
                 'escape' => $this->vx != 0 ? $p . '_f' . $this->runFrame() : $p . '_f' . (intdiv($this->tickCount, 8) % 2),
+                'teleport' => intdiv($this->frames, 8) >= 0x2C ? $p . '_end' : $p . '_f' . (intdiv($this->frames, 8) % 2),
                 default => $p . '_f' . $this->skyPose,
             };
-            $this->drawDy = match ($this->phase) { 'fire' => 7, 'jump', 'escape' => 0, default => $this->skyPose ? 2 : 0 };
+            $this->drawDy = match ($this->phase) {
+                'fire' => 7, 'jump', 'escape' => 0,
+                'teleport' => intdiv($this->frames, 8) % 2 ? 2 : 0,
+                default => $this->skyPose ? 2 : 0,
+            };
             return;
         }
         $base = self::HIT_LAYOUT[$this->kind];

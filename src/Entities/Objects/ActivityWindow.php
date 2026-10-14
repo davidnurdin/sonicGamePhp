@@ -106,4 +106,15 @@ final class ActivityWindow
         [$cx, $cy] = $camera;
         return $x > $cx - $left && $x <= $cx + $right && $y > $cy - $top && $y <= $cy + $bottom;
     }
+
+    /**
+     * Same window around our real view (top-left x, y, width, height), wider than 256x192 when zoomed out:
+     * the margins of the type are kept on each side. With the 256x192 view this is the original window.
+     */
+    public static function containsView(int $type, float $x, float $y, array $view): bool
+    {
+        [$left, $right, $top, $bottom] = self::WINDOWS[$type] ?? [32, 288, 32, 224];
+        [$vx, $vy, $vw, $vh] = $view;
+        return $x > $vx - $left && $x <= $vx + $vw + $right - 256 && $y > $vy - $top && $y <= $vy + $vh + $bottom - 192;
+    }
 }

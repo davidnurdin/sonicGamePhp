@@ -118,6 +118,8 @@ class GameObjectManager extends EventEmitter
     private array $stats = ['oneUps' => 0, 'specialEntered' => 0, 'specialCleared' => 0, 'fellInPit' => false];
     /** Original camera position (see Camera::getRomCamera), for the object activity windows. */
     private array $romCamera = [0, 0];
+    /** Our real view: top-left x, y, width, height. */
+    private ?array $view = null;
 
     public function __construct(private Sdl $sdl)
     {
@@ -150,7 +152,8 @@ class GameObjectManager extends EventEmitter
         $this->finalGlow = null;
         $this->finalEmerald = null;
         $this->levelTime = 0;
-        $this->rings = 0;
+        // cheat: every act (and every restart) with 50 rings
+        $this->rings = $this->cheat('rings') ? 50 : 0;
         if (!$keepCheckpoint) {
             $this->checkpoint = null;
         }
@@ -363,7 +366,7 @@ class GameObjectManager extends EventEmitter
                 $shots = $obj->think($deltaTime, $rect['x'] + $rect['width'] / 2, $rect['y'] + $rect['height'] / 2);
                 // the original only runs the objects inside their activity window around the camera:
                 // no shot from a badnik that far from Sonic
-                if ($shots && $this->isActiveObject($obj)) {
+                if ($shots && $this->isShootingObject($obj)) {
                     foreach ($shots as $s) {
                         $shot = new Projectile($this->sdl, $s[0], $s[1], $s[2], $s[3], $s[4], $s[5] ?? null, $s[6] ?? null);
                         $shot->setLevel($level);
@@ -424,7 +427,7 @@ class GameObjectManager extends EventEmitter
                 $this->score += 1000;
                 $this->emit('chaosEmeraldCollected', [$this->emeralds]);
             } elseif ($obj instanceof EndSign) {
-                $this->handleSign($obj, $rect);
+                $this->handleSign($obj, $rect, $player);
             }
         }
 
@@ -503,6 +506,22 @@ class GameObjectManager extends EventEmitter
         $this->romCamera = $camera;
     }
 
+    public function setView(float $x, float $y, int $width, int $height): void
+    {
+        $this->view = [$x, $y, $width, $height];
+    }
+
+    /**
+     * Shots (badniks, Sky Base turrets and cannons): the original fires once the object is inside its activity
+     * window, i.e. about as soon as it is on the 256x192 screen. With our wider view the same window is taken
+     * around what is really shown, so a cannon on screen fires instead of waiting for Sonic to be close.
+     */
+    public function isShootingObject(GameObject $obj): bool
+    {
+        return $this->isActiveObject($obj) || ($this->view !== null
+            && ActivityWindow::containsView($obj->getObjectType(), $obj->getPosX(), $obj->getPosY(), $this->view));
+    }
+
     /** Inside the activity window of its type around the original camera (_31e6). */
     public function isActiveObject(GameObject $obj): bool
     {
@@ -549,7 +568,7 @@ class GameObjectManager extends EventEmitter
         }
         // bullets / cannon balls: only fired inside the activity window, like the badnik shots
         foreach ($obj->spawns as $spawn) {
-            if ($this->isActiveObject($obj)) {
+            if ($this->isShootingObject($obj)) {
                 $spawn->setLevel($this->level);
                 $this->transient[] = $spawn;
             }
@@ -557,7 +576,7 @@ class GameObjectManager extends EventEmitter
         $obj->spawns = [];
         foreach ($obj->sounds as $sfx) {
             // only audible when running in the original (activity window around the camera)
-            if ($this->isActiveObject($obj)) {
+            if ($this->isShootingObject($obj)) {
                 $this->sfx($sfx);
             }
         }
@@ -600,6 +619,9 @@ class GameObjectManager extends EventEmitter
         if (Mechanism::overlaps($wall, $rect)) {
             // put Sonic back on the side he came from and stop him (doObjectCode_door)
             $fromLeft = $rect['x'] + $rect['width'] / 2 < $wall['x'] + $wall['width'] / 2;
+            $vx = $player->getVelocity()[0];
+            // going away from it: let him go (Sonic put back at door X + 5 still touches its 4px wall)
+            if (($fromLeft && $vx < 0) || (!$fromLeft && $vx > 0)) return;
             if ($obj instanceof Door) {
                 // the original puts Sonic's object at door X - 20 / X + 5
                 $player->setX($fromLeft ? $obj->getPosX() - 20 : $obj->getPosX() + 5);
@@ -676,6 +698,7 @@ class GameObjectManager extends EventEmitter
     private function handleBoss(Boss $boss, float $deltaTime, Player $player, array $rect, bool $attacking): void
     {
         [$vx, $vy] = $player->getVelocity();
+        $boss->viewTop = $this->view[1] ?? -INF;
         $events = $boss->think($deltaTime, $rect, $vx, $attacking);
         if ($boss->isStarted() && !$this->bossMusic) {
             $this->bossMusic = true;
@@ -871,7 +894,9 @@ class GameObjectManager extends EventEmitter
                 // X = block * 32 + 8, Y = block * 32 (Sonic's 24x32 object)
                 $player->setXY($tx * 32 + 8, $ty * 32);
             } elseif ($flag === 0xFF) {
-                $this->completeAct();
+                // _5117: bit 2 of $D20D, the screen fades out and the next level starts without a tally (_1fa9)
+                $this->levelComplete = true;
+                $this->emit('teleportEnd', []);
             } else {
                 $this->levelComplete = true;
                 $this->emit('warp', [$flag]);
@@ -886,6 +911,7 @@ class GameObjectManager extends EventEmitter
                 || $this->finalPhase === 'emerald')) {
             return true;
         }
+        if ($this->boss?->hidesPlayer()) return true;
         return $this->teleport !== null && $this->teleport['frames'] < 0x14;
     }
 
@@ -1024,6 +1050,38 @@ class GameObjectManager extends EventEmitter
     }
 
     /** New game: lives, score, emeralds and the counters of the special bonus. */
+    /** Cheats of the title menu (Options::CHEATS => on), set by Game for each new game; none in the demo. */
+    private array $cheats = [];
+
+    public function setCheats(array $cheats): void
+    {
+        $this->cheats = $cheats;
+    }
+
+    private function cheat(string $name): bool
+    {
+        return !empty($this->cheats[$name]);
+    }
+
+    /** Debug / cheat: invincible on or off (F5 toggles it). */
+    public function setGodMode(bool $on): void
+    {
+        $this->godMode = $on;
+    }
+
+    /** A new game starts: cheats "6 emeralds" and "50 rings" (the first act may be loaded already). */
+    public function startGameCheats(): void
+    {
+        if ($this->cheat('emeralds')) $this->emeralds = 6;
+        if ($this->cheat('rings')) $this->rings = max(50, $this->rings);
+    }
+
+    /** At least one cheat is on: the game does not count for the ghosts and the high scores. */
+    public function hasCheats(): bool
+    {
+        return in_array(true, $this->cheats, true);
+    }
+
     public function resetGame(): void
     {
         $this->lives = 3;
@@ -1129,6 +1187,9 @@ class GameObjectManager extends EventEmitter
             $this->speedShoesTimer -= $deltaTime;
             if ($this->speedShoesTimer <= 0) $player->setSpeedBoost(false);
         }
+        // cheats: speed shoes and shield for good
+        if ($this->cheat('turbo') && !$this->dead) $player->setSpeedBoost(true);
+        if ($this->cheat('shield') && !$this->dead && !$this->hurt) $this->shield = true;
         if ($this->sign && $this->sign->isFinished() && !$this->levelComplete) {
             if (!$this->signStopped) {
                 $this->signStopped = true;
@@ -1328,12 +1389,13 @@ class GameObjectManager extends EventEmitter
         return $pending;
     }
 
-    private function handleSign(EndSign $sign, array $rect): void
+    private function handleSign(EndSign $sign, array $rect, Player $player): void
     {
+        $sign->watchSonic($rect['x'], $player->isGrounded());
         // The ROM (doObjectCode_boss_endSign) needs a real collision with Sonic, not just passing its X.
         $top = $sign->getPosY();
         if ($rect['y'] + $rect['height'] < $top || $rect['y'] > $top + $sign->getHeight()) return;
-        if ($sign->checkPassed($rect['x'] + $rect['width'] / 2)) {
+        if ($sign->checkPassed($rect['x'] + $rect['width'] / 2, $player->getVelocity()[0])) {
             [$face, $this->signEffect] = $this->signResult();
             $sign->setFinalFace($face);
             $this->emit('sfx', [SoundManager::SFX_SIGN_SPIN, true]);
@@ -1421,8 +1483,10 @@ class GameObjectManager extends EventEmitter
 
         if ($this->deadFrames < $this->deadLength) return;
 
-        $this->lives--;
+        if (!$this->cheat('lives')) $this->lives--;
         $this->continuePending = false;
+        // cheat: a continue is always offered
+        if ($this->cheat('continues')) $this->continues = max(1, $this->continues);
         // Game fades the screen out, then restarts the act (respawnPlayer) or shows the game over (_1401);
         // Sonic stays dead (no second death below the screen) until then
         $this->deadLength = 0;
@@ -1464,11 +1528,12 @@ class GameObjectManager extends EventEmitter
     /** Continue taken on the game over screen: 3 lives, the act starts again from its beginning, score kept. */
     public function useContinue(): void
     {
-        $this->continues = max(0, $this->continues - 1);
+        if (!$this->cheat('continues')) $this->continues = max(0, $this->continues - 1);
         $this->lives = 3;
         $this->checkpoint = null;
     }
     public function getLevelTime(): float { return $this->levelTime; }
+    public function hasCheckpoint(): bool { return $this->checkpoint !== null; }
 
     /** Where Sonic starts the act again after a death (the checkpoint monitor), or null for the level start. */
     public function getCheckpoint(): ?array

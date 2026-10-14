@@ -13,6 +13,10 @@ use SonicGame\InputManager\InputTouchpad;
 use SonicGame\Level\LevelManager;
 use SonicGame\Loop\GameLoop;
 use SonicGame\Renderer\Sdl;
+use SonicGame\Renderer\TextRenderer;
+use SonicGame\Save\GhostRecorder;
+use SonicGame\Save\BestTimes;
+use SonicGame\Save\Options;
 use SonicGame\Scene\Scene;
 use SonicGame\Scene\Screens;
 use SonicGame\SoundManager\SoundManager;
@@ -42,6 +46,22 @@ class Game extends EventEmitter
     private int $zoomOffset = 0;
     private bool $smsView = false;
 
+    /** F6: panel with Sonic's coordinates over the screen (to report bugs). */
+    private bool $coordsPanel = false;
+    private TextRenderer $text;
+    /** Title menu options (var/options.json) and the ghost of the fastest run of each level (var/ghosts). */
+    private Options $options;
+    private GhostRecorder $ghost;
+    /** Best times of each act (title menu > best times), var/besttimes.json. */
+    private BestTimes $bestTimes;
+    /** Time already spent in the act before a Scrap Brain transporter / the Sky Base 2 door (rooms reset the timer). */
+    private float $actTimeBefore = 0;
+    /** Name typed for the first best time of this session, used for the next ones until the game is closed. */
+    private ?string $playerName = null;
+    /** Best time waiting for the player's name: [act, index, time], and what to do once it is typed. */
+    private ?array $pendingName = null;
+    private ?\Closure $afterName = null;
+
     public function __construct(
         public GameLoop $gameLoop,
         private InputManager $inputManager,
@@ -57,6 +77,12 @@ class Game extends EventEmitter
         $this->objectManager = new GameObjectManager($sdl);
         $scene->setObjectManager($this->objectManager);
         $this->screens = new Screens($sdl);
+        $root = dirname(__DIR__);
+        $this->text = new TextRenderer($sdl, $root . '/assets');
+        $this->options = new Options($root . '/var/options.json');
+        $this->ghost = new GhostRecorder($root . '/var/ghosts');
+        $this->bestTimes = new BestTimes($root . '/var/besttimes.json');
+        $this->screens->setMenu($this->text, $this->options, $this->ghost, $this->bestTimes);
     }
 
     /** Next special stage ($D23F, from $1C = our level 28) and the act to go on from after it. */
@@ -117,6 +143,16 @@ class Game extends EventEmitter
         $this->objectManager->on('music', fn(string $name, bool $loop) => $this->soundManager->playMusic($name, $loop, true));
         $this->objectManager->on('levelMusic', fn() => $this->playLevelMusic(true));
         $this->objectManager->on('extraLife', fn() => $this->soundManager->playSfx(SoundManager::SFX_EXTRA_LIFE));
+        // ghost: a completed act is kept when it is the fastest; a restart from a checkpoint is not recorded
+        // best times: the act timer when it is completed (not with cheats)
+        $this->objectManager->on('levelComplete', fn() => $this->recordActTime());
+        $this->objectManager->on('teleportEnd', fn() => $this->recordActTime());
+        $this->objectManager->on('levelComplete', fn() => $this->objectManager->hasCheats() ? null : $this->ghost->finish(
+            $this->levelManager->getCurrentLevel()->getLevel(), $this->objectManager->getLevelTime()));
+        $this->objectManager->on('teleportEnd', fn() => $this->objectManager->hasCheats() ? null : $this->ghost->finish(
+            $this->levelManager->getCurrentLevel()->getLevel(), $this->objectManager->getLevelTime()));
+        $this->objectManager->on('playerRespawned', fn() => $this->ghost->begin(
+            $this->levelManager->getCurrentLevel()->getLevel(), !$this->objectManager->hasCheckpoint()));
         $this->objectManager->on('playerRespawned', function () {
             if (!$this->screens->isActive()) $this->playLevelMusic(true);   // not after a game over (title)
         });
@@ -137,6 +173,7 @@ class Game extends EventEmitter
                 $this->startLevel();
                 return;
             }
+            $this->actTimeBefore = 0;
             $this->objectManager->resetGame();
             $this->warpFrom = null;
             $this->specialReturn = null;
@@ -163,8 +200,16 @@ class Game extends EventEmitter
         });
 
         // Title -> map -> level -> act complete -> map -> next level...
-        $this->screens->on('titleDone', fn() => $this->startLevel());
+        $this->screens->on('titleDone', function () {
+            $this->actTimeBefore = 0;
+            $this->startGameCheats();
+            $this->startLevel();
+        });
         $this->screens->on('titleDemo', function () {
+            // the demo is played without the cheats
+            $this->objectManager->setCheats([]);
+            $this->objectManager->setGodMode(false);
+            $this->player->setGodLook(false);
             $this->demo = true;
             $this->demoFrames = 0;
             $this->demoClock = 0;
@@ -174,31 +219,71 @@ class Game extends EventEmitter
             $this->startLevel();
         });
         $this->screens->on('mapDone', fn() => $this->playLevelMusic(true));
-        $this->screens->on('actCompleteDone', function () {
-            $this->objectManager->setScore($this->screens->getScore());
-            $current = $this->levelManager->getCurrentLevel()->getLevel();
-            // _1fa9: the sign showed "!": the next special stage ($D23F) is played, then the next act
-            if ($this->objectManager->takeSpecialStage() && $this->nextSpecialStage <= 35) {
-                $this->specialReturn = $this->warpFrom ?? $current;
-                $this->warpFrom = null;
-                $this->levelManager->goToLevel($this->nextSpecialStage++);
-                $this->startLevel();
-                return;
+        // a new best time without a name yet: the name is asked after the tally (or the Sky Base 3 teleporter)
+        $this->screens->on('nameDone', function (string $name) {
+            $this->playerName = $name;
+            if ($this->pendingName !== null) {
+                $this->bestTimes->setName($this->pendingName[0], $this->pendingName[1], $name);
             }
-            if ($this->specialReturn !== null && $current >= 28) {
-                $this->levelManager->goToLevel($this->specialReturn);
-                $this->specialReturn = null;
-            }
-            // after a transporter room the game goes on from the act that led there
-            if ($this->warpFrom !== null) {
-                $this->levelManager->goToLevel($this->warpFrom);
-                $this->warpFrom = null;
-            }
+            $this->pendingName = null;
+            $then = $this->afterName;
+            $this->afterName = null;
+            $then && $then();
+        });
+        $this->screens->on('actCompleteDone', fn() => $this->askNameThen(fn() => $this->afterActComplete()));
+    }
+
+    /** Shows the name entry when a best time is waiting for it, then goes on with $then. */
+    private function askNameThen(\Closure $then): void
+    {
+        if ($this->pendingName === null) {
+            $then();
+            return;
+        }
+        [$act, $index, $time] = $this->pendingName;
+        $this->afterName = $then;
+        $this->screens->showNameEntry(BestTimes::place($act), $index + 1, BestTimes::format($time));
+    }
+
+    /** After the tally: the next special stage, the act after a transporter room, or the next act. */
+    private function afterActComplete(): void
+    {
+        $this->actTimeBefore = 0;
+        $this->objectManager->setScore($this->screens->getScore());
+        $current = $this->levelManager->getCurrentLevel()->getLevel();
+        // _1fa9: the sign showed "!": the next special stage ($D23F) is played, then the next act
+        if ($this->objectManager->takeSpecialStage() && $this->nextSpecialStage <= 35) {
+            $this->specialReturn = $this->warpFrom ?? $current;
+            $this->warpFrom = null;
+            $this->levelManager->goToLevel($this->nextSpecialStage++);
+            $this->startLevel();
+            return;
+        }
+        if ($this->specialReturn !== null && $current >= 28) {
+            $this->levelManager->goToLevel($this->specialReturn);
+            $this->specialReturn = null;
+        }
+        // after a transporter room the game goes on from the act that led there
+        if ($this->warpFrom !== null) {
+            $this->levelManager->goToLevel($this->warpFrom);
+            $this->warpFrom = null;
+        }
+        $this->levelManager->nextLevel();
+        $this->startLevel();
+    }
+
+    private function registerLevelEvents(): void
+    {
+        // Sky Base 3 teleporter ($FF): fade out, then the next level (the end) without tally
+        $this->objectManager->on('teleportEnd', fn() => $this->fadeLevelOut(0, fn() => $this->askNameThen(function () {
+            $this->actTimeBefore = 0;
+            $this->warpFrom = null;
             $this->levelManager->nextLevel();
             $this->startLevel();
-        });
+        })));
         // Scrap Brain transporter: the target room starts at once, without tally
         $this->objectManager->on('warp', function (int $level) {
+            $this->actTimeBefore += $this->objectManager->getLevelTime();
             $this->warpFrom ??= $this->levelManager->getCurrentLevel()->getLevel();
             $this->levelManager->goToLevel($level);
             $this->playLevelMusic(true);
@@ -228,6 +313,27 @@ class Game extends EventEmitter
         if ($this->levelFade !== null) return;
         $this->soundManager->stopMusic();
         $this->fadeLevelOut(0, fn() => $this->closeDemo());
+    }
+
+    /** Escape during a game: it is abandoned, back to the main menu with a new game ready (like a game over). */
+    private function backToTitle(): void
+    {
+        $this->levelFade = null;   // a death / end-of-demo fade must not go on behind the menu
+        $this->soundManager->stopSfx(SoundManager::SFX_SIGN_SPIN);
+        $this->demo = false;
+        $this->pendingName = null;
+        $this->afterName = null;
+        $this->actTimeBefore = 0;
+        $this->warpFrom = null;
+        $this->specialReturn = null;
+        $this->nextSpecialStage = 28;
+        $this->objectManager->resetGame();
+        $this->levelManager->firstLevel();
+        $this->levelReload(1);
+        $this->player->setVelocity(0, 0);
+        $this->player->setAcceleration(0, 0);
+        $this->screens->close();
+        $this->screens->showTitle();
     }
 
     private function closeDemo(): void
@@ -269,6 +375,85 @@ class Game extends EventEmitter
         if (!$button && $wasButton) $this->player->jumpRelease();
         $this->objectManager->setButtonHeld($button);
         $this->demoPrevious = $pad;
+    }
+
+    /** Act completed: its time goes to the best times (not with cheats); the page will open on this act. */
+    private function recordActTime(): void
+    {
+        if ($this->demo || $this->objectManager->hasCheats()) return;
+        $level = $this->levelManager->getCurrentLevel()->getLevel();
+        $time = $this->actTimeBefore + $this->objectManager->getLevelTime();
+        $added = $this->bestTimes->add($level, $time, $this->playerName ?? '');
+        if ($added === null) return;
+        [$act, $index] = $added;
+        $this->screens->showTimesOf($act);
+        // among the 5 best and no name yet this session: asked after the tally
+        if ($index !== null && $this->playerName === null) {
+            $this->pendingName = [$act, $index, $time];
+        }
+    }
+
+    /**
+     * New game from the title menu: the cheats of the options (invincible = F5 for the whole game, infinite
+     * lives / continues, 50 rings, turbo, shield, 6 emeralds) and the act chosen to start with.
+     */
+    private function startGameCheats(): void
+    {
+        $this->objectManager->setCheats($this->options->getCheats());
+        $this->objectManager->startGameCheats();
+        if ($this->options->isCheatOn('invincible')) {
+            $this->objectManager->setGodMode(true);
+            $this->player->setGodLook(true);
+        }
+        $start = $this->options->getStartLevel();
+        if ($start !== $this->levelManager->getCurrentLevel()->getLevel()) {
+            $this->levelManager->goToLevel($start);
+        }
+    }
+
+    /**
+     * Ghost: Sonic's run is recorded on the level time (not in the demo, the special stages or while dying),
+     * and the best run of the level is drawn when the option is on.
+     */
+    private function updateGhost(): void
+    {
+        $level = $this->levelManager->getCurrentLevel()->getLevel();
+        $time = $this->objectManager->getLevelTime();
+        $played = !$this->demo && $level < 28 && $this->scene->getCurrentLevel() === $this->levelManager->getCurrentLevel();
+        // runs with cheats are not recorded
+        if ($played && !$this->objectManager->hasCheats() && !$this->objectManager->isPlayerDead() && !$this->objectManager->isLevelComplete()) {
+            $this->ghost->record($level, $time, $this->player->getX(), $this->player->getY(), $this->player->getFrameSnapshot());
+        }
+        $this->scene->setGhostFrame($played && $this->options->isGhostEnabled() ? $this->ghost->frameAt($level, $time) : null);
+    }
+
+    /** F6 panel, in window pixels: level, Sonic's position (pixels and blocks), speed, camera, state, time. */
+    private function drawCoordsPanel(int $windowHeight): void
+    {
+        $size = max(12, (int)round($windowHeight / 36));
+        $x = (int)round($this->player->getX());
+        $y = (int)round($this->player->getY());
+        [$vx, $vy] = $this->player->getVelocity();
+        $camera = $this->scene->getCamera();
+        $time = $this->objectManager->getLevelTime();
+        $level = $this->levelManager->getCurrentLevel()->getLevel();
+        $best = $this->ghost->bestTime($level);
+        $lines = [
+            'NIVEAU ' . $level,
+            'X ' . $x . '   Y ' . $y,
+            sprintf('BLOC %d,%d  (%02X,%02X)', intdiv($x, 32), intdiv($y, 32), intdiv($x, 32), intdiv($y, 32)),
+            sprintf('VX %d  VY %d', (int)round($vx / 60 * 256), (int)round($vy / 60 * 256)),
+            'CAM ' . $camera->getX() . ',' . $camera->getY(),
+            'ETAT ' . strtoupper($this->player->getState()),
+            sprintf('TEMPS %d:%05.2F', intdiv((int)$time, 60), fmod($time, 60)),
+        ];
+        if ($best !== null) $lines[] = sprintf('GHOST %d:%05.2F', intdiv((int)$best, 60), fmod($best, 60));
+        $line = (int)round($size * 1.3);
+        $width = max(array_map(fn($l) => $this->text->width($l, $size), $lines));
+        $this->text->panel(8, 8, $width + $size * 2, count($lines) * $line + $size);
+        foreach ($lines as $i => $text) {
+            $this->text->draw($text, 8 + $size, 8 + (int)($size / 2) + $i * $line, $size, $i === 1 ? [255, 255, 0] : [255, 255, 255]);
+        }
     }
 
     /** Shows the map before the acts that have one (levels 1-18), the level starts when it ends. */
@@ -346,6 +531,7 @@ class Game extends EventEmitter
 
         $this->levelManager->loadLevels();
         $this->registerEvents();
+        $this->registerLevelEvents();
         $this->screens->showTitle();
         $frameDuration = 0 ; // 1 / 60; // 60Hz
         $inputDuration = 0 ; // 1 / 600; // 240Hz
@@ -463,6 +649,9 @@ class Game extends EventEmitter
 				$this->sdl->getRenderer()->setColor(0, 0, 0, 255);   // borders (256x192 mode, rounding)
 				$this->sdl->getRenderer()->clear();
 				\SDL_RenderCopy($this->sdl->getRenderer()->getRenderer(),$this->sdl->getRenderer()->getRenderTexture(), null, $dst); // on copie la texture dans le renderer
+				if ($this->coordsPanel && !$this->screens->isActive()) {
+					$this->drawCoordsPanel($height);
+				}
 				$this->sdl->getRenderer()->present();
 
 			// SDL_HINT_RENDER_SCALE_QUALITY ?
@@ -549,8 +738,11 @@ class Game extends EventEmitter
                     $this->player->updateSprite($deltaTime);
                 }
                 $this->objectManager->setRomCamera($this->scene->getCamera()->getRomCamera($this->player->getX(), $this->player->getY()));
+                $window = $this->sdl->getWindow();
+                $this->objectManager->setView($this->scene->getCamera()->getX(), $this->scene->getCamera()->getY(), $window->getWidth(), $window->getHeight());
                 $this->objectManager->setWave($this->scene->getCamera()->getWave());
                 $this->objectManager->update($deltaTime, $this->player, $this->scene->getCurrentLevel());
+                $this->updateGhost();
 
                 // a jingle (emerald...) has finished: back to the level music
                 if (!$this->objectManager->isPlayerDead() && !$this->objectManager->isLevelComplete()
@@ -642,8 +834,26 @@ class Game extends EventEmitter
             if ($keyboard->isKeyPressed(\SDLK_SPACE) || $keyboard->isKeyPressed(\SDLK_RETURN)) {
                 $this->buttonPressed = true;
             }
+            // title menu (start / options), or the on-screen keyboard of a new best time
+            $naming = $this->screens->isNameEntry();
+            foreach ([\SDLK_UP => 'up', \SDLK_DOWN => 'down', \SDLK_LEFT => 'left', \SDLK_RIGHT => 'right'] as $key => $direction) {
+                if (!$keyboard->isKeyPressed($key)) continue;
+                $naming ? $this->screens->nameKey($direction) : $this->screens->menuInput($direction);
+            }
+            if ($naming) {
+                // the real keyboard also types: A-Z, 0-9, backspace
+                foreach (array_merge(range(ord('a'), ord('z')), range(ord('0'), ord('9'))) as $code) {
+                    if ($keyboard->isKeyPressed($code)) $this->screens->nameKey(chr($code));
+                }
+                if ($keyboard->isKeyPressed(\SDLK_BACKSPACE)) $this->screens->nameKey('back');
+            }
             if ($keyboard->isKeyPressed(\SDLK_ESCAPE)) {
-                $this->inputManager->emit('exitGame', []);
+                // the main menu quits; its pages go back; the other screens (map, tally...) go to the menu
+                match ($this->screens->back()) {
+                    'quit' => $this->inputManager->emit('exitGame', []),
+                    'title' => $this->backToTitle(),
+                    default => null,
+                };
             }
             if ($keyboard->isKeyPressed(\SDLK_F12)) {
                 $this->sdl->getWindow()->toggleFullscreen();
@@ -653,7 +863,7 @@ class Game extends EventEmitter
 
         if ($this->demo) {
             // only F12 / Escape below the demo's own joypad
-            if ($keyboard->isKeyPressed(\SDLK_ESCAPE)) $this->inputManager->emit('exitGame', []);
+            if ($keyboard->isKeyPressed(\SDLK_ESCAPE)) $this->endDemo();
             if ($keyboard->isKeyPressed(\SDLK_F12)) $this->sdl->getWindow()->toggleFullscreen();
             return;
         }
@@ -734,8 +944,8 @@ class Game extends EventEmitter
 
         if ($keyboard->isKeyPressed(\SDLK_ESCAPE))
         {
-            // Exit the game
-            $this->inputManager->emit('exitGame', []);
+            // back to the main menu (Escape there quits the game)
+            $this->backToTitle();
         }
 
         if ($keyboard->isKeyPressed(\SDLK_F1))
@@ -763,6 +973,12 @@ class Game extends EventEmitter
         {
             // debug: invincible against everything (enemies, traps, pits, drowning), Sonic with red eyes
             $this->player->setGodLook($this->objectManager->toggleGodMode());
+        }
+
+        if ($keyboard->isKeyPressed(\SDLK_F6))
+        {
+            // debug: Sonic's coordinates in a panel over the screen
+            $this->coordsPanel = !$this->coordsPanel;
         }
 
         if ($keyboard->isKeyPressed(\SDLK_F4))

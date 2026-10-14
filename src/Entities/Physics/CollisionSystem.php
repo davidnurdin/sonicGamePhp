@@ -409,6 +409,9 @@ class CollisionSystem extends EventEmitter
 				if ($surfaceY === null) continue;
 
 				$penetration = $feetY - $surfaceY;
+				// a surface above the feet only counts when the scenery is solid down to them (slope, step):
+				// not a band hanging over Sonic with a gap under it (Scrap Brain teleporter blocks, type $10)
+				if ($penetration > 1 && !$level->isSolidAt($sx, (int)floor($feetY) - 1)) continue;
 
 				if ($penetration >= 0 && $penetration <= $this->tileSize) {
 					$entityY = $surfaceY - $rect['height'];

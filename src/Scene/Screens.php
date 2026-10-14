@@ -4,6 +4,10 @@ namespace SonicGame\Scene;
 
 use Evenement\EventEmitter;
 use SonicGame\Renderer\Sdl;
+use SonicGame\Renderer\TextRenderer;
+use SonicGame\Save\GhostRecorder;
+use SonicGame\Save\BestTimes;
+use SonicGame\Save\Options;
 use SonicGame\SoundManager\SoundManager;
 
 /**
@@ -74,6 +78,36 @@ class Screens extends EventEmitter
 
     private ?SoundManager $sound = null;
 
+    // title menu (instead of "PRESS BUTTON"): START / OPTIONS, and the options page (ghost on / off)
+    private ?TextRenderer $text = null;
+    private ?Options $options = null;
+    private ?GhostRecorder $ghosts = null;
+    /** Options > erase the ghosts: '' / 'confirm' (asked once more) / 'done' (shown until the cursor moves). */
+    private string $eraseState = '';
+    private string $titlePage = 'menu';
+    private int $menuIndex = 0;
+    private int $titleIdle = 0;
+    private bool $pendingButton = false;
+    private const MENU_Y = 133;
+    // two-tone text like the game's screens: yellow over orange, the selected line white over yellow
+    private const MENU_TOP = [255, 255, 85];
+    private const MENU_BOTTOM = [255, 170, 0];
+    private const SELECTED_TOP = [255, 255, 255];
+    private const SELECTED_BOTTOM = [255, 255, 85];
+    private ?BestTimes $bestTimes = null;
+    /** Best times page: the act shown (left / right). */
+    private int $timesAct = 1;
+    // jukebox: the songs of the game and the sound effects $00-$22
+    private const SONGS = [
+        'greenhill' => 'GREEN HILL', 'bridge' => 'BRIDGE', 'jungle' => 'JUNGLE', 'labyrinth' => 'LABYRINTH',
+        'scrapbrain' => 'SCRAP BRAIN', 'skybase' => 'SKY BASE', 'title' => 'TITRE', 'map' => 'CARTE',
+        'invincibility' => 'INVINCIBLE', 'boss' => 'BOSS', 'actcomplete' => 'ACTE TERMINE', 'death' => 'MORT',
+        'specialstage' => 'SPECIAL STAGE', 'emerald' => 'EMERAUDE', 'allemeralds' => 'TOUTES EMERAUDES', 'ending' => 'FIN',
+    ];
+    private const SFX_COUNT = 0x23;
+    private int $song = 0;
+    private int $sfx = 0;
+
     // fadeOut ($0A6E): 4 steps of 10 frames darken the palette, then [black frames]; _b50: 10 black frames and
     // 4 steps of 10 frames back to the palette. [event, args, frames, black frames]
     private ?array $closing = null;
@@ -83,6 +117,149 @@ class Screens extends EventEmitter
     public function setSoundManager(SoundManager $sound): void
     {
         $this->sound = $sound;
+    }
+
+    public function setMenu(TextRenderer $text, Options $options, GhostRecorder $ghosts, BestTimes $bestTimes): void
+    {
+        $this->text = $text;
+        $this->options = $options;
+        $this->ghosts = $ghosts;
+        $this->bestTimes = $bestTimes;
+    }
+
+    /** The best times page opens on this act (the one just completed). */
+    public function showTimesOf(int $act): void
+    {
+        $this->timesAct = $act;
+    }
+
+    /**
+     * Entries of the current menu page: [label, value shown on the right or null, button, left / right (or null)].
+     * Pages: 'menu' (on the title picture), 'options', 'cheats', 'scores'.
+     */
+    private function menuItems(): array
+    {
+        $options = $this->options;
+        switch ($this->titlePage) {
+            case 'options':
+                $ghost = fn() => $this->changed(fn() => $options->setGhostEnabled(!$options->isGhostEnabled()));
+                return [
+                    ['GHOST', $options->isGhostEnabled() ? 'ON' : 'OFF', $ghost, $ghost],
+                    [match ($this->eraseState) { 'confirm' => 'CONFIRMER ?', 'done' => 'GHOSTS EFFACES', default => 'EFFACER GHOSTS' },
+                        null, fn() => $this->eraseGhosts(), null],
+                    ['JUKEBOX', null, fn() => $this->openPage('jukebox', 0), null],
+                    ['CHEATS', null, fn() => $this->openPage('cheats', 0), null],
+                    ['RETOUR', null, fn() => $this->openPage('menu', 1), null],
+                ];
+            case 'jukebox':
+                $songs = array_keys(self::SONGS);
+                $play = function () use ($songs) {
+                    $this->sound?->playMusic($songs[$this->song], true, true);
+                };
+                $sfx = fn() => $this->sound?->playSfx($this->sfx);
+                return [
+                    ['MUSIQUE', self::SONGS[$songs[$this->song]], $play, function (int $direction) use ($songs, $play) {
+                        $this->song = ($this->song + $direction + count($songs)) % count($songs);
+                        $play();
+                    }],
+                    ['BRUITAGE', sprintf('%02X', $this->sfx), $sfx, function (int $direction) use ($sfx) {
+                        $this->sfx = ($this->sfx + $direction + self::SFX_COUNT) % self::SFX_COUNT;
+                        $sfx();
+                    }],
+                    ['STOP', null, fn() => $this->sound?->stopMusic(), null],
+                    ['RETOUR', null, function () {
+                        $this->sound?->playMusic('title', false, true);
+                        $this->openPage('options', 2);
+                    }, null],
+                ];
+            case 'cheats':
+                $items = [];
+                foreach (Options::CHEATS as $cheat => $label) {
+                    $toggle = fn() => $this->changed(fn() => $options->toggleCheat($cheat));
+                    $items[] = [$label, $options->isCheatOn($cheat) ? 'ON' : 'OFF', $toggle, $toggle];
+                }
+                // the act a new game starts with: left / right, or the button for the next one
+                $start = $options->getStartLevel();
+                $items[] = ['DEPART', BestTimes::place($start),
+                    fn() => $this->changed(fn() => $options->setStartLevel($start % 18 + 1)),
+                    fn(int $direction) => $this->changed(fn() => $options->setStartLevel(($start - 1 + $direction + 18) % 18 + 1))];
+                $items[] = ['RETOUR', null, fn() => $this->openPage('options', 3), null];
+                return $items;
+            case 'scores':
+                // the act: left / right, or the button for the next one
+                $act = fn(int $direction) => [$this->timesAct = ($this->timesAct - 1 + $direction + 18) % 18 + 1,
+                    $this->sound?->playSfx(SoundManager::SFX_SWITCH)];
+                return [
+                    [BestTimes::place($this->timesAct), null, fn() => $act(1), $act],
+                    ['RETOUR', null, fn() => $this->openPage('menu', 2), null],
+                ];
+            default:
+                return [
+                    ['DEMARRER', null, fn() => $this->finish('titleDone'), null],
+                    ['OPTIONS', null, fn() => $this->openPage('options', 0), null],
+                    ['MEILLEURS TEMPS', null, fn() => $this->openPage('scores', 0), null],
+                ];
+        }
+    }
+
+    private function openPage(string $page, int $index): void
+    {
+        $this->titlePage = $page;
+        $this->menuIndex = $index;
+        $this->eraseState = '';
+        $this->sound?->playSfx(SoundManager::SFX_SWITCH);
+    }
+
+    private function changed(\Closure $change): void
+    {
+        $change();
+        $this->sound?->playSfx(SoundManager::SFX_RING);
+    }
+
+    /** Options > erase the ghosts, asked twice: the saved runs are deleted for good. */
+    private function eraseGhosts(): void
+    {
+        if ($this->eraseState === 'confirm') {
+            $this->ghosts?->clearAll();
+            $this->eraseState = 'done';
+            $this->sound?->playSfx(SoundManager::SFX_EXPLOSION);
+        } elseif ($this->eraseState === '') {
+            $this->eraseState = 'confirm';
+            $this->sound?->playSfx(SoundManager::SFX_SWITCH);
+        }
+    }
+
+    /**
+     * Escape: 'quit' on the main menu; a page of the menu goes back to the one before it (its RETOUR) and the
+     * name entry keeps the name typed ('handled'); any other screen: 'title' (Game goes back to the menu).
+     */
+    public function back(): string
+    {
+        if ($this->screen === 'nameEntry') {
+            $this->typeName('ok');
+            return 'handled';
+        }
+        if ($this->screen !== 'title') return 'title';
+        if ($this->titlePage === 'menu' || $this->options === null) return 'quit';
+        $items = $this->menuItems();
+        (end($items)[2])();
+        return 'handled';
+    }
+
+    /** Arrow keys on the title menu: 'up', 'down', 'left', 'right'. */
+    public function menuInput(string $direction): void
+    {
+        if ($this->screen !== 'title' || $this->closing !== null || $this->options === null) return;
+        $this->titleIdle = 0;
+        $items = $this->menuItems();
+        if ($direction === 'up' || $direction === 'down') {
+            $count = count($items);
+            $this->menuIndex = ($this->menuIndex + ($direction === 'up' ? $count - 1 : 1)) % $count;
+            $this->eraseState = '';
+            $this->sound?->playSfx(SoundManager::SFX_SWITCH);
+        } elseif ($side = $items[$this->menuIndex][3] ?? null) {
+            $side($direction === 'left' ? -1 : 1);
+        }
     }
 
     public function __construct(private Sdl $sdl)
@@ -136,7 +313,114 @@ class Screens extends EventEmitter
     public function showTitle(): void
     {
         $this->sound?->playMusic('title', false, true);
+        $this->titlePage = 'menu';
+        $this->menuIndex = 0;
+        $this->titleIdle = 0;
+        $this->eraseState = '';
         $this->start('title');
+    }
+
+    // new best time: the player's name on an on-screen keyboard (event nameDone [name])
+    private string $entryAct = '';
+    private int $entryRank = 1;
+    private string $entryTime = '';
+    private string $entryName = '';
+    private int $entryRow = 0;
+    private int $entryCol = 0;
+    private const NAME_LENGTH = 8;
+    // 10 columns; the last row: SPACE (columns 0-2), DELETE (3-6), OK (7-9)
+    private const KEYBOARD = ['ABCDEFGHIJ', 'KLMNOPQRST', 'UVWXYZ.-!?', '0123456789'];
+    private const KEYBOARD_KEYS = [['ESPACE', ' ', 0, 3], ['EFFACER', 'back', 3, 4], ['OK', 'ok', 7, 3]];
+    private const KEY_W = 20;
+    private const KEY_H = 15;
+    private const KEYBOARD_X = 28;
+    private const KEYBOARD_Y = 92;
+
+    /** A time of the act entered the top 5: the name is typed on the on-screen keyboard. */
+    public function showNameEntry(string $act, int $rank, string $time): void
+    {
+        $this->entryAct = $act;
+        $this->entryRank = $rank;
+        $this->entryTime = $time;
+        $this->entryName = '';
+        $this->entryRow = 0;
+        $this->entryCol = 0;
+        $this->start('nameEntry');
+    }
+
+    public function isNameEntry(): bool
+    {
+        return $this->screen === 'nameEntry';
+    }
+
+    /** Arrows 'up' / 'down' / 'left' / 'right' move on the keyboard; a typed letter / digit, or 'back'. */
+    public function nameKey(string $key): void
+    {
+        if ($this->screen !== 'nameEntry' || $this->closing !== null || $this->fadeInFrames > 0) return;
+        $rows = count(self::KEYBOARD) + 1;
+        switch ($key) {
+            case 'up':
+            case 'down':
+                $this->entryRow = ($this->entryRow + ($key === 'up' ? $rows - 1 : 1)) % $rows;
+                $this->sound?->playSfx(SoundManager::SFX_SWITCH);
+                return;
+            case 'left':
+            case 'right':
+                if ($this->entryRow === $rows - 1) {
+                    // the wide keys of the last row: to the previous / next one
+                    $next = ($this->bottomKey() + ($key === 'left' ? 2 : 1)) % 3;
+                    $this->entryCol = self::KEYBOARD_KEYS[$next][2];
+                } else {
+                    $this->entryCol = ($this->entryCol + ($key === 'left' ? 9 : 1)) % 10;
+                }
+                $this->sound?->playSfx(SoundManager::SFX_SWITCH);
+                return;
+            case 'back':
+                $this->typeName('back');
+                return;
+            default:
+                $this->typeName(strtoupper($key));
+        }
+    }
+
+    /** Index (0-2) of the wide key of the last row under the cursor. */
+    private function bottomKey(): int
+    {
+        foreach (self::KEYBOARD_KEYS as $i => [, , $from, $span]) {
+            if ($this->entryCol >= $from && $this->entryCol < $from + $span) return $i;
+        }
+        return 0;
+    }
+
+    /** The button on the key under the cursor. */
+    private function pressNameKey(): void
+    {
+        if ($this->entryRow < count(self::KEYBOARD)) {
+            $this->typeName(self::KEYBOARD[$this->entryRow][$this->entryCol]);
+        } else {
+            $this->typeName(self::KEYBOARD_KEYS[$this->bottomKey()][1]);
+        }
+    }
+
+    /** A character, 'back' (delete the last one) or 'ok' (the name is done, "SONIC" when empty). */
+    private function typeName(string $value): void
+    {
+        if ($value === 'ok') {
+            $name = trim($this->entryName);
+            $this->screen = null;
+            $this->sound?->playSfx(SoundManager::SFX_EXTRA_LIFE);
+            $this->emit('nameDone', [$name === '' ? 'SONIC' : $name]);
+            return;
+        }
+        $name = $this->entryName;
+        if ($value === 'back') {
+            $name = substr($name, 0, -1);
+        } elseif (strlen($value) === 1 && strlen($name) < self::NAME_LENGTH && !($value === ' ' && $name === '')
+            && ($value === ' ' || str_contains(implode('', self::KEYBOARD), $value))) {
+            $name .= $value;
+        }
+        $this->sound?->playSfx($name !== $this->entryName ? SoundManager::SFX_RING : SoundManager::SFX_SWITCH);
+        $this->entryName = $name;
     }
 
     public function showGameOver(int $continues): void
@@ -246,6 +530,7 @@ class Screens extends EventEmitter
         $this->fadeInFrames = 0;
         if ($screen !== 'credits') $this->fade = null;
         $this->screen = $screen;
+        $this->pendingButton = false;
         $this->frames = 0;
         $this->frameClock = 0;
     }
@@ -258,15 +543,20 @@ class Screens extends EventEmitter
     public function update(float $deltaTime, bool $buttonPressed): void
     {
         if ($this->screen === null) return;
+        // kept until the next 60Hz frame: the loop may call this between two frames
+        $this->pendingButton = $this->pendingButton || $buttonPressed;
+        $buttonPressed = false;
         $this->frameClock += $deltaTime;
         while ($this->frameClock >= self::FRAME && $this->screen !== null) {
             $this->frameClock -= self::FRAME;
             if ($this->closing !== null) {
+                $this->pendingButton = false;
                 $this->tickClosing();
                 continue;
             }
             if ($this->fadeInFrames > 0) {
                 // _b50: the screen is frozen while it fades in
+                $this->pendingButton = false;
                 $done = 5 * self::FADE_STEP - $this->fadeInFrames--;
                 $this->fade = [[0, 0, 0], max(0, 3 - intdiv(max(0, $done - self::FADE_STEP), self::FADE_STEP) - 1) / 3];
                 if ($done < self::FADE_STEP) $this->fade = [[0, 0, 0], 1];
@@ -274,8 +564,8 @@ class Screens extends EventEmitter
                 continue;
             }
             $this->frames++;
-            $this->tick($buttonPressed);
-            $buttonPressed = false;
+            $this->tick($this->pendingButton);
+            $this->pendingButton = false;
         }
     }
 
@@ -283,9 +573,17 @@ class Screens extends EventEmitter
     {
         switch ($this->screen) {
             case 'title':
+                $this->titleIdle++;
                 if ($buttonPressed) {
-                    $this->finish('titleDone');
-                } elseif ($this->frames >= $this->data['title']['wags'] * $this->data['title']['frame_ticks'] + 2 * 0xFF) {
+                    $this->titleIdle = 0;
+                    if ($this->options === null) {
+                        $this->finish('titleDone');
+                    } else {
+                        $items = $this->menuItems();
+                        ($items[$this->menuIndex][2])();
+                    }
+                } elseif ($this->titlePage === 'menu'
+                    && $this->titleIdle >= $this->data['title']['wags'] * $this->data['title']['frame_ticks'] + 2 * 0xFF) {
                     // _1372: the finger animation ends (22 x 8 frames, then 2 x 255 frames): the demo starts
                     $this->finish('titleDemo');
                 }
@@ -326,6 +624,10 @@ class Screens extends EventEmitter
 
             case 'credits':
                 $this->tickCredits($buttonPressed);
+                break;
+
+            case 'nameEntry':
+                if ($buttonPressed) $this->pressNameKey();
                 break;
 
             case 'actComplete':
@@ -562,6 +864,7 @@ class Screens extends EventEmitter
             'ending' => $this->renderEnding(),
             'credits' => $this->renderCredits(),
             'gameOver' => $this->renderGameOver(),
+            'nameEntry' => $this->renderNameEntry(),
         };
         if ($this->fade !== null) {
             // fade.png: white / black at 1/3, 2/3 and 3/3 (the palette fades in steps)
@@ -581,13 +884,165 @@ class Screens extends EventEmitter
     {
         $title = $this->data['title'];
         $this->clear(0, 0, 0);
-        // "PRESS BUTTON" is shown for 64 frames out of 100
-        $press = ($this->frames % $title['press_period']) < $title['press_visible'];
+        if ($this->titlePage !== 'menu' && $this->text !== null) {
+            $this->renderMenuPage();
+            return;
+        }
+        // the menu takes the place of "PRESS BUTTON" (without the menu: shown for 64 frames out of 100)
+        $press = $this->text === null && ($this->frames % $title['press_period']) < $title['press_visible'];
         $this->blit($press ? 'title-press' : 'title', 0, 0, 256, 192, 0, 0);
+        if ($this->text !== null) {
+            foreach ($this->menuItems() as $i => [$label]) {
+                $this->menuLine($label, $i === $this->menuIndex, self::MENU_Y + 11 * $i);
+            }
+        }
         // wagging finger: alternates every 8 frames 22 times, then rests on the first frame
         $tick = intdiv($this->frames, $title['frame_ticks']);
         $frame = $tick < $title['wags'] ? $tick % 2 : 0;
         $this->blit('title-sonic', $frame * 48, 0, 48, 48, $title['x'], $title['y']);
+    }
+
+    /** One centred line of the title menu at $y (SMS pixels); the selected one has the arrow and blinks. */
+    private function menuLine(string $line, bool $selected, int $y): void
+    {
+        $label = ($selected ? '> ' : '') . $line;
+        $size = 8 * $this->scale;
+        $width = $this->text->styledWidth($label, $size, $this->scale);
+        $this->styled($label, (int)((256 * $this->scale - $width) / 2 / $this->scale), $y, $size, $this->lineColours($selected));
+    }
+
+    /** Text at SMS position ($x, $y) with the outline of the game's screens. */
+    private function styled(string $text, float $x, int $y, int $size, array $colours): void
+    {
+        $this->text->drawStyled($text, $this->offsetX + (int)round($x * $this->scale), $this->offsetY + $y * $this->scale,
+            $size, $colours[0], $colours[1], $this->scale);
+    }
+
+    private function lineColours(bool $selected): array
+    {
+        return $selected && ($this->frames % 40) < 24
+            ? [self::SELECTED_TOP, self::SELECTED_BOTTOM]
+            : [self::MENU_TOP, self::MENU_BOTTOM];
+    }
+
+    /** Options, cheats and high scores: a page of its own, its title on top, the entries below. */
+    private function renderMenuPage(): void
+    {
+        $scale = $this->scale;
+        $title = match ($this->titlePage) {
+            'cheats' => 'CHEATS', 'scores' => 'MEILLEURS TEMPS', 'jukebox' => 'JUKEBOX', default => 'OPTIONS',
+        };
+        $big = 12 * $scale;
+        $width = $this->text->styledWidth($title, $big, $scale);
+        $this->styled($title, (256 * $scale - $width) / 2 / $scale, 12, $big, [[255, 255, 255], [85, 170, 255]]);
+
+        $items = $this->menuItems();
+        if ($this->titlePage === 'scores') {
+            $this->renderBestTimes();
+            return;
+        }
+        $size = 8 * $scale;
+        $step = count($items) > 6 ? 14 : 20;
+        foreach ($items as $i => [$label, $value]) {
+            $y = 40 + $step * $i;
+            $selected = $i === $this->menuIndex;
+            if ($selected) $this->styled('>', 18, $y, $size, $this->lineColours(true));
+            $this->styled($label, 32, $y, $size, $this->lineColours($selected));
+            if ($value !== null) {
+                // ON in green, OFF in grey, other values in the menu colours; right-aligned
+                $colours = match ($value) {
+                    'ON' => [[170, 255, 170], [0, 200, 0]],
+                    'OFF' => [[170, 170, 170], [85, 85, 85]],
+                    default => $this->lineColours($selected),
+                };
+                $width = $this->text->styledWidth($value, $size, $scale) / $scale;
+                $this->styled($value, 236 - $width, $y, $size, $colours);
+            }
+        }
+    }
+
+    /** New record: "NOUVEAU RECORD !", the act, place and time, the name and the on-screen keyboard. */
+    private function renderNameEntry(): void
+    {
+        $this->clear(0, 0, 0);
+        if ($this->text === null) return;
+        $scale = $this->scale;
+        $centre = function (string $text, int $y, int $size, array $colours) use ($scale): void {
+            $width = $this->text->styledWidth($text, $size * $scale, $scale);
+            $this->styled($text, (256 * $scale - $width) / 2 / $scale, $y, $size * $scale, $colours);
+        };
+        $blue = [[255, 255, 255], [85, 170, 255]];
+        $centre('NOUVEAU RECORD !', 8, 12, ($this->frames % 30) < 20 ? $blue : [[255, 255, 85], [255, 170, 0]]);
+        $centre($this->entryAct . '   ' . ($this->entryRank === 1 ? '1ER' : $this->entryRank . 'E') . '   ' . $this->entryTime,
+            32, 8, [self::MENU_TOP, self::MENU_BOTTOM]);
+        // the name, with a blinking cursor, in a fixed-width line
+        $cursor = strlen($this->entryName) < self::NAME_LENGTH && ($this->frames % 30) < 15 ? '_' : ' ';
+        $shown = str_pad($this->entryName . $cursor, self::NAME_LENGTH, ' ');
+        $width = $this->text->styledWidth(str_repeat('W', self::NAME_LENGTH), 12 * $scale, $scale);
+        $this->box(64, 52, 128, 24, [0, 0, 85]);
+        $this->styled($shown, (256 * $scale - $width) / 2 / $scale, 57, 12 * $scale, $blue);
+
+        // keyboard: the key under the cursor on a blue background
+        $size = 8 * $scale;
+        $rows = self::KEYBOARD;
+        foreach ($rows as $r => $chars) {
+            foreach (str_split($chars) as $c => $char) {
+                $this->keyCap($char, self::KEYBOARD_X + $c * self::KEY_W, self::KEYBOARD_Y + $r * self::KEY_H, self::KEY_W,
+                    $r === $this->entryRow && $c === $this->entryCol, $size);
+            }
+        }
+        $bottom = count($rows) === $this->entryRow ? $this->bottomKey() : -1;
+        foreach (self::KEYBOARD_KEYS as $i => [$label, , $from, $span]) {
+            $this->keyCap($label, self::KEYBOARD_X + $from * self::KEY_W, self::KEYBOARD_Y + count($rows) * self::KEY_H,
+                $span * self::KEY_W, $i === $bottom, $size);
+        }
+    }
+
+    /** One key of the on-screen keyboard, centred in its cell (SMS pixels). */
+    private function keyCap(string $label, int $x, int $y, int $w, bool $selected, int $size): void
+    {
+        if ($selected) $this->box($x + 1, $y - 2, $w - 2, self::KEY_H - 1, [0, 85, 170]);
+        $width = $this->text->styledWidth($label, $size, $this->scale) / $this->scale;
+        $this->styled($label, $x + ($w - $width) / 2, $y + 1, $size,
+            $selected ? [self::SELECTED_TOP, self::SELECTED_BOTTOM] : [self::MENU_TOP, self::MENU_BOTTOM]);
+    }
+
+    /** Opaque rectangle (SMS pixels). */
+    private function box(int $x, int $y, int $w, int $h, array $rgb): void
+    {
+        $renderer = $this->sdl->getRenderer()->getRenderer();
+        \SDL_SetRenderDrawColor($renderer, $rgb[0], $rgb[1], $rgb[2], 255);
+        $rect = new \SDL_Rect;
+        [$rect->x, $rect->y, $rect->w, $rect->h] = [$this->offsetX + $x * $this->scale, $this->offsetY + $y * $this->scale,
+            $w * $this->scale, $h * $this->scale];
+        \SDL_RenderFillRect($renderer, $rect);
+    }
+
+    /** Best times page: "< ZONE 1 ACTE 1 >", its 5 best times with their date (the last one blinking), RETOUR. */
+    private function renderBestTimes(): void
+    {
+        $selected = $this->menuIndex === 0;
+        $label = '< ' . BestTimes::place($this->timesAct) . ' >';
+        $size = 8 * $this->scale;
+        $width = $this->text->styledWidth($label, $size, $this->scale);
+        $this->styled($label, (256 * $this->scale - $width) / 2 / $this->scale, 38, $size, $this->lineColours($selected));
+
+        $entries = $this->bestTimes?->top($this->timesAct) ?? [];
+        $last = $this->bestTimes?->lastIndex($this->timesAct);
+        if (!$entries) {
+            $this->menuLine('AUCUN TEMPS', false, 92);
+        }
+        foreach ($entries as $i => $entry) {
+            // the time just made blinks
+            if ($i === $last && ($this->frames % 40) >= 28) continue;
+            $colours = $i === 0 ? [[255, 255, 255], [255, 255, 85]] : [self::MENU_TOP, self::MENU_BOTTOM];
+            $y = 62 + 18 * $i;
+            $this->styled(($i + 1) . '.', 14, $y, $size, $colours);
+            $this->styled($entry['name'] !== '' ? $entry['name'] : '-', 32, $y, $size, $colours);
+            $this->styled(BestTimes::format($entry['time']), 112, $y, $size, $colours);
+            $this->styled($entry['date'], 182, $y, $size, $colours);
+        }
+        $this->menuLine('RETOUR', $this->menuIndex === 1, 168);
     }
 
     private function renderMap(): void

@@ -89,6 +89,14 @@ trait Sprite
 		);
 	}
 
+	/** Current frame of the sheet and its flip: [sx, sy, sw, sh, flip] (recorded by the ghost). */
+	public function getFrameSnapshot(): array
+	{
+		$frame = $this->getCurrentFrame();
+		$animation = $this->getCurrentAnimation();
+		return [$frame['x'], $frame['y'], $frame['w'], $frame['h'], !empty($animation['flags']['flip']) ? 1 : 0];
+	}
+
 	public function getAnimation(): string
 	{
 		return $this->currentAnimation;
