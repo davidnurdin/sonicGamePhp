@@ -12,6 +12,7 @@ use SonicGame\InputManager\InputManager;
 use SonicGame\InputManager\InputTouchpad;
 use SonicGame\Level\LevelManager;
 use SonicGame\Loop\GameLoop;
+use SonicGame\Renderer\CrtFilter;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Renderer\TextRenderer;
 use SonicGame\Save\GhostRecorder;
@@ -44,6 +45,12 @@ class Game extends EventEmitter
     private const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4, 5, 6, 8];
     private const DEFAULT_VIEW_HEIGHT = 426;
     private int $zoomOffset = 0;
+    /** Height (px) the automatic zoom aims at: DEFAULT_VIEW_HEIGHT, ~192 on a phone (bigger sprites, full width). */
+    public int $viewHeight = self::DEFAULT_VIEW_HEIGHT;
+    /** Frames of the last second, shown in the F6 panel. */
+    private int $fpsShown = 0;
+    /** Options > FILTRE CRT (created on first use). */
+    private ?CrtFilter $crt = null;
     private bool $smsView = false;
 
     /** F6: panel with Sonic's coordinates over the screen (to report bugs). */
@@ -439,6 +446,7 @@ class Game extends EventEmitter
         $level = $this->levelManager->getCurrentLevel()->getLevel();
         $best = $this->ghost->bestTime($level);
         $lines = [
+            'FPS ' . $this->fpsShown,
             'NIVEAU ' . $level,
             'X ' . $x . '   Y ' . $y,
             sprintf('BLOC %d,%d  (%02X,%02X)', intdiv($x, 32), intdiv($y, 32), intdiv($x, 32), intdiv($y, 32)),
@@ -452,7 +460,7 @@ class Game extends EventEmitter
         $width = max(array_map(fn($l) => $this->text->width($l, $size), $lines));
         $this->text->panel(8, 8, $width + $size * 2, count($lines) * $line + $size);
         foreach ($lines as $i => $text) {
-            $this->text->draw($text, 8 + $size, 8 + (int)($size / 2) + $i * $line, $size, $i === 1 ? [255, 255, 0] : [255, 255, 255]);
+            $this->text->draw($text, 8 + $size, 8 + (int)($size / 2) + $i * $line, $size, $i === 2 ? [255, 255, 0] : [255, 255, 255]);
         }
     }
 
@@ -554,6 +562,7 @@ class Game extends EventEmitter
         $this->gameLoop->addPeriodicTimer(1, function (TimerInterface $timer) use (&$vars) {
             $deltaMoyen = $vars['fps'] > 0 ? $vars['deltaSum'] / $vars['fps'] : 0;
             echo sprintf("FPS réel : %d | Δ moyen : %.3f ms", $vars['fps'], $deltaMoyen * 1000) . PHP_EOL;
+            $this->fpsShown = $vars['fps'];
             $vars['fps'] = 0;
             $vars['deltaSum'] = 0.0;
         });
@@ -649,6 +658,10 @@ class Game extends EventEmitter
 				$this->sdl->getRenderer()->setColor(0, 0, 0, 255);   // borders (256x192 mode, rounding)
 				$this->sdl->getRenderer()->clear();
 				\SDL_RenderCopy($this->sdl->getRenderer()->getRenderer(),$this->sdl->getRenderer()->getRenderTexture(), null, $dst); // on copie la texture dans le renderer
+				if ($this->options->isCrtEnabled()) {
+					$this->crt ??= new CrtFilter($this->sdl->getRenderer());
+					$this->crt->draw($dst, $this->sdl->getWindow()->getHeight());
+				}
 				if ($this->coordsPanel && !$this->screens->isActive()) {
 					$this->drawCoordsPanel($height);
 				}
@@ -670,6 +683,8 @@ class Game extends EventEmitter
 			$vars['lastTime'] = $now;
 			++$vars['fps'];
 			$vars['deltaSum'] += $deltaTime;
+			// Options > VITESSE: PAL (Europe, 50 Hz) = the whole game at 50/60 of the NTSC speed
+			$deltaTime *= $this->options->getTimeScale();
 
             // $deltaTime = 0.01 ; // Pour debug
 
@@ -1043,10 +1058,10 @@ class Game extends EventEmitter
     {
         if ($this->smsView) {
             $this->smsView = false;   // leave the 256x192 screen at the zoom it looks like
-            $this->zoomOffset = $this->zoomIndexFor($this->outputHeight() / 192) - $this->zoomIndexFor($this->outputHeight() / self::DEFAULT_VIEW_HEIGHT);
+            $this->zoomOffset = $this->zoomIndexFor($this->outputHeight() / 192) - $this->zoomIndexFor($this->outputHeight() / $this->viewHeight);
             return;
         }
-        $auto = $this->zoomIndexFor($this->outputHeight() / self::DEFAULT_VIEW_HEIGHT);
+        $auto = $this->zoomIndexFor($this->outputHeight() / $this->viewHeight);
         $this->zoomOffset = max(-$auto, min(count(self::ZOOMS) - 1 - $auto, $this->zoomOffset + $step));
     }
 
@@ -1080,7 +1095,7 @@ class Game extends EventEmitter
         if ($this->smsView) {
             [$viewW, $viewH] = [256, 192];
         } else {
-            $auto = $this->zoomIndexFor($height / self::DEFAULT_VIEW_HEIGHT);
+            $auto = $this->zoomIndexFor($height / $this->viewHeight);
             $index = max(0, min(count(self::ZOOMS) - 1, $auto + $this->zoomOffset));
             $zoom = self::ZOOMS[$index];
             [$viewW, $viewH] = [(int)round($width / $zoom), (int)round($height / $zoom)];

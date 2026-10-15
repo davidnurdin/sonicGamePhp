@@ -3,7 +3,8 @@
 namespace SonicGame\Save;
 
 /**
- * Options of the title menu, kept in var/options.json: the ghost, and the cheats (all off by default).
+ * Options of the title menu, kept in var/options.json: the ghost, the CRT filter, the speed (PAL / NTSC)
+ * and the cheats (all off by default).
  */
 class Options
 {
@@ -18,7 +19,7 @@ class Options
         'emeralds' => '6 EMERAUDES',
     ];
 
-    private array $values = ['ghost' => false, 'cheats' => [], 'startLevel' => 1];
+    private array $values = ['ghost' => false, 'crt' => false, 'speed' => 'pal', 'cheats' => [], 'startLevel' => 1];
 
     public function __construct(private string $file)
     {
@@ -37,6 +38,39 @@ class Options
     {
         $this->values['ghost'] = $on;
         $this->save();
+    }
+
+    /** CRT filter: scanlines and darker corners over the picture, like an old TV. */
+    public function isCrtEnabled(): bool
+    {
+        return (bool)$this->values['crt'];
+    }
+
+    public function setCrtEnabled(bool $on): void
+    {
+        $this->values['crt'] = $on;
+        $this->save();
+    }
+
+    /**
+     * 'pal': the European Master System, 50 frames per second -> the whole game runs at 50/60 of the
+     * speed of the Japanese / American one (same ROM, one frame of logic per frame); 'ntsc': 60 Hz.
+     */
+    public function getSpeed(): string
+    {
+        return $this->values['speed'] === 'ntsc' ? 'ntsc' : 'pal';
+    }
+
+    public function setSpeed(string $speed): void
+    {
+        $this->values['speed'] = $speed === 'ntsc' ? 'ntsc' : 'pal';
+        $this->save();
+    }
+
+    /** Game time per real second: 50/60 in PAL, 1 in NTSC. */
+    public function getTimeScale(): float
+    {
+        return $this->getSpeed() === 'pal' ? 50 / 60 : 1.0;
     }
 
     public function isCheatOn(string $cheat): bool

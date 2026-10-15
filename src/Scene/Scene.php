@@ -249,7 +249,7 @@ class Scene extends EventEmitter
     private function drawAirCountdown(): void
     {
         $digit = $this->objectManager->getAirCountdown();
-        if ($digit === null || ((int)(microtime(true) * 30) & 1)) return;
+        if ($digit === null || ((int)(fmod(microtime(true), 86400.0) * 30) & 1)) return;
         $src = new \SDL_Rect;
         [$src->x, $src->y, $src->w, $src->h] = [544 + 8 * $digit, 107, 8, 13];
         $dst = new \SDL_Rect;
@@ -264,7 +264,7 @@ class Scene extends EventEmitter
     {
         if ($this->objectManager && $this->objectManager->isPlayerHidden()) return;
         if ($this->objectManager && $this->objectManager->isPlayerHurt()) {
-            $blink = (int)(microtime(true) * 10) % 2;
+            $blink = (int)(fmod(microtime(true), 86400.0) * 10) % 2;
             if ($blink === 0) return;
         }
 
@@ -279,7 +279,7 @@ class Scene extends EventEmitter
         // thrown up by a spring / a balance (animation $13): frame $26 of the ROM art; water slide (animation $11)
         $spring = $player->getSpringFrame();
         $slide = $player->getSlideFrame();
-        if ($slide !== null && !($this->objectManager && $this->objectManager->hasShield() && (int)floor(microtime(true) * 60) % 2 === 0)) {
+        if ($slide !== null && !($this->objectManager && $this->objectManager->hasShield() && (int)floor(fmod(microtime(true), 86400.0) * 60) % 2 === 0)) {
             $src = new \SDL_Rect;
             [$src->x, $src->y, $src->w, $src->h] = \SonicGame\Entities\Objects\RomSprites::SONIC_SLIDE[$slide];
             $dst = new \SDL_Rect;
@@ -291,7 +291,7 @@ class Scene extends EventEmitter
             }
             return;
         }
-        if ($spring !== null && !($this->objectManager && $this->objectManager->hasShield() && (int)floor(microtime(true) * 60) % 2 === 0)) {
+        if ($spring !== null && !($this->objectManager && $this->objectManager->hasShield() && (int)floor(fmod(microtime(true), 86400.0) * 60) % 2 === 0)) {
             $src = new \SDL_Rect;
             [$src->x, $src->y, $src->w, $src->h] = \SonicGame\Entities\Objects\RomSprites::SONIC_SPRING;
             $dst = new \SDL_Rect;
@@ -306,7 +306,7 @@ class Scene extends EventEmitter
 
         // waiting (animation $0D): frames of the ROM art
         $wait = $player->getWaitFrame();
-        if ($wait !== null && !($this->objectManager && $this->objectManager->hasShield() && (int)floor(microtime(true) * 60) % 2 === 0)) {
+        if ($wait !== null && !($this->objectManager && $this->objectManager->hasShield() && (int)floor(fmod(microtime(true), 86400.0) * 60) % 2 === 0)) {
             $src = new \SDL_Rect;
             [$src->x, $src->y, $src->w, $src->h] = \SonicGame\Entities\Objects\RomSprites::SONIC_WAIT[$wait];
             $dst = new \SDL_Rect;
@@ -316,7 +316,7 @@ class Scene extends EventEmitter
             return;
         }
         // shield (_5206): every other frame Sonic's sprite is replaced by the ring of frame $18
-        if ($this->objectManager && $this->objectManager->hasShield() && (int)floor(microtime(true) * 60) % 2 === 0) {
+        if ($this->objectManager && $this->objectManager->hasShield() && (int)floor(fmod(microtime(true), 86400.0) * 60) % 2 === 0) {
             $src = new \SDL_Rect;
             [$src->x, $src->y, $src->w, $src->h] = \SonicGame\Entities\Objects\RomSprites::SHIELD;
             $dst = new \SDL_Rect;
@@ -455,7 +455,7 @@ class Scene extends EventEmitter
     {
         if (empty($overlays)) return;
         $texture = $this->sdl->getTextures('objects')[0]['texture'];
-        $frame = self::RING_FRAMES[(int)floor(microtime(true) * 6) % 6];
+        $frame = self::RING_FRAMES[(int)floor(fmod(microtime(true), 86400.0) * 6) % 6];
         $src = new \SDL_Rect;
         $src->x = $frame[0];
         $src->y = $frame[1];
@@ -520,7 +520,7 @@ class Scene extends EventEmitter
         // TL bit 1, Sky Base 1 lightning (_1f49): 171-frame loop, flash palettes from frame 100 and 130
         // (thunder at 130), every palette cycling 4 steps at speed 2
         if (($level->getMeta('TL') & 0x02) && $this->sdl->hasTexture($base . '-light1-cycle0')) {
-            $frame = (int)floor(microtime(true) * 60);
+            $frame = (int)floor(fmod(microtime(true), 86400.0) * 60);
             $phase = $frame % 171;
             $light = $phase >= 130 ? 2 : ($phase >= 100 ? 1 : 0);
             if ($light === 2 && $this->lastLightningPhase < 130) {
@@ -533,7 +533,7 @@ class Scene extends EventEmitter
         if ($count <= 1 || !$this->sdl->hasTexture($base . '-cycle0')) {
             return $base;
         }
-        $step = (int)floor(microtime(true) * 60 / $speed) % $count;
+        $step = (int)floor(fmod(microtime(true), 86400.0) * 60 / $speed) % $count;
         return $base . '-cycle' . $step;
     }
 

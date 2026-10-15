@@ -135,7 +135,7 @@ class Screens extends EventEmitter
 
     /**
      * Entries of the current menu page: [label, value shown on the right or null, button, left / right (or null)].
-     * Pages: 'menu' (on the title picture), 'options', 'cheats', 'scores'.
+     * Pages: 'menu' (on the title picture), 'options', 'jukebox', 'cheats', 'scores'.
      */
     private function menuItems(): array
     {
@@ -143,10 +143,14 @@ class Screens extends EventEmitter
         switch ($this->titlePage) {
             case 'options':
                 $ghost = fn() => $this->changed(fn() => $options->setGhostEnabled(!$options->isGhostEnabled()));
+                $crt = fn() => $this->changed(fn() => $options->setCrtEnabled(!$options->isCrtEnabled()));
+                $speed = fn() => $this->changed(fn() => $options->setSpeed($options->getSpeed() === 'pal' ? 'ntsc' : 'pal'));
                 return [
                     ['GHOST', $options->isGhostEnabled() ? 'ON' : 'OFF', $ghost, $ghost],
                     [match ($this->eraseState) { 'confirm' => 'CONFIRMER ?', 'done' => 'GHOSTS EFFACES', default => 'EFFACER GHOSTS' },
                         null, fn() => $this->eraseGhosts(), null],
+                    ['FILTRE CRT', $options->isCrtEnabled() ? 'ON' : 'OFF', $crt, $crt],
+                    ['VITESSE', $options->getSpeed() === 'pal' ? 'PAL 50HZ' : 'NTSC 60HZ', $speed, $speed],
                     ['JUKEBOX', null, fn() => $this->openPage('jukebox', 0), null],
                     ['CHEATS', null, fn() => $this->openPage('cheats', 0), null],
                     ['RETOUR', null, fn() => $this->openPage('menu', 1), null],
@@ -169,7 +173,7 @@ class Screens extends EventEmitter
                     ['STOP', null, fn() => $this->sound?->stopMusic(), null],
                     ['RETOUR', null, function () {
                         $this->sound?->playMusic('title', false, true);
-                        $this->openPage('options', 2);
+                        $this->openPage('options', 4);
                     }, null],
                 ];
             case 'cheats':
@@ -183,7 +187,7 @@ class Screens extends EventEmitter
                 $items[] = ['DEPART', BestTimes::place($start),
                     fn() => $this->changed(fn() => $options->setStartLevel($start % 18 + 1)),
                     fn(int $direction) => $this->changed(fn() => $options->setStartLevel(($start - 1 + $direction + 18) % 18 + 1))];
-                $items[] = ['RETOUR', null, fn() => $this->openPage('options', 3), null];
+                $items[] = ['RETOUR', null, fn() => $this->openPage('options', 5), null];
                 return $items;
             case 'scores':
                 // the act: left / right, or the button for the next one
