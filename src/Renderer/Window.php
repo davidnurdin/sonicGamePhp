@@ -41,6 +41,8 @@ class Window
 
 		//TODO : voir pk marche pas en web
 		$flag |= SDL_WINDOW_RESIZABLE ;
+		// the canvas at the resolution of the screen (devicePixelRatio 2-3 on a phone): sharp texts and pixels
+		$flag |= \defined('SDL_WINDOW_ALLOW_HIGHDPI') ? \SDL_WINDOW_ALLOW_HIGHDPI : 0x2000;
 
         $this->window = \SDL_CreateWindow(
             $this->title,

@@ -356,7 +356,8 @@ class Game extends EventEmitter
         $this->player->resetForStart();
         $this->versus = new Versus($this->sdl, $this->collisionSystem, $this->objectManager, $this->scene->getCamera(),
             $this->player, $this->options->getVersusMode(),
-            $this->options->getVersusMode() === 'flag' ? 2 * $this->options->getVersusTeamSize() : $this->options->getVersusPlayers());
+            $this->options->getVersusMode() === 'flag' ? 2 * $this->options->getVersusTeamSize() : $this->options->getVersusPlayers(),
+            $this->options->getVersusDifficulty());
         $this->versus->on('sfx', fn(int $index) => $this->soundManager->playSfx($index));
         $this->versus->on('music', fn(string $name, bool $loop) => $this->soundManager->playMusic($name, $loop, true));
         $this->scene->worldOverlay = fn(float $x, float $y) => $this->versus?->drawWorld($x, $y);
@@ -669,28 +670,28 @@ class Game extends EventEmitter
 			if (!$this->disableSdl) {
 
 			$this->updateView();
+			if ($this->screens->isActive()) {
+				$this->renderScreens();
+				return;
+			}
 			\SDL_SetRenderTarget($this->sdl->getRenderer()->getRenderer(), $this->sdl->getRenderer()->getRenderTexture()); // draw to texture
 
             // Rendu de la scène
             $this->scene->setDebugMode($this->debugMode);
 			$this->sdl->getRenderer()->clear(); // 1
-            if ($this->screens->isActive()) {
-                $this->screens->render();
-            } else {
-                $this->sdl->getRenderer()->createScene(
-                    $this->scene,
-                    $this->player,
-                    $this->sdl->getFont('sonic'),
-                    $this->levelManager->getCurrentLevel()
-                );
-                // level fade: fade.png, black at 1/3, 2/3, 3/3
-                if (($step = $this->levelFadeStep()) > 0) {
-                    $src = new \SDL_Rect;
-                    [$src->x, $src->y, $src->w, $src->h] = [($step - 1) * 8, 8, 8, 8];
-                    $dst = new \SDL_Rect;
-                    [$dst->x, $dst->y, $dst->w, $dst->h] = [0, 0, $this->sdl->getWindow()->getWidth(), $this->sdl->getWindow()->getHeight()];
-                    \SDL_RenderCopy($this->sdl->getRenderer()->getRenderer(), $this->sdl->getTextures('screen-fade')[0]['texture'], $src, $dst);
-                }
+            $this->sdl->getRenderer()->createScene(
+                $this->scene,
+                $this->player,
+                $this->sdl->getFont('sonic'),
+                $this->levelManager->getCurrentLevel()
+            );
+            // level fade: fade.png, black at 1/3, 2/3, 3/3
+            if (($step = $this->levelFadeStep()) > 0) {
+                $src = new \SDL_Rect;
+                [$src->x, $src->y, $src->w, $src->h] = [($step - 1) * 8, 8, 8, 8];
+                $dst = new \SDL_Rect;
+                [$dst->x, $dst->y, $dst->w, $dst->h] = [0, 0, $this->sdl->getWindow()->getWidth(), $this->sdl->getWindow()->getHeight()];
+                \SDL_RenderCopy($this->sdl->getRenderer()->getRenderer(), $this->sdl->getTextures('screen-fade')[0]['texture'], $src, $dst);
             }
 
 			// TODO : voir pk en web fatal error sdl setrendertarget supplied resource is not a valid sdl texture resource ?? =>
@@ -1139,6 +1140,30 @@ class Game extends EventEmitter
         }
         $auto = $this->zoomIndexFor($this->outputHeight() / $this->viewHeight);
         $this->zoomOffset = max(-$auto, min(count(self::ZOOMS) - 1 - $auto, $this->zoomOffset + $step));
+    }
+
+    /**
+     * Title, menus, tallies...: drawn straight on the window at its own resolution (whole scale of 256x192):
+     * through the game view (195 lines on a phone) the texts were drawn 8 px high, then stretched.
+     */
+    private function renderScreens(): void
+    {
+        $renderer = $this->sdl->getRenderer()->getRenderer();
+        $width = $height = 0;
+        \SDL_SetRenderTarget($renderer, null);
+        \SDL_GetRendererOutputSize($renderer, $width, $height);
+        $this->sdl->getRenderer()->setColor(0, 0, 0, 255);
+        $this->sdl->getRenderer()->clear();
+        $this->text->onWindow = true;
+        $this->screens->render($width, $height);
+        $this->text->onWindow = false;
+        if ($this->options->isCrtEnabled()) {
+            $dst = new \SDL_Rect;
+            [$dst->x, $dst->y, $dst->w, $dst->h] = [0, 0, $width, $height];
+            $this->crt ??= new CrtFilter($this->sdl->getRenderer());
+            $this->crt->draw($dst, $this->sdl->getWindow()->getHeight());
+        }
+        $this->sdl->getRenderer()->present();
     }
 
     private function zoomIndexFor(float $zoom): int

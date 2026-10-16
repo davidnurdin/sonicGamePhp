@@ -154,6 +154,10 @@ class CollisionSystem extends EventEmitter
 		// _32e2: standing on a block adds the value of its solidity type ($3F90 table) to the X speed every frame
 		if ($entity->isGrounded() && !$onObject) {
 			$slopeAccel = $this->romSlopeAccel($entity, $level);
+			// running up the slope (pushing against it, not rolling): only UPHILL_PUSH of its pull. In the
+			// original a 45° slope ($1C) pulls more than Sonic accelerates ($10): without a run-up he stalled.
+			$ax = $entity->getAcceleration()['x'];
+			if ($slopeAccel * $ax < 0 && $entity->getState() !== 'roll') $slopeAccel *= self::UPHILL_PUSH;
 			if ($slopeAccel != 0) {
 				$v = $entity->getVelocity();
 				$entity->setVelocity($v[0] + $slopeAccel * $deltaTime, $v[1]);
@@ -175,6 +179,8 @@ class CollisionSystem extends EventEmitter
 		0x05 => 0x12, 0x06 => 0x12, 0x07 => 0x12, 0x08 => -0x12, 0x09 => -0x12, 0x0A => -0x12,
 		0x29 => 0x12, 0x2A => -0x12,
 	];
+	/** Part of a slope's pull left while Sonic runs up it (net push on 45°: $10 - $1C * 0.3 = +$07). */
+	private const UPHILL_PUSH = 0.3;
 	/** 1/256 px/frame² -> engine px/s², same scale as Sonic's ground acceleration (Player::GROUND_SCALE). */
 	private const ROM_ACCEL_TO_ENGINE = Player::GROUND_SCALE;
 

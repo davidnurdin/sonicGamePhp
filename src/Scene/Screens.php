@@ -3,6 +3,7 @@
 namespace SonicGame\Scene;
 
 use Evenement\EventEmitter;
+use SonicGame\Multiplayer\BotBrain;
 use SonicGame\Multiplayer\Versus;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Renderer\TextRenderer;
@@ -171,10 +172,13 @@ class Screens extends EventEmitter
                     ? $this->changed(fn() => $options->setVersusTeamSize(($team - 1 + $step + 3) % 3 + 1))
                     : $set($mode, ($players - 2 + $step + 4) % 4 + 2, $level);
                 $nextLevel = fn(int $step = 1) => $set($mode, $players, $cycle($levels, $level, $step));
+                $ai = $options->getVersusDifficulty();
+                $nextAi = fn(int $step = 1) => $this->changed(fn() => $options->setVersusDifficulty($ai + $step));
                 return [
                     ['MODE', Versus::MODES[$mode], $nextMode, $nextMode],
                     ['SONICS', $mode === 'flag' ? $team . ' CONTRE ' . $team : (string)$players, $nextPlayers, $nextPlayers],
                     ['ZONE', Versus::levelName($level), $nextLevel, $nextLevel],
+                    ['IA', BotBrain::DIFFICULTIES[$ai], $nextAi, $nextAi],
                     ['LANCER', null, fn() => $this->finish('versusStart'), null],
                     ['RETOUR', null, fn() => $this->openPage('menu', 1), null],
                 ];
@@ -875,12 +879,11 @@ class Screens extends EventEmitter
         $this->emit($event, []);
     }
 
-    public function render(): void
+    /** Draws the screen on a $winW x $winH target (Game: the window itself, so that the texts are sharp). */
+    public function render(int $winW, int $winH): void
     {
         if ($this->screen === null) return;
         $renderer = $this->sdl->getRenderer()->getRenderer();
-        $winW = $this->sdl->getWindow()->getWidth();
-        $winH = $this->sdl->getWindow()->getHeight();
         // biggest whole scale that fits the view (2 in the default 840x426 view, 1 in the 256x192 one)
         $this->scale = max(1, (int)floor(min($winW / 256, $winH / 192)));
         $this->offsetX = (int)(($winW - 256 * $this->scale) / 2);
@@ -975,7 +978,7 @@ class Screens extends EventEmitter
             return;
         }
         $size = 8 * $scale;
-        $step = count($items) > 6 ? 14 : 20;
+        $step = count($items) > 6 ? 14 : (count($items) === 6 ? 18 : 20);
         foreach ($items as $i => [$label, $value]) {
             $y = 40 + $step * $i;
             $selected = $i === $this->menuIndex;
@@ -1002,7 +1005,7 @@ class Screens extends EventEmitter
             ][$this->options->getVersusMode()];
             foreach ($rules as $i => $rule) {
                 $width = $this->text->styledWidth($rule, $size, $scale);
-                $this->styled($rule, (256 * $scale - $width) / 2 / $scale, 150 + 12 * $i, $size, [[255, 255, 255], [170, 170, 170]]);
+                $this->styled($rule, (256 * $scale - $width) / 2 / $scale, 154 + 12 * $i, $size, [[255, 255, 255], [170, 170, 170]]);
             }
         }
     }

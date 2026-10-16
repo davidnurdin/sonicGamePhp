@@ -24,6 +24,9 @@ class TextRenderer
     /** @var array<string, int> width() by size and text (the multiplayer scores measure the same lines every frame) */
     private array $widths = [];
 
+    /** The texts are drawn on the window (menus), not on the game view: target to go back to after a cache. */
+    public bool $onWindow = false;
+
     public function __construct(private Sdl $sdl, private string $assetFolder)
     {
     }
@@ -105,7 +108,7 @@ class TextRenderer
         $h = max(1, $height + 2 * $outline + 1);
         $texture = $this->newCacheTexture($w, $h);
         $width = $this->renderStyled($text, 0, $outline, $size, $top, $bottom, $outline);
-        \SDL_SetRenderTarget($renderer, $this->sdl->getRenderer()->getRenderTexture());
+        \SDL_SetRenderTarget($renderer, $this->onWindow ? null : $this->sdl->getRenderer()->getRenderTexture());
         $this->styled[$key] = [$texture, $w, $h, $width];
         $dst = new \SDL_Rect;
         [$dst->x, $dst->y, $dst->w, $dst->h] = [$x, $y - $outline, $w, $h];

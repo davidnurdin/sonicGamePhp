@@ -20,7 +20,7 @@ class Options
     ];
 
     private array $values = ['ghost' => false, 'crt' => false, 'speed' => 'pal', 'cheats' => [], 'startLevel' => 1,
-        'versusMode' => 'race', 'versusSonics' => 3, 'versusTeam' => 2, 'versusLevel' => 1];
+        'versusMode' => 'race', 'versusSonics' => 3, 'versusTeam' => 2, 'versusLevel' => 1, 'versusAi' => 1];
 
     public function __construct(private string $file)
     {
@@ -127,6 +127,18 @@ class Options
     public function setVersusTeamSize(int $size): void
     {
         $this->values['versusTeam'] = max(1, min(3, $size));
+        $this->save();
+    }
+
+    /** Multiplayer: difficulty of the computer Sonics (0 easy, 1 medium, 2 hard: BotBrain::DIFFICULTIES). */
+    public function getVersusDifficulty(): int
+    {
+        return max(0, min(2, (int)$this->values['versusAi']));
+    }
+
+    public function setVersusDifficulty(int $difficulty): void
+    {
+        $this->values['versusAi'] = ($difficulty % 3 + 3) % 3;
         $this->save();
     }
 

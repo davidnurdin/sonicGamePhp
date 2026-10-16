@@ -56,6 +56,9 @@ class Versus extends EventEmitter
     private const BOT_TOP_SPEED = 500 * 0.72;
     private const BOT_TOP_SPEED_STEP = 500 * 0.04;
     private const RUBBER_BAND = 1200;
+    /** Top speed of the bots by difficulty (easy, medium, hard): race and flag x this, the other modes this. */
+    private const DIFFICULTY_SPEED = [0.85, 1.0, 1.12];
+    private const BOT_OPEN_SPEED = [500 * 0.7, 500 * 0.85, 500 * 0.95];
     /** Race: once the first Sonic has arrived, the others have this long. */
     private const RACE_GRACE = 30.0;
     /** [sheet, colour of the name] of each player in the modes without teams. */
@@ -124,6 +127,7 @@ class Versus extends EventEmitter
         private Player $human,
         public readonly string $mode,
         private int $players,
+        private int $difficulty = 1,
     ) {
         if (!isset(self::MODES[$mode])) throw new \InvalidArgumentException("Mode '$mode' is not valid.");
         // flag: two teams of 1 to 3
@@ -188,7 +192,7 @@ class Versus extends EventEmitter
             } else {
                 $body = new Player($this->sdl);
                 // a little better each: the last ones are the hardest
-                $rival = new Rival($body, false, 'CPU' . ($i + 1), $sheet, $rgb, $team, new BotBrain(0.7 + 0.06 * $i));
+                $rival = new Rival($body, false, 'CPU' . ($i + 1), $sheet, $rgb, $team, new BotBrain($this->difficulty));
             }
             $this->rivals[] = $rival;
         }
@@ -407,11 +411,15 @@ class Versus extends EventEmitter
             if ($this->mode === 'race') {
                 // a little slower than Sonic, and slower still far ahead of him (the race stays close)
                 $top = self::BOT_TOP_SPEED + self::BOT_TOP_SPEED_STEP * array_search($rival, $this->rivals, true);
+                $top *= self::DIFFICULTY_SPEED[$this->difficulty];
                 $p->setTopSpeed($p->getX() - $this->human->getX() > self::RUBBER_BAND ? $top * 0.7 : $top);
             } elseif ($this->mode === 'flag') {
                 // slower than Sonic, the carrier slower still: the human has the time to catch up
-                $top = self::BOT_FLAG_SPEED + self::BOT_TOP_SPEED_STEP * array_search($rival, $this->rivals, true);
+                $top = (self::BOT_FLAG_SPEED + self::BOT_TOP_SPEED_STEP * array_search($rival, $this->rivals, true))
+                    * self::DIFFICULTY_SPEED[$this->difficulty];
                 $p->setTopSpeed($rival === $this->carrier ? $top * self::CARRIER_SPEED : $top);
+            } else {
+                $p->setTopSpeed(self::BOT_OPEN_SPEED[$this->difficulty]);
             }
             $input = ['dir' => 0, 'jump' => false, 'super' => false, 'down' => false, 'warp' => false];
             if ($this->state === 'play' && $rival->finishTime === null) {
