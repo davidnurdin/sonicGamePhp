@@ -166,11 +166,14 @@ class Screens extends EventEmitter
                 $set = fn(string $m, int $p, int $l) => $this->changed(fn() => $options->setVersus($m, $p, $l));
                 $cycle = fn(array $list, $current, int $step) => $list[((int)array_search($current, $list, true) + $step + count($list)) % count($list)];
                 $nextMode = fn(int $step = 1) => $set($cycle($modes, $mode, $step), $players, $level);
-                $nextPlayers = fn(int $step = 1) => $mode === 'flag' ? null : $set($mode, ($players - 2 + $step + 4) % 4 + 2, $level);
+                $team = $options->getVersusTeamSize();
+                $nextPlayers = fn(int $step = 1) => $mode === 'flag'
+                    ? $this->changed(fn() => $options->setVersusTeamSize(($team - 1 + $step + 3) % 3 + 1))
+                    : $set($mode, ($players - 2 + $step + 4) % 4 + 2, $level);
                 $nextLevel = fn(int $step = 1) => $set($mode, $players, $cycle($levels, $level, $step));
                 return [
                     ['MODE', Versus::MODES[$mode], $nextMode, $nextMode],
-                    ['SONICS', $mode === 'flag' ? '3 CONTRE 3' : (string)$players, $nextPlayers, $nextPlayers],
+                    ['SONICS', $mode === 'flag' ? $team . ' CONTRE ' . $team : (string)$players, $nextPlayers, $nextPlayers],
                     ['ZONE', Versus::levelName($level), $nextLevel, $nextLevel],
                     ['LANCER', null, fn() => $this->finish('versusStart'), null],
                     ['RETOUR', null, fn() => $this->openPage('menu', 1), null],
@@ -938,11 +941,14 @@ class Screens extends EventEmitter
         $this->styled($label, (int)((256 * $this->scale - $width) / 2 / $this->scale), $y, $size, $this->lineColours($selected));
     }
 
-    /** Text at SMS position ($x, $y) with the outline of the game's screens. */
-    private function styled(string $text, float $x, int $y, int $size, array $colours): void
+    /**
+     * Text at SMS position ($x, $y) with the outline of the game's screens. $overBlack: kept in a texture
+     * (TextRenderer::drawStyled), not over a coloured box.
+     */
+    private function styled(string $text, float $x, int $y, int $size, array $colours, bool $overBlack = true): void
     {
         $this->text->drawStyled($text, $this->offsetX + (int)round($x * $this->scale), $this->offsetY + $y * $this->scale,
-            $size, $colours[0], $colours[1], $this->scale);
+            $size, $colours[0], $colours[1], $this->scale, $overBlack);
     }
 
     private function lineColours(bool $selected): array
@@ -990,7 +996,7 @@ class Screens extends EventEmitter
             // the rules of the mode chosen, under the entries
             $rules = [
                 'race' => ['LE PREMIER A L ARRIVEE GAGNE', 'SAUTE OU ROULE SUR LES AUTRES'],
-                'flag' => ['BLEUS CONTRE ROUGES', 'TOUCHE LE DRAPEAU EN PREMIER'],
+                'flag' => ['RAMENE LE DRAPEAU A TA BASE', 'TOUCHE TU LE LACHES  3 POINTS'],
                 'rings' => ['LES ANNEAUX REVIENNENT', '3 MIN  LE PLUS D ANNEAUX GAGNE'],
                 'deathmatch' => ['SAUTE OU ROULE SUR LES AUTRES', '3 MIN  LE PLUS DE KO GAGNE'],
             ][$this->options->getVersusMode()];
@@ -1020,7 +1026,7 @@ class Screens extends EventEmitter
         $shown = str_pad($this->entryName . $cursor, self::NAME_LENGTH, ' ');
         $width = $this->text->styledWidth(str_repeat('W', self::NAME_LENGTH), 12 * $scale, $scale);
         $this->box(64, 52, 128, 24, [0, 0, 85]);
-        $this->styled($shown, (256 * $scale - $width) / 2 / $scale, 57, 12 * $scale, $blue);
+        $this->styled($shown, (256 * $scale - $width) / 2 / $scale, 57, 12 * $scale, $blue, false);
 
         // keyboard: the key under the cursor on a blue background
         $size = 8 * $scale;
@@ -1044,7 +1050,7 @@ class Screens extends EventEmitter
         if ($selected) $this->box($x + 1, $y - 2, $w - 2, self::KEY_H - 1, [0, 85, 170]);
         $width = $this->text->styledWidth($label, $size, $this->scale) / $this->scale;
         $this->styled($label, $x + ($w - $width) / 2, $y + 1, $size,
-            $selected ? [self::SELECTED_TOP, self::SELECTED_BOTTOM] : [self::MENU_TOP, self::MENU_BOTTOM]);
+            $selected ? [self::SELECTED_TOP, self::SELECTED_BOTTOM] : [self::MENU_TOP, self::MENU_BOTTOM], !$selected);
     }
 
     /** Opaque rectangle (SMS pixels). */

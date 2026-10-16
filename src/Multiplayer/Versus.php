@@ -15,12 +15,14 @@ use SonicGame\SoundManager\SoundManager;
 /**
  * Multiplayer match against computer Sonics (title menu > MULTIJOUEUR), on one act:
  *  - race ('COURSE', 2-5 Sonics): the first one at the finish line (where the sign was) wins;
- *  - flag ('DRAPEAU', 3 blue against 3 red, random places): a flag appears somewhere, the first team to touch
- *    it wins (3 minutes at most);
+ *  - flag ('DRAPEAU', 1 to 3 blue against as many red): each team has a base at one end of the act, a flag
+ *    appears half-way; it has to be taken and brought back to the base of the team. Its carrier is slower and
+ *    drops it when hit. 3 flags brought back win (3 minutes at most: the most flags);
  *  - rings ('ANNEAUX', 2-5): 3 minutes, every ring taken (or lost) comes back somewhere else, the most rings wins;
  *  - deathmatch (2-5): 3 minutes, the most knock-outs wins.
  * A Sonic jumping or rolling into an opponent that doesn't hurts it: it loses its rings, or, without rings,
- * it is knocked out (race: back to the start; flag / deathmatch: somewhere else; rings: just thrown back).
+ * it is knocked out (race: back to the start; flag: near its base; deathmatch: somewhere else; rings: just
+ * thrown back).
  * Flag mode: only the other team can be hurt. Both attacking: they bounce off each other.
  *
  * The human is the first Rival (his Player, GameObjectManager for his rings, hurt, deaths); the others are
@@ -37,6 +39,16 @@ class Versus extends EventEmitter
     public const LEVELS = [1, 2, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17];
     private const ZONES = ['GREEN HILL', 'BRIDGE', 'JUNGLE', 'LABYRINTH', 'SCRAP BRAIN', 'SKY BASE'];
     public const TIME_LIMIT = 180;
+    /** Flag mode: flags to bring back to win, seconds before a dropped flag can be taken, carrier speed. */
+    private const FLAG_CAPTURES = 3;
+    private const FLAG_DROP_DELAY = 1.0;
+    private const CARRIER_SPEED = 0.75;
+    /** Flag mode: top speed of the bots (Sonic: 500 px/s), slower than in a race. */
+    private const BOT_FLAG_SPEED = 500 * 0.6;
+    /** Flag mode: a defender leaves its base for an opponent carrying the flag this close to it. */
+    private const DEFEND_RADIUS = 900;
+    /** Flag mode: Sonics (re)appear around their base, this far at most. */
+    private const BASE_RADIUS = 640;
     private const COUNTDOWN = 3.0;
     /** Race: top speed of the bots (Sonic: 500 px/s), and far ahead of the human. */
     private const BOT_TOP_SPEED = 500 * 0.72;
@@ -71,8 +83,17 @@ class Versus extends EventEmitter
     /** Race: x of the finish line (the sign of the act, or the end of the act). */
     private float $goalX = 0;
     private ?float $firstArrival = null;
-    /** Flag mode: [x, y] of the foot of the pole. */
+    /** Flag mode: [x, y] of the foot of the pole (on the ground, or over its carrier). */
     private ?array $flag = null;
+    private ?Rival $carrier = null;
+    /** Flag mode: the last carrier can't take it back at once, nobody can during FLAG_DROP_DELAY. */
+    private ?Rival $lastCarrier = null;
+    private float $flagDelay = 0;
+    /** Flag mode: [x, y] of the foot of the base of each team, and the flags each team brought back. */
+    private array $bases = [];
+    private array $captures = [0, 0];
+    /** A message in the middle of the screen for a while: [text, colour, seconds left]. */
+    private ?array $banner = null;
     /** Rivals hit by a hazard / fallen in a pit during their physics step. */
     private array $fell = [];
     private array $hazard = [];
@@ -103,7 +124,8 @@ class Versus extends EventEmitter
         private int $players,
     ) {
         if (!isset(self::MODES[$mode])) throw new \InvalidArgumentException("Mode '$mode' is not valid.");
-        $this->players = $mode === 'flag' ? 6 : max(2, min(5, $players));
+        // flag: two teams of 1 to 3
+        $this->players = $mode === 'flag' ? max(2, min(6, $players - $players % 2)) : max(2, min(5, $players));
     }
 
     /** Rival sheets (tools/soniccolors.py), loaded once. */
@@ -154,8 +176,9 @@ class Versus extends EventEmitter
         self::loadTextures($this->sdl);
 
         $teams = $this->mode === 'flag';
+        if ($teams) $this->placeBases();
         for ($i = 0; $i < $this->players; $i++) {
-            $team = $teams ? ($i < 3 ? 0 : 1) : $i;
+            $team = $teams ? ($i < $this->players / 2 ? 0 : 1) : $i;
             [$sheet, $rgb] = $teams ? [$team === 0 ? 'sonic' : 'sonic-red', self::TEAM_COLOURS[$team]] : self::COLOURS[$i];
             if ($i === 0) {
                 $rival = new Rival($this->human, true, 'J1', 'sonic', $rgb, $team);
@@ -214,19 +237,26 @@ class Versus extends EventEmitter
         }
     }
 
-    /** A place to appear, away from the others (and, for the flag, not too close to it). */
+    /** A place to appear, away from the others (and, for the flag, not too close to it; near the base of its team). */
     private function randomSpawn(?Rival $for = null): array
     {
-        $best = $this->spawns[0];
+        $spawns = $this->spawns;
+        if ($this->mode === 'flag' && $for !== null && isset($this->bases[$for->team])) {
+            $baseX = $this->bases[$for->team][0];
+            $near = array_values(array_filter($spawns, fn($s) => abs($s[0] + 12 - $baseX) < self::BASE_RADIUS));
+            if ($near) $spawns = $near;
+        }
+        $best = $spawns[0];
         $bestScore = -1;
         for ($try = 0; $try < 12; $try++) {
-            $spawn = $this->spawns[mt_rand(0, count($this->spawns) - 1)];
+            $spawn = $spawns[mt_rand(0, count($spawns) - 1)];
             $nearest = INF;
             foreach ($this->rivals as $rival) {
                 if ($rival === $for) continue;
                 $nearest = min($nearest, hypot($rival->player->getX() - $spawn[0], $rival->player->getY() - $spawn[1]));
             }
             if ($this->flag !== null) $nearest = min($nearest, hypot($this->flag[0] - $spawn[0], $this->flag[1] - $spawn[1]) * 1.5);
+            if ($this->mode === 'flag') $nearest = min($nearest, 300);   // close to the base is fine
             $score = min($nearest, 600) + mt_rand(0, 100);
             if ($score > $bestScore) {
                 $bestScore = $score;
@@ -236,25 +266,72 @@ class Versus extends EventEmitter
         return $best;
     }
 
-    /** Flag mode: somewhere on the ground, far from where the human is. */
+    /**
+     * Flag mode: the bases, near the two ends of the act (the places to appear, sorted from left to right):
+     * blue (the human's team) on the left, red on the right.
+     */
+    private function placeBases(): void
+    {
+        $spawns = $this->spawns;
+        usort($spawns, fn($a, $b) => $a[0] <=> $b[0]);
+        $last = count($spawns) - 1;
+        foreach ([0 => 0.08, 1 => 0.92] as $team => $at) {
+            [$x, $y] = $spawns[(int)round($last * $at)];
+            $this->bases[$team] = [$x + 12, $y + 32];
+        }
+    }
+
+    /** Flag mode: on the ground half-way between the bases, as far as possible from every Sonic. */
     private function placeFlag(): void
     {
+        $left = min($this->bases[0][0], $this->bases[1][0]);
+        $right = max($this->bases[0][0], $this->bases[1][0]);
+        $middle = array_values(array_filter($this->spawns,
+            fn($s) => $s[0] > $left + ($right - $left) * 0.4 && $s[0] < $left + ($right - $left) * 0.6));
+        $spawns = $middle ?: $this->spawns;
         $best = null;
         $bestScore = -1;
-        for ($try = 0; $try < 20; $try++) {
-            [$x, $y] = $this->spawns[mt_rand(0, count($this->spawns) - 1)];
-            $score = 0;
+        for ($try = 0; $try < 24; $try++) {
+            [$x, $y] = $spawns[mt_rand(0, count($spawns) - 1)];
+            $nearest = INF;
             foreach ($this->rivals as $rival) {
-                $score += min(900, abs($rival->player->getX() - $x)) / count($this->rivals);
+                $nearest = min($nearest, hypot($rival->player->getX() - $x, $rival->player->getY() - $y));
             }
-            $score += mt_rand(0, 200);
+            $score = min($nearest, 1200) + mt_rand(0, 150);
             if ($score > $bestScore) {
                 $bestScore = $score;
                 $best = [$x + 12, $y + 32];
             }
         }
         $this->flag = $best;
+        $this->carrier = $this->lastCarrier = null;
+        $this->flagDelay = 0;
         $this->sfx(SoundManager::SFX_SIGN_STOP);
+    }
+
+    /** The carrier drops the flag where it is (on the ground below; in a pit: a new flag half-way). */
+    private function dropFlag(): void
+    {
+        $carrier = $this->carrier;
+        if ($carrier === null) return;
+        $this->carrier = null;
+        $this->lastCarrier = $carrier;
+        $this->flagDelay = self::FLAG_DROP_DELAY;
+        $this->restoreSpeed($carrier);
+        $x = (int)round($carrier->player->getX() + 12);
+        $ground = $this->level->findSurfaceY($x, (int)$carrier->player->getY() + 16, 240);
+        if ($ground === null) {
+            $this->placeFlag();
+            return;
+        }
+        $this->flag = [$x, $ground];
+        $this->sfx(SoundManager::SFX_HURT);
+    }
+
+    /** Back to the normal top speed after carrying the flag. */
+    private function restoreSpeed(Rival $rival): void
+    {
+        if ($rival->human) $this->human->setSpeedBoost($this->objects->hasSpeedShoes());
     }
 
     // ------------------------------------------------------------------ frame
@@ -297,9 +374,10 @@ class Versus extends EventEmitter
         $this->contacts();
         $this->updateRings($deltaTime, $level);
 
+        if ($this->banner !== null && ($this->banner[2] -= $deltaTime) <= 0) $this->banner = null;
         match ($this->mode) {
             'race' => $this->updateRace(),
-            'flag' => $this->updateFlag(),
+            'flag' => $this->updateFlag($deltaTime),
             default => null,
         };
         if ($this->state === 'play' && $this->mode !== 'race' && $this->clock >= self::TIME_LIMIT) {
@@ -323,6 +401,10 @@ class Versus extends EventEmitter
                 // a little slower than Sonic, and slower still far ahead of him (the race stays close)
                 $top = self::BOT_TOP_SPEED + self::BOT_TOP_SPEED_STEP * array_search($rival, $this->rivals, true);
                 $p->setTopSpeed($p->getX() - $this->human->getX() > self::RUBBER_BAND ? $top * 0.7 : $top);
+            } elseif ($this->mode === 'flag') {
+                // slower than Sonic, the carrier slower still: the human has the time to catch up
+                $top = self::BOT_FLAG_SPEED + self::BOT_TOP_SPEED_STEP * array_search($rival, $this->rivals, true);
+                $p->setTopSpeed($rival === $this->carrier ? $top * self::CARRIER_SPEED : $top);
             }
             $input = ['dir' => 0, 'jump' => false, 'super' => false, 'down' => false, 'warp' => false];
             if ($this->state === 'play' && $rival->finishTime === null) {
@@ -330,6 +412,7 @@ class Versus extends EventEmitter
                 $input = $rival->brain->think($p, $level, $target, $deltaTime, $chase, $foe !== null && $this->isAttacking($foe));
             }
             if ($input['warp']) {
+                if ($rival === $this->carrier) $this->dropFlag();
                 $this->unstick($rival);
                 continue;
             }
@@ -363,6 +446,7 @@ class Versus extends EventEmitter
             $id = spl_object_id($rival->player);
             if (isset($this->fell[$id])) {
                 // a pit: back where it stood a few seconds ago (no penalty but the time lost)
+                if ($rival === $this->carrier) $this->dropFlag();
                 [$x, $y] = $rival->safePlace() ?? $rival->start;
                 $rival->placeAt($x, $y);
                 $rival->brain?->reset();
@@ -382,6 +466,27 @@ class Versus extends EventEmitter
             case 'race':
                 return [[$this->goalX + 400, $p->getY()], false];
             case 'flag':
+                $carrier = $this->carrier;
+                if ($carrier === $rival) return [$this->bases[$rival->team], false];
+                if ($this->isDefender($rival)) return $this->defenderTarget($rival);
+                if ($carrier !== null) {
+                    $cp = $carrier->player;
+                    // the other team has it: after the carrier
+                    if ($carrier->team !== $rival->team) return [[$cp->getX() + 12, $cp->getY()], true, $carrier];
+                    // ours: after the opponent closest to the carrier, or along with it
+                    $foe = null;
+                    $distance = 360;
+                    foreach ($this->rivals as $other) {
+                        if ($other->team === $rival->team || $other->isKnockedOut()) continue;
+                        $d = hypot($other->player->getX() - $cp->getX(), $other->player->getY() - $cp->getY());
+                        if ($d < $distance) {
+                            $distance = $d;
+                            $foe = $other;
+                        }
+                    }
+                    if ($foe) return [[$foe->player->getX() + 12, $foe->player->getY()], true, $foe];
+                    return [[$cp->getX() + 12, $cp->getY()], false];
+                }
                 if ($this->flag !== null) return [$this->flag, false];
                 return [[$p->getX(), $p->getY()], false];
             case 'rings':
@@ -420,6 +525,31 @@ class Versus extends EventEmitter
             $this->ringTarget[$id] = [$ring, $this->clock + 0.5, ...($found ? array_slice($found, 2) : [0, 0, 0])];
         }
         return $ring;
+    }
+
+    /** Flag mode: the last bot of a team with two bots or more stays to guard its base. */
+    private function isDefender(Rival $rival): bool
+    {
+        $bots = array_values(array_filter($this->rivals, fn(Rival $r) => !$r->human && $r->team === $rival->team));
+        return count($bots) >= 2 && end($bots) === $rival;
+    }
+
+    /** A defender: near its base; after an opponent carrying the flag close to it; takes a flag dropped nearby. */
+    private function defenderTarget(Rival $rival): array
+    {
+        [$bx, $by] = $this->bases[$rival->team];
+        $carrier = $this->carrier;
+        if ($carrier !== null && $carrier->team !== $rival->team) {
+            $cp = $carrier->player;
+            if (hypot($cp->getX() + 12 - $bx, $cp->getY() - $by) < self::DEFEND_RADIUS) {
+                return [[$cp->getX() + 12, $cp->getY()], true, $carrier];
+            }
+        } elseif ($carrier === null && $this->flag !== null && hypot($this->flag[0] - $bx, $this->flag[1] - $by) < self::DEFEND_RADIUS / 2) {
+            return [$this->flag, false];
+        }
+        // a little in front of the base, towards the middle of the act
+        $front = $bx < $this->bases[1 - $rival->team][0] ? 80 : -80;
+        return [[$bx + $front, $by - 16], false];
     }
 
     /** Centre of the nearest ring still there (world pixels) and its tile [x, y, tx, ty, bit], or null. */
@@ -599,6 +729,7 @@ class Versus extends EventEmitter
     private function hit(Rival $victim, ?Rival $attacker): void
     {
         if ($victim->invulnerable > 0) return;
+        if ($victim === $this->carrier) $this->dropFlag();
         $fromX = $attacker ? $attacker->player->getX() : $victim->player->getX() + 1;
         // the attacker bounces up like on a badnik
         if ($attacker && !$attacker->player->isGrounded()) {
@@ -712,18 +843,58 @@ class Versus extends EventEmitter
         $this->arrive($this->me);
     }
 
-    private function updateFlag(): void
+    private function updateFlag(float $deltaTime): void
     {
         if ($this->flag === null) return;
+        $this->flagDelay = max(0, $this->flagDelay - $deltaTime);
+
+        if ($this->carrier !== null) {
+            $carrier = $this->carrier;
+            $p = $carrier->player;
+            // hurt or dead (spikes, pit...) without a hit from a Sonic: dropped as well
+            if (!$this->canTouch($carrier) || $p->getState() === 'hurt'
+                || ($carrier->human && ($this->objects->isPlayerHurt() || $this->objects->isPlayerDead()))) {
+                $this->dropFlag();
+                return;
+            }
+            if ($carrier->human) $this->human->setTopSpeed(($this->objects->hasSpeedShoes() ? 1000 : 500) * self::CARRIER_SPEED);
+            $this->flag = [$p->getX() + 12, $p->getY()];
+            [$bx, $by] = $this->bases[$carrier->team];
+            $r = $p->getCollisionRect();
+            if (abs($r['x'] + $r['width'] / 2 - $bx) < 20 && $r['y'] < $by && $r['y'] + $r['height'] > $by - 56) {
+                $this->capture($carrier);
+            }
+            return;
+        }
+
+        if ($this->flagDelay > 0) return;
         [$fx, $fy] = $this->flag;
         foreach ($this->rivals as $rival) {
-            if (!$this->canTouch($rival)) continue;
+            if (!$this->canTouch($rival) || $rival->player->getState() === 'hurt') continue;
             $r = $rival->player->getCollisionRect();
             if ($r['x'] < $fx + 8 && $r['x'] + $r['width'] > $fx - 8 && $r['y'] < $fy && $r['y'] + $r['height'] > $fy - 40) {
-                $this->finish($rival->team);
+                $this->carrier = $rival;
+                $this->sfx(SoundManager::SFX_SWITCH);
+                $this->banner = [$rival->name . ' A LE DRAPEAU', $rival->rgb, 1.5];
                 return;
             }
         }
+    }
+
+    /** The carrier is at its base: a point for its team, a new flag half-way (or the end of the match). */
+    private function capture(Rival $carrier): void
+    {
+        $this->carrier = null;
+        $this->restoreSpeed($carrier);
+        $carrier->captures++;
+        $this->captures[$carrier->team]++;
+        $this->sfx(SoundManager::SFX_EXTRA_LIFE);
+        if ($this->captures[$carrier->team] >= self::FLAG_CAPTURES) {
+            $this->finish($carrier->team);
+            return;
+        }
+        $this->banner = ['POINT POUR LES ' . self::TEAM_NAMES[$carrier->team], self::TEAM_COLOURS[$carrier->team], 2.0];
+        $this->placeFlag();
     }
 
     /** End of the match: the ranking, the verdict, the jingle. $flagTeam: the team that took the flag. */
@@ -745,12 +916,20 @@ class Versus extends EventEmitter
                 $this->verdict = $won ? 'VICTOIRE' : ($sorted[0]->finishTime !== null ? $sorted[0]->name . ' GAGNE' : 'PERSONNE N EST ARRIVE');
                 break;
             case 'flag':
-                foreach ($this->rivals as $rival) $rows[] = [$rival, self::TEAM_NAMES[$rival->team]];
+                // time over: the team with the most flags (none: a draw)
+                if ($flagTeam === null && $this->captures[0] !== $this->captures[1]) {
+                    $flagTeam = $this->captures[0] > $this->captures[1] ? 0 : 1;
+                }
+                $sorted = $this->rivals;
+                usort($sorted, fn(Rival $a, Rival $b) => [$a->team !== $flagTeam, -$a->captures, $a->deaths]
+                    <=> [$b->team !== $flagTeam, -$b->captures, $b->deaths]);
+                foreach ($sorted as $rival) $rows[] = [$rival, self::TEAM_NAMES[$rival->team] . '  ' . $rival->captures . ' DRAPEAU' . ($rival->captures > 1 ? 'X' : '')];
+                $score = $this->captures[0] . '-' . $this->captures[1];
                 if ($flagTeam === null) {
-                    $this->verdict = 'TEMPS ECOULE';
+                    $this->verdict = 'EGALITE ' . $score;
                 } else {
                     $won = $flagTeam === $this->me->team;
-                    $this->verdict = 'LES ' . self::TEAM_NAMES[$flagTeam] . ' GAGNENT';
+                    $this->verdict = 'LES ' . self::TEAM_NAMES[$flagTeam] . ' GAGNENT ' . $score;
                 }
                 break;
             case 'rings':
@@ -791,16 +970,11 @@ class Versus extends EventEmitter
     public function drawWorld(float $cameraX, float $cameraY): void
     {
         $renderer = $this->sdl->getRenderer()->getRenderer();
-        if ($this->flag !== null && $this->state !== 'countdown') {
-            [$fx, $fy] = $this->flag;
-            $x = (int)round($fx - $cameraX);
-            $y = (int)round($fy - $cameraY);
-            $wave = (int)(fmod(microtime(true), 86400.0) * 6) % 2;
-            $this->fill($x - 1, $y - 40, 3, 40, [240, 240, 240]);
-            $this->fill($x - 1, $y - 42, 3, 3, [255, 216, 0]);
-            $this->fill($x + 2, $y - 39 + $wave, 16, 11, [255, 216, 0]);
-            $this->fill($x + 2, $y - 39 + $wave, 16, 2, [255, 255, 170]);
-            $this->fill($x + 8, $y - 36 + $wave, 4, 4, [200, 40, 40]);
+        foreach ($this->bases as $team => [$bx, $by]) {
+            $this->drawBase((int)round($bx - $cameraX), (int)round($by - $cameraY), self::TEAM_COLOURS[$team]);
+        }
+        if ($this->flag !== null && $this->state !== 'countdown' && $this->carrier === null) {
+            $this->drawFlag((int)round($this->flag[0] - $cameraX), (int)round($this->flag[1] - $cameraY), 40);
         }
         if ($this->mode === 'race') {
             $this->drawFinishLine((int)round($this->goalX - $cameraX), $cameraY);
@@ -815,6 +989,33 @@ class Versus extends EventEmitter
             \SDL_RenderCopyEx($renderer, $this->sdl->getTextures($rival->texture)[0]['texture'], $src, $dst, 0, null,
                 $flip ? \SDL_FLIP_HORIZONTAL : \SDL_FLIP_NONE);
         }
+        // carried: a small flag over the head of its carrier
+        if ($this->carrier !== null && $this->carrier->isVisible()) {
+            $p = $this->carrier->player;
+            $this->drawFlag((int)round($p->getX() + 12 - $cameraX), (int)round($p->getY() - 2 - $cameraY), 22);
+        }
+    }
+
+    /** The flag, the foot of its pole at ($x, $y) (view pixels). */
+    private function drawFlag(int $x, int $y, int $pole): void
+    {
+        $wave = (int)(fmod(microtime(true), 86400.0) * 6) % 2;
+        $this->fill($x - 1, $y - $pole, 3, $pole, [240, 240, 240]);
+        $this->fill($x - 1, $y - $pole - 2, 3, 3, [255, 216, 0]);
+        $this->fill($x + 2, $y - $pole + 1 + $wave, 16, 11, [255, 216, 0]);
+        $this->fill($x + 2, $y - $pole + 1 + $wave, 16, 2, [255, 255, 170]);
+        $this->fill($x + 8, $y - $pole + 4 + $wave, 4, 4, [200, 40, 40]);
+    }
+
+    /** A base of the flag mode: a pad and a tall pole of the colour of the team. */
+    private function drawBase(int $x, int $y, array $rgb): void
+    {
+        if ($x < -40 || $x > $this->sdl->getWindow()->getWidth() + 40) return;
+        $this->fill($x - 20, $y - 4, 40, 4, $rgb);
+        $this->fill($x - 20, $y - 5, 40, 1, [255, 255, 255]);
+        $this->fill($x - 2, $y - 64, 4, 60, [230, 230, 230]);
+        $this->fill($x + 2, $y - 64, 20, 14, $rgb);
+        $this->fill($x + 2, $y - 64, 20, 2, [255, 255, 255]);
     }
 
     /** Race: a chequered post from the ground up, at x (view pixels) of the goal. */
@@ -867,10 +1068,18 @@ class Versus extends EventEmitter
                 $this->edgeMark($text, $label, $rival->rgb, $wx, $wy, $dst, $size, $margin);
             }
         }
-        if ($this->flag !== null && $this->state === 'play') {
+        if ($this->flag !== null && $this->state === 'play' && $this->carrier === null) {
             [$wx, $wy] = $toWindow($this->flag[0], $this->flag[1] - 20);
             if ($wx < $dst->x || $wx > $dst->x + $dst->w || $wy < $dst->y || $wy > $dst->y + $dst->h) {
                 $this->edgeMark($text, 'DRAPEAU', [255, 216, 0], $wx, $wy, $dst, $size, $margin);
+            }
+        }
+        // the base of the human's team, when it is out of the screen
+        if ($this->me !== null && isset($this->bases[$this->me->team]) && $this->state === 'play') {
+            [$bx, $by] = $this->bases[$this->me->team];
+            [$wx, $wy] = $toWindow($bx, $by - 32);
+            if ($wx < $dst->x || $wx > $dst->x + $dst->w || $wy < $dst->y || $wy > $dst->y + $dst->h) {
+                $this->edgeMark($text, 'BASE', self::TEAM_COLOURS[$this->me->team], $wx, $wy, $dst, $size, $margin);
             }
         }
 
@@ -890,6 +1099,15 @@ class Versus extends EventEmitter
             $text->draw('GO', (int)($dst->x + ($dst->w - $w) / 2), (int)($dst->y + $dst->h / 2 - $big), $big, [85, 255, 85]);
         } elseif ($this->state === 'over') {
             $this->drawResults($text, $dst, $size);
+        } elseif ($this->banner !== null) {
+            [$label, $rgb] = $this->banner;
+            $big = $size * 2;
+            $w = $text->width($label, $big);
+            if ($w > $dst->w - $size * 2) {
+                $big = $size;
+                $w = $text->width($label, $big);
+            }
+            $text->draw($label, (int)($dst->x + ($dst->w - $w) / 2), (int)($dst->y + $dst->h / 3), $big, $rgb);
         }
     }
 
@@ -920,14 +1138,18 @@ class Versus extends EventEmitter
         $lines = [];
         $time = match ($this->mode) {
             'race' => self::time($this->clock),
-            default => self::time(max(0, self::TIME_LIMIT - $this->clock)),
+            // time left in whole seconds: the line changes once a second (kept in a texture, TextRenderer)
+            default => sprintf('%d:%02d', intdiv($left = (int)ceil(max(0, self::TIME_LIMIT - $this->clock)), 60), $left % 60),
         };
         $lines[] = [self::MODES[$this->mode] . '  ' . $time, [255, 255, 255]];
+        if ($this->mode === 'flag') {
+            $lines[] = ['BLEUS ' . $this->captures[0] . ' - ' . $this->captures[1] . ' ROUGES', [255, 255, 85]];
+        }
         $places = $this->mode === 'race' ? $this->racePlaces() : [];
         foreach ($this->rivals as $i => $rival) {
             $value = match ($this->mode) {
                 'race' => ($places[$i] === 1 ? '1ER' : $places[$i] . 'E') . ($rival->finishTime !== null ? ' ARRIVE' : ''),
-                'flag' => self::TEAM_NAMES[$rival->team],
+                'flag' => self::TEAM_NAMES[$rival->team] . ($rival === $this->carrier ? '  DRAPEAU' : ''),
                 'rings' => $rival->rings . ' ANNEAUX',
                 default => $rival->kills . ' KO',
             };

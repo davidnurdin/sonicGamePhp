@@ -69,7 +69,9 @@ class BotBrain
 
         // progress towards the target
         $distance = hypot($dx, $ty - $y);
-        if ($distance < $this->bestDistance - 16) {
+        if ($distance < 48) {
+            $this->noProgress = 0;   // there (a defender at its base): not stuck
+        } elseif ($distance < $this->bestDistance - 16) {
             $this->bestDistance = $distance;
             $this->noProgress = 0;
         } else {

@@ -355,7 +355,8 @@ class Game extends EventEmitter
         }
         $this->player->resetForStart();
         $this->versus = new Versus($this->sdl, $this->collisionSystem, $this->objectManager, $this->scene->getCamera(),
-            $this->player, $this->options->getVersusMode(), $this->options->getVersusPlayers());
+            $this->player, $this->options->getVersusMode(),
+            $this->options->getVersusMode() === 'flag' ? 2 * $this->options->getVersusTeamSize() : $this->options->getVersusPlayers());
         $this->versus->on('sfx', fn(int $index) => $this->soundManager->playSfx($index));
         $this->versus->on('music', fn(string $name, bool $loop) => $this->soundManager->playMusic($name, $loop, true));
         $this->scene->worldOverlay = fn(float $x, float $y) => $this->versus?->drawWorld($x, $y);

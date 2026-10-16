@@ -20,7 +20,7 @@ class Options
     ];
 
     private array $values = ['ghost' => false, 'crt' => false, 'speed' => 'pal', 'cheats' => [], 'startLevel' => 1,
-        'versusMode' => 'race', 'versusPlayers' => 5, 'versusLevel' => 1];
+        'versusMode' => 'race', 'versusSonics' => 3, 'versusTeam' => 2, 'versusLevel' => 1];
 
     public function __construct(private string $file)
     {
@@ -107,7 +107,7 @@ class Options
         $this->save();
     }
 
-    /** Multiplayer menu: the mode (Versus::MODES), the number of Sonics (2-5, the flag is always 3 against 3), the act. */
+    /** Multiplayer menu: the mode (Versus::MODES), the number of Sonics (2-5; flag: players per team, 1-3), the act. */
     public function getVersusMode(): string
     {
         return in_array($this->values['versusMode'], ['race', 'flag', 'rings', 'deathmatch'], true) ? $this->values['versusMode'] : 'race';
@@ -115,7 +115,19 @@ class Options
 
     public function getVersusPlayers(): int
     {
-        return max(2, min(5, (int)$this->values['versusPlayers']));
+        return max(2, min(5, (int)$this->values['versusSonics']));
+    }
+
+    /** Flag mode: Sonics per team (1 against 1 ... 3 against 3). */
+    public function getVersusTeamSize(): int
+    {
+        return max(1, min(3, (int)$this->values['versusTeam']));
+    }
+
+    public function setVersusTeamSize(int $size): void
+    {
+        $this->values['versusTeam'] = max(1, min(3, $size));
+        $this->save();
     }
 
     public function getVersusLevel(): int
@@ -126,7 +138,7 @@ class Options
     public function setVersus(string $mode, int $players, int $level): void
     {
         $this->values['versusMode'] = $mode;
-        $this->values['versusPlayers'] = $players;
+        $this->values['versusSonics'] = $players;
         $this->values['versusLevel'] = $level;
         $this->save();
     }

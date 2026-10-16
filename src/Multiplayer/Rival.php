@@ -18,6 +18,8 @@ class Rival
     public int $rings = 0;
     public int $kills = 0;
     public int $deaths = 0;
+    /** Flag mode: flags brought back to its base. */
+    public int $captures = 0;
     /** Race: time it reached the sign (null: still running). */
     public ?float $finishTime = null;
     /** Last places it stood on (x, y), one per second, to come back to after a pit. */

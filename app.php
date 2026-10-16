@@ -18,10 +18,18 @@ if (!extension_loaded('sdl')) {
 }
 
 // Création du container DI
-$container = new ContainerBuilder();
-$loader = new YamlFileLoader($container, new FileLocator(__DIR__ . '/config'));
-$loader->load('services.yaml');
-$container->compile();
+// Navigateur (wasm) : container précompilé au packaging (php-wasm, tools/dump-container.php), ~0,5 s de
+// démarrage en moins. Pas en natif : il ne suivrait pas les changements du code.
+$cached = __DIR__ . '/cache/container.php';
+if (defined('SONIC_CONTAINER_CACHE') && is_file($cached)) {
+    require $cached;
+    $container = new SonicGameCachedContainer();
+} else {
+    $container = new ContainerBuilder();
+    $loader = new YamlFileLoader($container, new FileLocator(__DIR__ . '/config'));
+    $loader->load('services.yaml');
+    $container->compile();
+}
 
 // Récupération de la commande via le container
 $command = $container->get(DefaultCommand::class);
