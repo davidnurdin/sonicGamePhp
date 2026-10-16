@@ -997,7 +997,7 @@ class Screens extends EventEmitter
             $rules = [
                 'race' => ['LE PREMIER A L ARRIVEE GAGNE', 'SAUTE OU ROULE SUR LES AUTRES'],
                 'flag' => ['RAMENE LE DRAPEAU A TA BASE', 'TOUCHE TU LE LACHES  3 POINTS'],
-                'rings' => ['LES ANNEAUX REVIENNENT', '3 MIN  LE PLUS D ANNEAUX GAGNE'],
+                'rings' => ['TOUCHE TU PRENDS SES ANNEAUX', '3 MIN  LE PLUS D ANNEAUX GAGNE'],
                 'deathmatch' => ['SAUTE OU ROULE SUR LES AUTRES', '3 MIN  LE PLUS DE KO GAGNE'],
             ][$this->options->getVersusMode()];
             foreach ($rules as $i => $rule) {

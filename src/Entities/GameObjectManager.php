@@ -137,7 +137,7 @@ class GameObjectManager extends EventEmitter
     {
         $this->level = $level;
         $this->currentLevel = $level->getLevel();
-        $level->resetTilemap();
+        if (!$keepCheckpoint || !$this->keepTilemap) $level->resetTilemap();
         $this->objects = [];
         $this->transient = [];
         $this->sign = null;
@@ -1278,6 +1278,23 @@ class GameObjectManager extends EventEmitter
 
     /** Multiplayer (Versus): the rings are a score, no life at 100 and no wrap around. */
     public bool $ringWrap = true;
+
+    /** Multiplayer (rings mode): rings taken from a rival. */
+    public function gainRings(int $count): void
+    {
+        $this->addRings($count);
+    }
+
+    /** Multiplayer (rings mode): Sonic loses all his rings (they go to the others); returns how many. */
+    public function takeRings(): int
+    {
+        $rings = $this->rings;
+        $this->rings = 0;
+        return $rings;
+    }
+
+    /** Multiplayer: the map is not loaded again when Sonic dies (the rings taken stay taken). */
+    public bool $keepTilemap = false;
 
     private function addRings(int $count): void
     {

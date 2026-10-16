@@ -39,6 +39,8 @@ class Versus extends EventEmitter
     public const LEVELS = [1, 2, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17];
     private const ZONES = ['GREEN HILL', 'BRIDGE', 'JUNGLE', 'LABYRINTH', 'SCRAP BRAIN', 'SKY BASE'];
     public const TIME_LIMIT = 180;
+    /** Rings mode: a fall this long after a hit / bump gives the rings to the one who pushed. */
+    private const PUSH_TIME = 5.0;
     /** Flag mode: flags to bring back to win, seconds before a dropped flag can be taken, carrier speed. */
     private const FLAG_CAPTURES = 3;
     private const FLAG_DROP_DELAY = 1.0;
@@ -73,13 +75,13 @@ class Versus extends EventEmitter
     private float $countdown = self::COUNTDOWN;
     private float $clock = 0;
     private bool $simulating = false;
-    /** Ring places of the act at the start: [tx, ty, bit, x, y] (rings mode: where they come back). */
+    /** Ring places of the act at the start: [tx, ty, bit, x, y] (the bots look for the nearest one). */
     private array $ringSpots = [];
     /** Places to (re)appear: on the ground under the rings of the act, and the start. */
     private array $spawns = [];
-    /** Rings mode: seconds before each taken / lost ring comes back. */
-    private array $ringQueue = [];
     private int $humanRings = 0;
+    /** The human's death was seen (his rings were given away). */
+    private bool $humanDead = false;
     /** Race: x of the finish line (the sign of the act, or the end of the act). */
     private float $goalX = 0;
     private ?float $firstArrival = null;
@@ -173,6 +175,7 @@ class Versus extends EventEmitter
         $this->scanRings($level);
         $this->goalX = $this->objects->getEndSignX() ?? ($level->getMapWidth() * 32 - 96);
         $this->objects->ringWrap = false;
+        $this->objects->keepTilemap = true;
         self::loadTextures($this->sdl);
 
         $teams = $this->mode === 'flag';
@@ -370,9 +373,13 @@ class Versus extends EventEmitter
         if ($this->state !== 'play') return;
 
         $this->followHuman($deltaTime);
+        if ($this->objects->isPlayerDead() && !$this->humanDead) {
+            // pit, spikes, drowned...: his rings go at once (GameObjectManager would only reset them on respawn)
+            $this->humanDead = true;
+            if ($this->mode === 'rings') $this->objects->takeRings();
+        }
         $this->countHumanRings();
         $this->contacts();
-        $this->updateRings($deltaTime, $level);
 
         if ($this->banner !== null && ($this->banner[2] -= $deltaTime) <= 0) $this->banner = null;
         match ($this->mode) {
@@ -445,8 +452,9 @@ class Versus extends EventEmitter
         foreach ($this->rivals as $rival) {
             $id = spl_object_id($rival->player);
             if (isset($this->fell[$id])) {
-                // a pit: back where it stood a few seconds ago (no penalty but the time lost)
+                // a pit: back where it stood a few seconds ago (no penalty but the time lost; rings mode: its rings)
                 if ($rival === $this->carrier) $this->dropFlag();
+                if ($this->mode === 'rings') $this->loseRings($rival, null);
                 [$x, $y] = $rival->safePlace() ?? $rival->start;
                 $rival->placeAt($x, $y);
                 $rival->brain?->reset();
@@ -490,7 +498,15 @@ class Versus extends EventEmitter
                 if ($this->flag !== null) return [$this->flag, false];
                 return [[$p->getX(), $p->getY()], false];
             case 'rings':
-                return [$this->ringFor($rival) ?? [$this->human->getX(), $this->human->getY()], false];
+                if (($ring = $this->ringFor($rival)) !== null) return [$ring, false];
+                // no more rings in the act: hunt the richest Sonic (a hit takes its rings)
+                $richest = null;
+                foreach ($this->rivals as $other) {
+                    if ($other === $rival || $other->isKnockedOut() || $other->rings === 0) continue;
+                    if ($richest === null || $other->rings > $richest->rings) $richest = $other;
+                }
+                if ($richest) return [[$richest->player->getX() + 12, $richest->player->getY()], true, $richest];
+                return [[$this->human->getX(), $this->human->getY()], false];
             default:
                 $nearest = null;
                 $distance = INF;
@@ -624,7 +640,6 @@ class Versus extends EventEmitter
                         $block ^= $bit;
                         $level->setTile($tx, $ty, $block);
                         $rival->rings++;
-                        if ($this->mode === 'rings') $this->ringQueue[] = 1.5;
                         if ($this->isOnScreen($rival)) $this->sfx(SoundManager::SFX_RING);
                     }
                 }
@@ -632,34 +647,61 @@ class Versus extends EventEmitter
         }
     }
 
-    /** The human's rings: GameObjectManager counts them; the rings mode puts the taken / lost ones back. */
+    /** The human's rings: GameObjectManager counts them; rings mode: the lost ones go to the others. */
     private function countHumanRings(): void
     {
         $rings = $this->objects->getRingCount();
-        if ($this->mode === 'rings' && $rings !== $this->humanRings) {
-            for ($i = 0; $i < abs($rings - $this->humanRings); $i++) $this->ringQueue[] = 1.5;
-        }
+        $lost = $this->humanRings - $rings;
         $this->humanRings = $rings;
         $this->me->rings = $rings;
+        if ($lost > 0) $this->giveAway($this->me, $lost, null);
     }
 
-    /** Rings mode: the queued rings come back at random empty places. */
-    private function updateRings(float $deltaTime, Level $level): void
+    /** Rings mode: $victim loses its rings (hit, pit, spikes...): see giveAway. */
+    private function loseRings(Rival $victim, ?Rival $attacker): void
     {
-        if ($this->mode !== 'rings' || !$this->ringQueue || !$this->ringSpots) return;
-        foreach ($this->ringQueue as $i => &$left) {
-            $left -= $deltaTime;
-            if ($left > 0) continue;
-            unset($this->ringQueue[$i]);
-            for ($try = 0; $try < 10; $try++) {
-                [$tx, $ty, $bit] = $this->ringSpots[mt_rand(0, count($this->ringSpots) - 1)];
-                $block = $level->getTile($tx, $ty);
-                if ($block === null || ($block & $bit)) continue;
-                $level->setTile($tx, $ty, $block | $bit);
-                break;
-            }
+        if ($victim->human) {
+            if ($this->mode === 'rings') $this->objects->takeRings();
+            $this->countHumanRings();
+            return;
         }
-        unset($left);
+        $lost = $victim->rings;
+        $victim->rings = 0;
+        $this->giveAway($victim, $lost, $attacker);
+    }
+
+    /**
+     * Rings mode: the rings lost by $victim go to the Sonic that hit it, or that hit / bumped it less than
+     * PUSH_TIME seconds before an accident (pit, spikes...); otherwise shared out between all the others.
+     */
+    private function giveAway(Rival $victim, int $count, ?Rival $attacker): void
+    {
+        if ($this->mode !== 'rings' || $count <= 0) return;
+        if ($attacker === null && $victim->lastHitBy !== null && $this->clock - $victim->lastHitTime <= self::PUSH_TIME) {
+            $attacker = $victim->lastHitBy;
+        }
+        if ($attacker !== null && $attacker !== $victim) {
+            $this->addRings($attacker, $count);
+            return;
+        }
+        $others = array_values(array_filter($this->rivals, fn(Rival $r) => $r !== $victim));
+        shuffle($others);   // the remainder to random ones
+        foreach ($others as $i => $other) {
+            $share = intdiv($count, count($others)) + ($i < $count % count($others) ? 1 : 0);
+            if ($share > 0) $this->addRings($other, $share);
+        }
+    }
+
+    private function addRings(Rival $rival, int $count): void
+    {
+        if ($rival->human) {
+            $this->objects->gainRings($count);
+            $this->humanRings = $this->objects->getRingCount();
+            $rival->rings = $this->humanRings;
+        } else {
+            $rival->rings += $count;
+        }
+        if ($this->isOnScreen($rival)) $this->sfx(SoundManager::SFX_RING);
     }
 
     // ------------------------------------------------------------------ contacts
@@ -719,16 +761,25 @@ class Versus extends EventEmitter
             $rival->player->setGrounded(false);
             $rival->invulnerable = max($rival->invulnerable, 0.3);
         }
+        $this->pushedBy($a, $b);
+        $this->pushedBy($b, $a);
         if ($this->isOnScreen($a) || $this->isOnScreen($b)) $this->sfx(SoundManager::SFX_BUMPER);
+    }
+
+    private function pushedBy(Rival $victim, Rival $by): void
+    {
+        $victim->lastHitBy = $by;
+        $victim->lastHitTime = $this->clock;
     }
 
     /**
      * $victim hit by $attacker (null: a hazard of the act): loses its rings, or without rings is knocked out
-     * (the rings mode only throws it back).
+     * (the rings mode only throws it back; the attacker takes its rings).
      */
     private function hit(Rival $victim, ?Rival $attacker): void
     {
         if ($victim->invulnerable > 0) return;
+        if ($attacker) $this->pushedBy($victim, $attacker);
         if ($victim === $this->carrier) $this->dropFlag();
         $fromX = $attacker ? $attacker->player->getX() : $victim->player->getX() + 1;
         // the attacker bounces up like on a badnik
@@ -740,6 +791,7 @@ class Versus extends EventEmitter
             if ($this->objects->isPlayerHurt() || $this->objects->hasInvincibility()) return;
             if ($this->objects->getRingCount() > 0 || $this->objects->hasShield() || $this->mode === 'rings') {
                 // GameObjectManager: rings lost (one pops out), thrown back, blinking
+                if ($this->mode === 'rings' && !$this->objects->hasShield()) $this->loseRings($victim, $attacker);
                 $this->objects->hurtPlayer($this->human, false);
                 $victim->invulnerable = 2.0;
                 return;
@@ -750,9 +802,7 @@ class Versus extends EventEmitter
 
         $sound = $this->isOnScreen($victim);
         if ($victim->rings > 0 || $this->mode === 'rings') {
-            if ($this->mode === 'rings') {
-                for ($i = 0; $i < $victim->rings; $i++) $this->ringQueue[] = 1.5;
-            }
+            $this->loseRings($victim, $attacker);
             $victim->rings = 0;
             $victim->knockBack($fromX);
             if ($sound) $this->sfx(SoundManager::SFX_HURT);
@@ -788,6 +838,7 @@ class Versus extends EventEmitter
     {
         if ($this->me === null) return;
         $this->me->deaths++;
+        $this->humanDead = false;
         $this->humanRings = $this->objects->getRingCount();
         if ($this->mode !== 'race') $this->humanSpawnPending = true;
     }
@@ -1011,11 +1062,16 @@ class Versus extends EventEmitter
     private function drawBase(int $x, int $y, array $rgb): void
     {
         if ($x < -40 || $x > $this->sdl->getWindow()->getWidth() + 40) return;
-        $this->fill($x - 20, $y - 4, 40, 4, $rgb);
-        $this->fill($x - 20, $y - 5, 40, 1, [255, 255, 255]);
-        $this->fill($x - 2, $y - 64, 4, 60, [230, 230, 230]);
-        $this->fill($x + 2, $y - 64, 20, 14, $rgb);
-        $this->fill($x + 2, $y - 64, 20, 2, [255, 255, 255]);
+        // dark outlines and deep colours: pale ones melted into the sky and looked like white blocks
+        $deep = [(int)($rgb[0] * 0.7), (int)($rgb[1] * 0.55), (int)($rgb[2] * 0.7)];
+        $this->fill($x - 21, $y - 7, 42, 7, [16, 16, 40]);
+        $this->fill($x - 20, $y - 6, 40, 5, $deep);
+        $this->fill($x - 20, $y - 6, 40, 1, $rgb);
+        $this->fill($x - 3, $y - 66, 6, 60, [16, 16, 40]);
+        $this->fill($x - 2, $y - 65, 4, 59, [120, 90, 60]);
+        $this->fill($x + 3, $y - 66, 22, 16, [16, 16, 40]);
+        $this->fill($x + 3, $y - 65, 21, 14, $deep);
+        $this->fill($x + 3, $y - 65, 21, 3, $rgb);
     }
 
     /** Race: a chequered post from the ground up, at x (view pixels) of the goal. */

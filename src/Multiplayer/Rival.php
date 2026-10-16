@@ -29,6 +29,9 @@ class Rival
     public float $jumpHold = 0;
     /** Bots: where they come back to in a race after a knock-out (the start). */
     public array $start = [0, 0];
+    /** Rings mode: the last Sonic that hit or bumped it, and when (match clock): it gets the rings of a fall just after. */
+    public ?Rival $lastHitBy = null;
+    public float $lastHitTime = -INF;
 
     /**
      * @param string $texture sheet of the Sonic ('sonic' or 'sonic-<colour>', tools/soniccolors.py)

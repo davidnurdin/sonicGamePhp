@@ -369,6 +369,7 @@ class Game extends EventEmitter
         $this->scene->worldOverlay = null;
         $this->scene->playerBlink = false;
         $this->objectManager->ringWrap = true;
+        $this->objectManager->keepTilemap = false;
         $this->objectManager->noEnemies = false;
     }
 
