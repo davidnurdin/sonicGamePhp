@@ -26,6 +26,7 @@ class LevelManager extends EventEmitter
     {
         if ($this->currentLevelIndex < count($this->levels) - 1) {
             $this->currentLevelIndex++;
+            $this->useCurrentTextures();
             $this->emit('levelChanged', [$this->currentLevelIndex+1]);
         }
     }
@@ -36,6 +37,7 @@ class LevelManager extends EventEmitter
         foreach ($this->levels as $index => $candidate) {
             if ($candidate->getLevel() === $level) {
                 $this->currentLevelIndex = $index;
+                $this->useCurrentTextures();
                 $this->emit('levelChanged', [$level]);
                 return;
             }
@@ -47,6 +49,7 @@ class LevelManager extends EventEmitter
     {
         if ($this->currentLevelIndex !== 0) {
             $this->currentLevelIndex = 0;
+            $this->useCurrentTextures();
             $this->emit('levelChanged', [1]);
         }
     }
@@ -55,10 +58,19 @@ class LevelManager extends EventEmitter
     {
         if ($this->currentLevelIndex > 0) {
             $this->currentLevelIndex--;
+            $this->useCurrentTextures();
             $this->emit('levelChanged', [$this->currentLevelIndex+1]);
         }
     }
 
+
+    /** Only the blocks of the current level stay in memory: the others are freed, its own loaded now. */
+    private function useCurrentTextures(): void
+    {
+        $group = 'tileset' . $this->convertLevelToTileSet($this->getCurrentLevel()->getLevel());
+        $this->sdl->releaseGroupsExcept($group);
+        $this->sdl->loadGroup($group);
+    }
 
     public function convertLevelToTileSet($level)
     {
@@ -95,33 +107,35 @@ class LevelManager extends EventEmitter
         for ($i = 1 ; $i <= 35 ; $i++) {
             $tileSet = new TileSet($this->sdl);
             $tileSetFile = 'tileset/levels/tileset' . $this->convertLevelToTileSet($i);
-            $tileSet->loadTileSet('tileset' . $i, $tileSetFile . '.png');
+            // the textures of a level are loaded when it is played (useCurrentTextures), grouped by file
+            $group = 'tileset' . $this->convertLevelToTileSet($i);
+            $tileSet->loadTileSet('tileset' . $i, $tileSetFile . '.png', $group);
             // Labyrinth: fixed underwater palette below the water line (tools/waterpalette.py)
             foreach (['', '-fg'] as $layer) {
                 if (file_exists($this->assetManager->getAssetFolder() . '/' . $tileSetFile . '-water' . $layer . '.png')) {
-                    $this->sdl->loadTexture('tileset' . $i . $layer . '-water', $tileSetFile . '-water' . $layer . '.png');
+                    $this->sdl->registerTexture('tileset' . $i . $layer . '-water', $tileSetFile . '-water' . $layer . '.png', $group);
                 }
             }
             // Palette-cycle steps generated from the ROM (water, waterfalls, lights...)
             for ($k = 0; file_exists($this->assetManager->getAssetFolder() . '/' . $tileSetFile . '-cycle' . $k . '.png'); $k++) {
-                $tileSet->loadTileSet('tileset' . $i . '-cycle' . $k, $tileSetFile . '-cycle' . $k . '.png');
+                $tileSet->loadTileSet('tileset' . $i . '-cycle' . $k, $tileSetFile . '-cycle' . $k . '.png', $group);
             }
             // bonus stages: colour 14 white, the flash of the big bumpers (tools/bumperflash.py)
             if (file_exists($this->assetManager->getAssetFolder() . '/' . $tileSetFile . '-flash.png')) {
-                $tileSet->loadTileSet('tileset' . $i . '-flash', $tileSetFile . '-flash.png');
+                $tileSet->loadTileSet('tileset' . $i . '-flash', $tileSetFile . '-flash.png', $group);
             }
             // Sky Base 1 lightning palettes (tools/lightning.py)
             $variants = ['', '-cycle0', '-cycle1', '-cycle2', '-cycle3', '-cycle4', '-cycle5', '-cycle6', '-cycle7'];
             foreach ([1, 2] as $light) {
                 for ($k = 0; file_exists($this->assetManager->getAssetFolder() . '/' . $tileSetFile . '-light' . $light . '-cycle' . $k . '.png'); $k++) {
-                    $tileSet->loadTileSet('tileset' . $i . '-light' . $light . '-cycle' . $k, $tileSetFile . '-light' . $light . '-cycle' . $k . '.png');
+                    $tileSet->loadTileSet('tileset' . $i . '-light' . $light . '-cycle' . $k, $tileSetFile . '-light' . $light . '-cycle' . $k . '.png', $group);
                     $variants[] = '-light' . $light . '-cycle' . $k;
                 }
             }
             // Foreground layers: priority blocks (solidity bit 7) drawn over the sprites, colour 0 left transparent.
             foreach ($variants as $variant) {
                 if (file_exists($this->assetManager->getAssetFolder() . '/' . $tileSetFile . $variant . '-fg.png')) {
-                    $tileSet->loadTileSet('tileset' . $i . $variant . '-fg', $tileSetFile . $variant . '-fg.png');
+                    $tileSet->loadTileSet('tileset' . $i . $variant . '-fg', $tileSetFile . $variant . '-fg.png', $group);
                 }
             }
             $level = new Level($tileSet,$i,$this->sdl,$this->assetManager);
@@ -130,6 +144,7 @@ class LevelManager extends EventEmitter
             // Initialize levels
             $this->levels[] = $level;
         }
+        $this->useCurrentTextures();
 
 
         $debug = 1 ;

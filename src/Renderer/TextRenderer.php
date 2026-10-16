@@ -16,6 +16,11 @@ class TextRenderer
     /** @var array<string, array{0: mixed, 1: int, 2: int}> glyph texture (SDL texture resource), width, height */
     private array $glyphs = [];
     private mixed $panel = null;
+    /** drawStyled() texts kept in a texture: [texture, w, h, width], the least recently used first. */
+    private array $styled = [];
+    private const STYLED_CACHE = 48;
+    /** drawStyled() texts drawn once: kept in a texture if drawn again. */
+    private array $styledSeen = [];
     /** @var array<string, int> width() by size and text (the multiplayer scores measure the same lines every frame) */
     private array $widths = [];
 
@@ -49,6 +54,56 @@ class TextRenderer
      * gradient (upper half $top, lower half $bottom). Returns its width (outline included).
      */
     public function drawStyled(string $text, int $x, int $y, int $size, array $top, array $bottom, int $outline = 1): int
+    {
+        // ~37 copies per letter (outline): a text drawn again the next frame (menus) is kept in a texture
+        $key = $size . '|' . $outline . '|' . implode(',', $top) . '|' . implode(',', $bottom) . '|' . $text;
+        if (isset($this->styled[$key])) {
+            [$texture, $w, $h, $width] = $this->styled[$key];
+            unset($this->styled[$key]);
+            $this->styled[$key] = [$texture, $w, $h, $width];   // most recently used last
+            $dst = new \SDL_Rect;
+            [$dst->x, $dst->y, $dst->w, $dst->h] = [$x, $y - $outline, $w, $h];
+            \SDL_RenderCopy($this->sdl->getRenderer()->getRenderer(), $texture, null, $dst);
+            return $width;
+        }
+        if (isset($this->styledSeen[$key]) && $text !== '') {
+            return $this->cacheStyled($key, $text, $x, $y, $size, $top, $bottom, $outline);
+        }
+        if (count($this->styledSeen) > 256) $this->styledSeen = [];
+        $this->styledSeen[$key] = true;
+        return $this->renderStyled($text, $x, $y, $size, $top, $bottom, $outline);
+    }
+
+    /** Draws the text into a texture of its own (kept for the next frames), then that texture. */
+    private function cacheStyled(string $key, string $text, int $x, int $y, int $size, array $top, array $bottom, int $outline): int
+    {
+        $renderer = $this->sdl->getRenderer()->getRenderer();
+        $height = 0;
+        foreach (str_split($text) as $char) {
+            if ($char !== ' ') $height = max($height, $this->glyph($char, $size, $top)[2]);
+        }
+        $w = $this->styledWidth($text, $size, $outline) + 1;
+        $h = max(1, $height + 2 * $outline + 1);
+        if (count($this->styled) >= self::STYLED_CACHE) {
+            $oldest = array_key_first($this->styled);
+            \SDL_DestroyTexture($this->styled[$oldest][0]);
+            unset($this->styled[$oldest]);
+        }
+        $texture = \SDL_CreateTexture($renderer, \SDL_PIXELFORMAT_RGBA8888, \SDL_TEXTUREACCESS_TARGET, $w, $h);
+        \SDL_SetRenderTarget($renderer, $texture);
+        \SDL_SetRenderDrawColor($renderer, 0, 0, 0, 0);
+        \SDL_RenderClear($renderer);
+        \SDL_SetRenderDrawColor($renderer, 0, 0, 0, 255);
+        $width = $this->renderStyled($text, 0, $outline, $size, $top, $bottom, $outline);
+        \SDL_SetRenderTarget($renderer, $this->sdl->getRenderer()->getRenderTexture());
+        $this->styled[$key] = [$texture, $w, $h, $width];
+        $dst = new \SDL_Rect;
+        [$dst->x, $dst->y, $dst->w, $dst->h] = [$x, $y - $outline, $w, $h];
+        \SDL_RenderCopy($renderer, $texture, null, $dst);
+        return $width;
+    }
+
+    private function renderStyled(string $text, int $x, int $y, int $size, array $top, array $bottom, int $outline): int
     {
         $renderer = $this->sdl->getRenderer()->getRenderer();
         $start = $x;

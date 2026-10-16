@@ -28,6 +28,70 @@ class Sdl
         return [$this->window->getWindow(), $this->renderer->getRenderer()];  // Retourne la fenêtre et le renderer
     }
 
+    /**
+     * Textures registered without being loaded (the blocks of the 35 levels: ~200 MB once decoded): loaded on
+     * first use or with loadGroup(), freed with releaseGroupsExcept(). name => [path, transparent colour, group]
+     */
+    private array $lazy = [];
+    /** Lazy textures loaded, by file (several levels share the same blocks): key => textures */
+    private array $byPath = [];
+
+    public function registerTexture(string $name, string $path, string $group, $transparentColor = null): void
+    {
+        $this->lazy[$name] = [$path, $transparentColor, $group];
+    }
+
+    /** Loads every texture of $group not loaded yet. */
+    public function loadGroup(string $group): void
+    {
+        foreach ($this->lazy as $name => [, , $g]) {
+            if ($g === $group && !isset($this->textures[$name])) $this->loadLazy($name);
+        }
+    }
+
+    /** Frees the lazy textures of the other groups (their files, unless $group uses them too). */
+    public function releaseGroupsExcept(string $group): void
+    {
+        $keep = [];
+        foreach ($this->lazy as [$path, $key, $g]) {
+            if ($g === $group) $keep[self::pathKey($path, $key)] = true;
+        }
+        foreach ($this->lazy as $name => [$path, $key, $g]) {
+            if ($g === $group || !isset($this->textures[$name])) continue;
+            unset($this->textures[$name]);
+            $pathKey = self::pathKey($path, $key);
+            if (isset($keep[$pathKey]) || !isset($this->byPath[$pathKey])) continue;
+            foreach ($this->byPath[$pathKey] as $texture) \SDL_DestroyTexture($texture['texture']);
+            unset($this->byPath[$pathKey]);
+        }
+    }
+
+    /** Sizes of the parts of a texture ([['width' => , 'height' => ], ...]) without loading it. */
+    public function getTextureSizes(string $name): array
+    {
+        if (isset($this->textures[$name]) || !isset($this->lazy[$name])) return $this->getTextures($name);
+        return $this->sdlImage->imageSizes($this->lazy[$name][0]);
+    }
+
+    private function loadLazy(string $name): array
+    {
+        [$path, $key] = $this->lazy[$name];
+        $pathKey = self::pathKey($path, $key);
+        if (!isset($this->byPath[$pathKey])) {
+            $texture = $this->sdlImage->loadImage($path, $this->renderer->getRenderer(), $key);
+            if ($texture === null) {
+                throw new \RuntimeException('Failed to create texture: ' . \SDL_GetError());
+            }
+            $this->byPath[$pathKey] = $texture;
+        }
+        return $this->textures[$name] = $this->byPath[$pathKey];
+    }
+
+    private static function pathKey(string $path, $key): string
+    {
+        return $path . ($key === null ? '' : '|' . implode(',', $key));
+    }
+
     public function loadTexture($name,$path,$transparentColor = null)
     {
         $texture = $this->sdlImage->loadImage($path,$this->renderer->getRenderer(),$transparentColor);
@@ -39,15 +103,15 @@ class Sdl
 
     public function hasTexture(string $name): bool
     {
-        return isset($this->textures[$name]);
+        return isset($this->textures[$name]) || isset($this->lazy[$name]);
     }
 
     public function getTextures($name)
     {
-        if ($this->textureVariant !== '' && isset($this->textures[$name . $this->textureVariant])) {
-            return $this->textures[$name . $this->textureVariant];
+        if ($this->textureVariant !== '' && $this->hasTexture($name . $this->textureVariant)) {
+            $name .= $this->textureVariant;
         }
-        return $this->textures[$name];
+        return $this->textures[$name] ?? $this->loadLazy($name);
     }
 
     /** Suffix tried first by getTextures() (e.g. "-water": the underwater palette below the water line). */

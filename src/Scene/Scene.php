@@ -366,96 +366,128 @@ class Scene extends EventEmitter
     }
 
 
+    /** Blocks kept around the view in each cache (on every side). */
+    private const TILE_CACHE_MARGIN = 3;
+    private const TILE_CACHES = 8;
+    /**
+     * Render targets holding the blocks around the view, one per tileset texture (palette cycling step,
+     * underwater...): [texture, w, h, level, version, col, row, cols, rows, rings, foreground]. Drawing ~400
+     * blocks costs ~5 ms of PHP per frame in the browser: they are drawn again only when the view leaves the
+     * cached area or a block changes, the frame copies one texture.
+     */
+    private array $tileCaches = [];
+
     public function drawTiles(Level $level)
     {
-	//	return ;
-        $tileSet = $level->getTileSet();
-        /** @var Level $level */
-
-        // On limite l'affichage à la taille de la fenêtre
-
-        $mapHeight = $level->getMapHeight();
-        $mapWidth = $level->getMapWidth();
-
-
+        $tileSize = 32;
         $cameraX = $this->camera->getX();
         $cameraY = $this->camera->getY();
-        $tileSize = 32;
-
         $winW = $this->sdl->getWindow()->getWidth();
         $winH = $this->sdl->getWindow()->getHeight();
+        $name = $this->currentTilesetTextureName($level);
+        $key = $name . ($this->underwaterPass ? '-water' : '');
 
-//        $maxWidth = floor($this->sdl->getWindow()->getWidth()/$tileSet->getWidth()) - 1 ;
-//        $maxHeight = floor($this->sdl->getWindow()->getHeight()/$tileSet->getHeight()) -1 ;
+        // blocks of the view (one more for the part of a block on each edge)
+        $col0 = (int)floor($cameraX / $tileSize);
+        $row0 = (int)floor($cameraY / $tileSize);
+        $viewCols = intdiv($winW, $tileSize) + 2;
+        $viewRows = intdiv($winH, $tileSize) + 2;
+        $cols = $viewCols + 2 * self::TILE_CACHE_MARGIN;
+        $rows = $viewRows + 2 * self::TILE_CACHE_MARGIN;
 
-        // the camera can be outside of the map (level narrower than the view): screen position = world - camera
-        $startCol = max(0, (int)floor($cameraX / $tileSize));
-        $endCol = min($mapWidth, (int)ceil(($cameraX + $winW) / $tileSize));
-        $offsetX = $startCol * $tileSize - $cameraX;
+        $cache = $this->tileCaches[$key] ?? null;
+        if ($cache === null || $cache[1] !== $cols * $tileSize || $cache[2] !== $rows * $tileSize || $cache[3] !== $level
+            || $cache[4] !== $level->getVersion()
+            || $col0 < $cache[5] || $col0 + $viewCols > $cache[5] + $cols || $row0 < $cache[6] || $row0 + $viewRows > $cache[6] + $rows) {
+            $cache = $this->renderTileCache($level, $name, $key, $col0 - self::TILE_CACHE_MARGIN, $row0 - self::TILE_CACHE_MARGIN, $cols, $rows, $cache);
+        } else {
+            // most recently used last (the oldest one is dropped first)
+            unset($this->tileCaches[$key]);
+            $this->tileCaches[$key] = $cache;
+        }
 
-        $startRow = max(0, (int)floor($cameraY / $tileSize));
-        $endRow = min($mapHeight, (int)ceil(($cameraY + $winH) / $tileSize));
-        $offsetY = $startRow * $tileSize - $cameraY;
+        $renderer = $this->sdl->getRenderer()->getRenderer();
+        $originX = $cache[5] * $tileSize - $cameraX;
+        $originY = $cache[6] * $tileSize - $cameraY;
+        $dst = new \SDL_Rect;
+        $dst->x = (int)floor($originX);
+        $dst->y = (int)floor($originY);
+        $dst->w = $cache[1];
+        $dst->h = $cache[2];
+        \SDL_RenderCopy($renderer, $cache[0], null, $dst);
 
-        $texturesTileSet = $this->sdl->getTextures($this->currentTilesetTextureName($level));
-
-		$previewMore = 2 ;
-
-        $maxWidth = floor(4096 / 32) * 32; // = 4064
+        // rings (their blocks may have changed since) and priority blocks of the view
         $ringOverlays = [];
+        foreach ($cache[9] as [$x, $y]) {
+            if ($x < $col0 || $x >= $col0 + $viewCols || $y < $row0 || $y >= $row0 + $viewRows) continue;
+            $block = $level->getTile($x, $y);
+            if ($block !== null && GameObjectManager::isRingBlock($block)) {
+                $ringOverlays[] = [$x * $tileSize - $cameraX, $y * $tileSize - $cameraY, $block];
+            }
+        }
         $this->foregroundBlocks = [];
-        for ($y = $startRow; $y < $endRow + $previewMore; $y++) {
-            for ($x = $startCol; $x < $endCol + $previewMore; $x++) {
+        foreach ($cache[10] as [$x, $y, $block]) {
+            if ($x < $col0 || $x >= $col0 + $viewCols || $y < $row0 || $y >= $row0 + $viewRows) continue;
+            $this->foregroundBlocks[] = [$x * $tileSize - $cameraX, $y * $tileSize - $cameraY, $block];
+        }
+        $this->drawRingOverlays($ringOverlays);
+    }
+
+    /** Draws the blocks from ($col, $row) into the cache $key (made, or remade at a new size). */
+    private function renderTileCache(Level $level, string $name, string $key, int $col, int $row, int $cols, int $rows, ?array $old): array
+    {
+        $tileSize = 32;
+        $renderer = $this->sdl->getRenderer()->getRenderer();
+        $w = $cols * $tileSize;
+        $h = $rows * $tileSize;
+        $texture = $old[0] ?? null;
+        if ($texture !== null && ($old[1] !== $w || $old[2] !== $h)) {
+            \SDL_DestroyTexture($texture);   // the view size changed (zoom)
+            $texture = null;
+        }
+        unset($this->tileCaches[$key]);
+        if ($texture === null && count($this->tileCaches) >= self::TILE_CACHES) {
+            $oldest = array_key_first($this->tileCaches);
+            \SDL_DestroyTexture($this->tileCaches[$oldest][0]);
+            unset($this->tileCaches[$oldest]);
+        }
+        $texture ??= \SDL_CreateTexture($renderer, \SDL_PIXELFORMAT_RGBA8888, \SDL_TEXTUREACCESS_TARGET, $w, $h);
+
+        \SDL_SetRenderTarget($renderer, $texture);
+        \SDL_SetRenderDrawColor($renderer, 0, 0, 0, 0);
+        \SDL_RenderClear($renderer);
+        \SDL_SetRenderDrawColor($renderer, 0, 0, 0, 255);
+
+        $tileSet = $level->getTileSet();
+        $textures = $this->sdl->getTextures($name);
+        $maxWidth = floor(4096 / 32) * 32; // = 4064
+        $rings = [];
+        $foreground = [];
+        $dst = new \SDL_Rect;
+        $dst->w = $tileSize;
+        $dst->h = $tileSize;
+        for ($y = max(0, $row); $y < min($level->getMapHeight(), $row + $rows); $y++) {
+            for ($x = max(0, $col); $x < min($level->getMapWidth(), $col + $cols); $x++) {
                 $tileValue = $level->getTile($x, $y);
-                if ($tileValue === null)
-                    continue;
-
-                // Ring blocks: draw the ring-free background block, the animated rings are overlaid afterwards.
-                if (GameObjectManager::isRingBlock($tileValue)) {
-                    $ringOverlays[] = [($x - $startCol) * $tileSize + $offsetX, ($y - $startRow) * $tileSize + $offsetY, $tileValue];
-                    $tileValue = GameObjectManager::RING_BLOCK_EMPTY;
+                if ($tileValue === null) continue;
+                $drawn = Level::drawnBlock($tileValue);
+                // ring blocks (and empty ones, rings can come back): the rings are drawn over them each frame
+                if ($drawn === GameObjectManager::RING_BLOCK_EMPTY) {
+                    $rings[] = [$x, $y];
                 } elseif ($level->isForegroundBlock($tileValue)) {
-                    $this->foregroundBlocks[] = [($x - $startCol) * $tileSize + $offsetX, ($y - $startRow) * $tileSize + $offsetY, $tileValue];
+                    $foreground[] = [$x, $y, $tileValue];
                 }
-
-                /** @var TileSet $tileSet */
-                $tileRect = $tileSet->getTile($tileValue);
-
-                if ($tileRect) {
-                    $dstRect = new \SDL_Rect;
-                    $dstRect->x = ($x - $startCol) * $tileSize + $offsetX;
-                    // $dstRect->y = $y * $tileSize + (int)$cameraY;
-                    $dstRect->y = ($y - $startRow) * $tileSize + $offsetY;
-                    $dstRect->w = $tileSize;
-                    $dstRect->h = $tileSize;
-
-                    // found $textureTileset
-
-                    $indexTexture = (int)floor($tileValue*$tileSize / $maxWidth);
-                    if ($indexTexture > 0)
-                    {
-                        $debug = 1;
-                    }
-                    $textureTileSet = $texturesTileSet[$indexTexture]['texture'];
-
-
-                    // with api native sdl
-                    \SDL_RenderCopyEx(
-                        $this->sdl->getRenderer()->getRenderer(),
-                        $textureTileSet,
-                        $tileRect,
-                        $dstRect,
-                        0,
-                        null,
-                        \SDL_FLIP_NONE
-                    );
-                }
+                $tileRect = $tileSet->getTile($drawn);
+                if (!$tileRect) continue;
+                $dst->x = ($x - $col) * $tileSize;
+                $dst->y = ($y - $row) * $tileSize;
+                \SDL_RenderCopy($renderer, $textures[(int)floor($drawn * $tileSize / $maxWidth)]['texture'], $tileRect, $dst);
             }
         }
 
-
-
-        $this->drawRingOverlays($ringOverlays);
+        // back to the target being drawn (the frame, or the underwater pass)
+        \SDL_SetRenderTarget($renderer, $this->underwaterPass ? $this->waterTexture : $this->sdl->getRenderer()->getRenderTexture());
+        return $this->tileCaches[$key] = [$texture, $w, $h, $level, $level->getVersion(), $col, $row, $cols, $rows, $rings, $foreground];
     }
 
     // Ring rotation frames (tileset-objects.png), 16x16 cells centred on each frame; the original shows each for 10 frames at 60Hz.

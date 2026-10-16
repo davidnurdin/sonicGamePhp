@@ -3,11 +3,15 @@
 namespace SonicGame\Level;
 
 use SonicGame\AssetManager\AssetManager;
+use SonicGame\Entities\GameObjectManager;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Scene\TileSet;
 
 class Level
 {
+    private int $version = 0;
+    /** getTileTopAt() by block. */
+    private array $tileTops = [];
     private array $tilemap;
     private int $mapWidth;
     private int $mapHeight;
@@ -24,7 +28,7 @@ class Level
 
     public function __construct(private TileSet $tileSet,private int $level,Sdl $sdl,private AssetManager $assetManager)
     {
-        $this->setTileSet($sdl->getTextures('tileset' . $level));
+        $this->setTileSet($sdl->getTextureSizes('tileset' . $level));
         // Chargement unique de tileCol.data.php
         if (empty(self::$tileColData)) {
             self::$tileColData = require __DIR__ . '/../../assets/levels/tileCol.data.php';
@@ -198,6 +202,8 @@ class Level
     public function setTile(int $x, int $y, int $value): void
     {
         if (isset($this->tilemap[$y][$x])) {
+            // the picture of the block changes (rings taken / back: the same empty block, drawn under the rings)
+            if (self::drawnBlock($this->tilemap[$y][$x]) !== self::drawnBlock($value)) $this->version++;
             $this->tilemap[$y][$x] = $value;
         }
     }
@@ -205,6 +211,19 @@ class Level
     public function resetTilemap(): void
     {
         $this->tilemap = $this->originalTilemap;
+        $this->version++;
+    }
+
+    /** Block drawn for a map value: ring blocks are drawn empty (Scene draws the rings over them). */
+    public static function drawnBlock(int $block): int
+    {
+        return GameObjectManager::isRingBlock($block) ? GameObjectManager::RING_BLOCK_EMPTY : $block;
+    }
+
+    /** Changes each time the picture of a block of the map changes (Scene keeps the drawn blocks). */
+    public function getVersion(): int
+    {
+        return $this->version;
     }
 
     public function getTile(int $x, int $y)
@@ -246,6 +265,23 @@ class Level
         
         $tileColisionData = $tilesColision[$tileValue];
         return $tileColisionData;
+    }
+
+    /** First solid row of column $pixelX of the block at ($x, $y) (null: nothing solid), kept per block. */
+    public function getTileTopAt(int $x, int $y, int $pixelX): ?int
+    {
+        $tileValue = $this->getTile($x, $y);
+        if ($tileValue === null) return null;
+        if (!isset($this->tileTops[$tileValue])) {
+            $tops = array_fill(0, 32, null);
+            foreach ($this->getTilesColision()[$tileValue] ?? [] as $row => $pixels) {
+                foreach ($pixels as $px => $solid) {
+                    if ($solid == 1 && $px >= 0 && $px < 32 && ($tops[$px] === null || $row < $tops[$px])) $tops[$px] = $row;
+                }
+            }
+            $this->tileTops[$tileValue] = $tops;
+        }
+        return $this->tileTops[$tileValue][$pixelX] ?? null;
     }
 
     public function getTileColisionWayAt(int $x, int $y): ?array

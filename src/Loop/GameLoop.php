@@ -31,26 +31,25 @@ class GameLoop
         Loop::addPeriodicTimer($frameDuration, $closure);
     }
 
+    /** start(): ticks of the loop left before it stops. */
+    private int $ticksLeft = 0;
+    private ?\Closure $countTick = null;
+
     public function start($maxTicks = -1)
     {
-        $tickCount = 0;
-
         if ($maxTicks > 0) {
-            $this->loop->futureTick(function () use (&$tickCount, $maxTicks, &$loop) {
-                $tick = function () use (&$tickCount, $maxTicks, &$tick) {
-                    //                echo "Tick #{$tickCount}\n";
-                    $tickCount++;
-                    if ($tickCount < $maxTicks) {
-                        Loop::futureTick($tick);
-                    } else {
-                        //                    echo "Max ticks reached. Stopping loop.\n";
-                            $this->loop->stop();
-                    }
-                };
-                $tick(); // premier appel
-            });
+            // one callback made once: a closure re-planning itself (use (&$tick)) is a reference cycle,
+            // one per frame in the browser, left to the garbage collector (memory growing, then a long collection)
+            $this->ticksLeft = $maxTicks;
+            $this->countTick ??= function (): void {
+                if (--$this->ticksLeft > 0) {
+                    Loop::futureTick($this->countTick);
+                } else {
+                    $this->loop->stop();
+                }
+            };
+            $this->loop->futureTick($this->countTick);
         }
-
 
         $this->loop->run();
     }

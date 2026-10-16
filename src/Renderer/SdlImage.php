@@ -16,6 +16,22 @@ class SdlImage
     }
 
 
+    /** Sizes of the textures loadImage() makes of $path (slices of 4064 pixels at most), without loading it. */
+    public function imageSizes(string $path): array
+    {
+        $fullPath = $this->assetManager->getAssetFolder() . '/' . $path;
+        if (!file_exists($fullPath)) {
+            throw new \RuntimeException('Image not found: ' . $path);
+        }
+        [$width, $height] = getimagesize($fullPath);
+        $maxWidth = (int)(floor(4096 / 32) * 32);
+        $sizes = [];
+        for ($x = 0; $x < $width || $x === 0; $x += $maxWidth) {
+            $sizes[] = ['width' => min($maxWidth, $width - $x), 'height' => $height];
+        }
+        return $sizes;
+    }
+
     public function loadImage($path, $renderer, $transparentColor = null)
     {
         $fullPath = $this->assetManager->getAssetFolder() . '/' . $path;

@@ -989,7 +989,7 @@ class Screens extends EventEmitter
         if ($this->titlePage === 'multi') {
             // the rules of the mode chosen, under the entries
             $rules = [
-                'race' => ['LE PREMIER AU PANNEAU GAGNE', 'SAUTE OU ROULE SUR LES AUTRES'],
+                'race' => ['LE PREMIER A L ARRIVEE GAGNE', 'SAUTE OU ROULE SUR LES AUTRES'],
                 'flag' => ['BLEUS CONTRE ROUGES', 'TOUCHE LE DRAPEAU EN PREMIER'],
                 'rings' => ['LES ANNEAUX REVIENNENT', '3 MIN  LE PLUS D ANNEAUX GAGNE'],
                 'deathmatch' => ['SAUTE OU ROULE SUR LES AUTRES', '3 MIN  LE PLUS DE KO GAGNE'],

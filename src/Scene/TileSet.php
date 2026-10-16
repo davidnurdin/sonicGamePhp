@@ -71,9 +71,10 @@ class TileSet
         return $this->tileHeight;
     }
 
-    public function loadTileSet(string $name, string $path)
+    /** Registered only: loaded with its level (LevelManager), see Sdl::registerTexture(). */
+    public function loadTileSet(string $name, string $path, string $group)
     {
-        $this->sdl->loadTexture($name,$path);
+        $this->sdl->registerTexture($name, $path, $group);
     }
 
 

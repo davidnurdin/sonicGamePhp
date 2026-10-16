@@ -736,7 +736,10 @@ class Game extends EventEmitter
 
     
 
-        $this->gameLoop->addPeriodicTimer(1/120, function (TimerInterface $timer) use ($closureDisplay, $closureInputs,&$vars) {
+        // one game frame every 1/120 s at most (the vsync of the window paces it); the browser (wasm) calls
+        // the loop once per requestAnimationFrame and defines a shorter interval: one game frame per call
+        $frameInterval = defined('SONIC_FRAME_INTERVAL') ? (float)constant('SONIC_FRAME_INTERVAL') : 1 / 120;
+        $this->gameLoop->addPeriodicTimer($frameInterval, function (TimerInterface $timer) use ($closureDisplay, $closureInputs,&$vars) {
 
 			$now = microtime(true);
 			$deltaTime = $now - $vars['lastTime'];
@@ -749,6 +752,8 @@ class Game extends EventEmitter
             // $deltaTime = 0.01 ; // Pour debug
 
 			$closureInputs(); // GET Inputs
+			// the debug views (F1) show the blocks touched by Sonic
+			$this->collisionSystem->reportTiles = $this->debugMode !== 0;
 			$this->soundManager->update();
 
 			// the level is fading out: the game waits (fadeOut runs between interrupts only)

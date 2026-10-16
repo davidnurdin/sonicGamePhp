@@ -51,6 +51,8 @@ class CollisionSystem extends EventEmitter
 	/** Time (microtime) each sound effect was last emitted, so blocks acting every frame don't spam it. */
 	private array $sfxClock = [];
 	private int $currentLevel = 0;
+	/** Emit 'collisionTile' for the debug view (Scene): off in the game, it costs every physics step of every Sonic. */
+	public bool $reportTiles = false;
 	/** @var callable|null fn(array $rect, float $vy, string $state): ?array{y: float, dx: float} */
 	private $objectGroundProvider = null;
 
@@ -406,12 +408,14 @@ class CollisionSystem extends EventEmitter
 				if ($penetration >= 0 && $penetration <= $this->tileSize) {
 					$entityY = $surfaceY - $rect['height'];
 
-					$this->emit('collisionTile', [[
-						'tileX' => $tileX,
-						'tileY' => $ty,
-						'tileValue' => $level->getTile($tileX, $ty),
-						'collisionData' => $level->getTileColisionAt($tileX, $ty)
-					]]);
+					if ($this->reportTiles) {
+						$this->emit('collisionTile', [[
+							'tileX' => $tileX,
+							'tileY' => $ty,
+							'tileValue' => $level->getTile($tileX, $ty),
+							'collisionData' => $level->getTileColisionAt($tileX, $ty)
+						]]);
+					}
 
 					if ($bestEntityY === null || $entityY < $bestEntityY) {
 						$bestEntityY = $entityY;
@@ -426,17 +430,9 @@ class CollisionSystem extends EventEmitter
 
 	private function findSurfaceYForGround(Level $level, int $tileX, int $tileY, int $pixelX): ?float
 	{
-		$colData = $level->getTileColisionAt($tileX, $tileY);
-		if (!$colData) return null;
 		if (($level->getTileColisionWayAt($tileX, $tileY)['floor'] ?? true) === false) return null;
-
-		for ($row = 0; $row < $this->tileSize; $row++) {
-			if (isset($colData[$row][$pixelX]) && $colData[$row][$pixelX] == 1) {
-				return (float)($tileY * $this->tileSize + $row);
-			}
-		}
-
-		return null;
+		$row = $level->getTileTopAt($tileX, $tileY, $pixelX);
+		return $row === null ? null : (float)($tileY * $this->tileSize + $row);
 	}
 
 	private function detectCeiling(Entity|Player $entity, Level $level): ?float
