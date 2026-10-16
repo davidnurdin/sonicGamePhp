@@ -12,6 +12,7 @@ use SonicGame\InputManager\InputManager;
 use SonicGame\InputManager\InputTouchpad;
 use SonicGame\Level\LevelManager;
 use SonicGame\Loop\GameLoop;
+use SonicGame\Multiplayer\Versus;
 use SonicGame\Renderer\CrtFilter;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Renderer\TextRenderer;
@@ -49,6 +50,8 @@ class Game extends EventEmitter
     public int $viewHeight = self::DEFAULT_VIEW_HEIGHT;
     /** Frames of the last second, shown in the F6 panel. */
     private int $fpsShown = 0;
+    /** Multiplayer match in progress (title menu > MULTIJOUEUR), or null. */
+    private ?Versus $versus = null;
     /** Options > FILTRE CRT (created on first use). */
     private ?CrtFilter $crt = null;
     private bool $smsView = false;
@@ -129,10 +132,14 @@ class Game extends EventEmitter
             fn(array $rect, float $vy, string $state) => $this->objectManager->findObjectGround($rect, $vy, $state)
         );
         $this->collisionSystem->setWaterLineProvider(fn() => $this->objectManager->getWaterLine());
-        $this->collisionSystem->on('playerHazard', fn() => $this->objectManager->hurtPlayer($this->player));
+        // the multiplayer Sonics use the same CollisionSystem: their hazards / pits go to the match
+        $this->collisionSystem->on('playerHazard', fn($entity) => $entity === $this->player
+            ? $this->objectManager->hurtPlayer($this->player) : $this->versus?->entityHazard($entity));
         $this->collisionSystem->on('paletteFlash', fn() => $this->objectManager->flashPalette());
-        $this->collisionSystem->on('playerFell', fn() => $this->objectManager->playerFellInPit($this->player));
-        $this->objectManager->on('levelComplete', fn() => $this->screens->showActComplete(
+        $this->collisionSystem->on('playerFell', fn($entity) => $entity === $this->player
+            ? $this->objectManager->playerFellInPit($this->player) : $this->versus?->entityFell($entity));
+        // multiplayer race: passing the sign ends the race for Sonic, no tally
+        $this->objectManager->on('levelComplete', fn() => $this->versus ? $this->versus->humanFinished() : $this->screens->showActComplete(
             $this->levelManager->getCurrentLevel()->getLevel(),
             $this->objectManager->getScore(),
             $this->objectManager->getRingCount(),
@@ -141,7 +148,8 @@ class Game extends EventEmitter
             $this->objectManager->getEmeralds()
         ));
         // Sound: every part of the engine emits 'sfx' / 'music' events
-        $playSfx = fn(int $index, bool $loop = false) => $this->soundManager->playSfx($index, $loop);
+        // the multiplayer Sonics' springs, bumpers... are silent (Versus plays its own sounds)
+        $playSfx = fn(int $index, bool $loop = false) => $this->versus?->isSimulating() ? null : $this->soundManager->playSfx($index, $loop);
         $this->player->on('sfx', $playSfx);
         $this->collisionSystem->on('sfx', $playSfx);
         $this->scene->on('sfx', $playSfx);
@@ -162,6 +170,7 @@ class Game extends EventEmitter
             $this->levelManager->getCurrentLevel()->getLevel(), !$this->objectManager->hasCheckpoint()));
         $this->objectManager->on('playerRespawned', function () {
             if (!$this->screens->isActive()) $this->playLevelMusic(true);   // not after a game over (title)
+            $this->versus?->humanRespawned();
         });
 
         // _2067: once $D287 has run out the screen fades out; 60 black frames, then the act restarts
@@ -226,6 +235,7 @@ class Game extends EventEmitter
             $this->startLevel();
         });
         $this->screens->on('mapDone', fn() => $this->playLevelMusic(true));
+        $this->screens->on('versusStart', fn() => $this->startVersus());
         // a new best time without a name yet: the name is asked after the tally (or the Sky Base 3 teleporter)
         $this->screens->on('nameDone', function (string $name) {
             $this->playerName = $name;
@@ -322,9 +332,54 @@ class Game extends EventEmitter
         $this->fadeLevelOut(0, fn() => $this->closeDemo());
     }
 
+    /**
+     * Multiplayer (title menu > MULTIJOUEUR > LANCER): the act of the menu from its start, Sonic and the computer
+     * Sonics of Versus, infinite lives (a death is not a game over), no map, no tally.
+     */
+    private function startVersus(): void
+    {
+        $this->clearVersus();
+        $this->actTimeBefore = 0;
+        $this->warpFrom = null;
+        $this->specialReturn = null;
+        $this->objectManager->resetGame();
+        $this->objectManager->setCheats(['lives' => true]);
+        $this->objectManager->setGodMode(false);
+        $this->player->setGodLook(false);
+        $level = $this->options->getVersusLevel();
+        if ($level !== $this->levelManager->getCurrentLevel()->getLevel()) {
+            $this->levelManager->goToLevel($level);
+        } else {
+            $this->levelReload($level);
+        }
+        $this->player->resetForStart();
+        $this->versus = new Versus($this->sdl, $this->collisionSystem, $this->objectManager, $this->scene->getCamera(),
+            $this->player, $this->options->getVersusMode(), $this->options->getVersusPlayers());
+        $this->versus->on('sfx', fn(int $index) => $this->soundManager->playSfx($index));
+        $this->versus->on('music', fn(string $name, bool $loop) => $this->soundManager->playMusic($name, $loop, true));
+        $this->scene->worldOverlay = fn(float $x, float $y) => $this->versus?->drawWorld($x, $y);
+        $this->playLevelMusic(true);
+    }
+
+    private function clearVersus(): void
+    {
+        $this->versus = null;
+        $this->scene->worldOverlay = null;
+        $this->scene->playerBlink = false;
+        $this->objectManager->ringWrap = true;
+    }
+
+    /** Results seen: back to the multiplayer page of the menu. */
+    private function endVersus(): void
+    {
+        $this->backToTitle();
+        $this->screens->showTitle('multi');
+    }
+
     /** Escape during a game: it is abandoned, back to the main menu with a new game ready (like a game over). */
     private function backToTitle(): void
     {
+        $this->clearVersus();
         $this->levelFade = null;   // a death / end-of-demo fade must not go on behind the menu
         $this->soundManager->stopSfx(SoundManager::SFX_SIGN_SPIN);
         $this->demo = false;
@@ -426,7 +481,7 @@ class Game extends EventEmitter
     {
         $level = $this->levelManager->getCurrentLevel()->getLevel();
         $time = $this->objectManager->getLevelTime();
-        $played = !$this->demo && $level < 28 && $this->scene->getCurrentLevel() === $this->levelManager->getCurrentLevel();
+        $played = !$this->demo && !$this->versus && $level < 28 && $this->scene->getCurrentLevel() === $this->levelManager->getCurrentLevel();
         // runs with cheats are not recorded
         if ($played && !$this->objectManager->hasCheats() && !$this->objectManager->isPlayerDead() && !$this->objectManager->isLevelComplete()) {
             $this->ghost->record($level, $time, $this->player->getX(), $this->player->getY(), $this->player->getFrameSnapshot());
@@ -658,6 +713,9 @@ class Game extends EventEmitter
 				$this->sdl->getRenderer()->setColor(0, 0, 0, 255);   // borders (256x192 mode, rounding)
 				$this->sdl->getRenderer()->clear();
 				\SDL_RenderCopy($this->sdl->getRenderer()->getRenderer(),$this->sdl->getRenderer()->getRenderTexture(), null, $dst); // on copie la texture dans le renderer
+				if ($this->versus && !$this->screens->isActive()) {
+					$this->versus->drawOverlay($this->text, $dst, $scale, $height);
+				}
 				if ($this->options->isCrtEnabled()) {
 					$this->crt ??= new CrtFilter($this->sdl->getRenderer());
 					$this->crt->draw($dst, $this->sdl->getWindow()->getHeight());
@@ -758,6 +816,10 @@ class Game extends EventEmitter
                 $this->objectManager->setWave($this->scene->getCamera()->getWave());
                 $this->objectManager->update($deltaTime, $this->player, $this->scene->getCurrentLevel());
                 $this->updateGhost();
+                if ($this->versus) {
+                    $this->versus->update($deltaTime, $this->scene->getCurrentLevel());
+                    $this->scene->playerBlink = $this->versus->isHumanBlinking();
+                }
 
                 // speed shoes: the song plays faster while they last (the driver's tickDivider1 + 1)
                 $this->soundManager->setFast($this->objectManager->hasSpeedShoes() && !$this->objectManager->isPlayerDead());
@@ -885,10 +947,15 @@ class Game extends EventEmitter
             if ($keyboard->isKeyPressed(\SDLK_F12)) $this->sdl->getWindow()->toggleFullscreen();
             return;
         }
+        // multiplayer results: the button goes back to the menu
+        if ($this->versus?->isOver() && ($keyboard->isKeyPressed(\SDLK_SPACE) || $keyboard->isKeyPressed(\SDLK_RETURN))) {
+            $this->endVersus();
+            return;
+        }
         $this->objectManager->setButtonHeld($keyboard->isKeyHeld(\SDLK_SPACE));
         $this->player->resetIdle();
         $playerLocked = $this->objectManager->isPlayerDead() || $this->objectManager->isLevelComplete()
-            || $this->objectManager->isCutscene();
+            || $this->objectManager->isCutscene() || ($this->versus?->isLocked() ?? false);
 
 //        dump('KeyPress : ' . $keyPressed);
 

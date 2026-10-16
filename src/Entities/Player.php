@@ -61,6 +61,12 @@ class Player extends Entity
 	/** Camera shift while looking (the original moves it 1 px per frame, up to 44 px up / 80 px down). */
 	private float $lookOffset = 0.0;
 
+	/** Multiplayer: top speed of a computer Sonic (500 px/s for Sonic, 3 px/frame in the original). */
+	public function setTopSpeed(float $speed): void
+	{
+		$this->maxSpeed = $speed;
+	}
+
 	public function setSpeedBoost(bool $enabled): void
 	{
 		// $D240: 3 px/frame, 6 px/frame with the speed shoes (same acceleration, table _4de6)

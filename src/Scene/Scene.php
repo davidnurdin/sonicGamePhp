@@ -152,6 +152,11 @@ class Scene extends EventEmitter
         // ghost of the best run (title menu > options), behind Sonic
         $this->drawGhost();
 
+        // multiplayer: the other Sonics and the flag (Versus::drawWorld)
+        if ($this->worldOverlay !== null) {
+            ($this->worldOverlay)($this->camera->getX(), $this->camera->getY());
+        }
+
         // Afficher le joueur par-dessus
         $this->drawPlayer($player);
 
@@ -260,10 +265,15 @@ class Scene extends EventEmitter
         \SDL_RenderCopy($this->sdl->getRenderer()->getRenderer(), $this->sdl->getTextures('objects')[0]['texture'], $src, $dst);
     }
 
+    /** Drawn between the objects and Sonic: fn(float $cameraX, float $cameraY) (multiplayer). */
+    public ?\Closure $worldOverlay = null;
+    /** Sonic blinks (multiplayer: hit or put back by the match). */
+    public bool $playerBlink = false;
+
     public function drawPlayer(Player $player)
     {
         if ($this->objectManager && $this->objectManager->isPlayerHidden()) return;
-        if ($this->objectManager && $this->objectManager->isPlayerHurt()) {
+        if (($this->objectManager && $this->objectManager->isPlayerHurt()) || $this->playerBlink) {
             $blink = (int)(fmod(microtime(true), 86400.0) * 10) % 2;
             if ($blink === 0) return;
         }

@@ -3,6 +3,7 @@
 namespace SonicGame\Scene;
 
 use Evenement\EventEmitter;
+use SonicGame\Multiplayer\Versus;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Renderer\TextRenderer;
 use SonicGame\Save\GhostRecorder;
@@ -88,7 +89,7 @@ class Screens extends EventEmitter
     private int $menuIndex = 0;
     private int $titleIdle = 0;
     private bool $pendingButton = false;
-    private const MENU_Y = 133;
+    private const MENU_Y = 129;
     // two-tone text like the game's screens: yellow over orange, the selected line white over yellow
     private const MENU_TOP = [255, 255, 85];
     private const MENU_BOTTOM = [255, 170, 0];
@@ -135,7 +136,7 @@ class Screens extends EventEmitter
 
     /**
      * Entries of the current menu page: [label, value shown on the right or null, button, left / right (or null)].
-     * Pages: 'menu' (on the title picture), 'options', 'jukebox', 'cheats', 'scores'.
+     * Pages: 'menu' (on the title picture), 'multi', 'options', 'jukebox', 'cheats', 'scores'.
      */
     private function menuItems(): array
     {
@@ -153,6 +154,25 @@ class Screens extends EventEmitter
                     ['VITESSE', $options->getSpeed() === 'pal' ? 'PAL 50HZ' : 'NTSC 60HZ', $speed, $speed],
                     ['JUKEBOX', null, fn() => $this->openPage('jukebox', 0), null],
                     ['CHEATS', null, fn() => $this->openPage('cheats', 0), null],
+                    ['RETOUR', null, fn() => $this->openPage('menu', 2), null],
+                ];
+            case 'multi':
+                // multiplayer: mode, number of Sonics, act; LANCER starts the match (event versusStart)
+                $modes = array_keys(Versus::MODES);
+                $mode = $options->getVersusMode();
+                $players = $options->getVersusPlayers();
+                $level = $options->getVersusLevel();
+                $levels = Versus::LEVELS;
+                $set = fn(string $m, int $p, int $l) => $this->changed(fn() => $options->setVersus($m, $p, $l));
+                $cycle = fn(array $list, $current, int $step) => $list[((int)array_search($current, $list, true) + $step + count($list)) % count($list)];
+                $nextMode = fn(int $step = 1) => $set($cycle($modes, $mode, $step), $players, $level);
+                $nextPlayers = fn(int $step = 1) => $mode === 'flag' ? null : $set($mode, ($players - 2 + $step + 4) % 4 + 2, $level);
+                $nextLevel = fn(int $step = 1) => $set($mode, $players, $cycle($levels, $level, $step));
+                return [
+                    ['MODE', Versus::MODES[$mode], $nextMode, $nextMode],
+                    ['SONICS', $mode === 'flag' ? '3 CONTRE 3' : (string)$players, $nextPlayers, $nextPlayers],
+                    ['ZONE', Versus::levelName($level), $nextLevel, $nextLevel],
+                    ['LANCER', null, fn() => $this->finish('versusStart'), null],
                     ['RETOUR', null, fn() => $this->openPage('menu', 1), null],
                 ];
             case 'jukebox':
@@ -195,11 +215,12 @@ class Screens extends EventEmitter
                     $this->sound?->playSfx(SoundManager::SFX_SWITCH)];
                 return [
                     [BestTimes::place($this->timesAct), null, fn() => $act(1), $act],
-                    ['RETOUR', null, fn() => $this->openPage('menu', 2), null],
+                    ['RETOUR', null, fn() => $this->openPage('menu', 3), null],
                 ];
             default:
                 return [
                     ['DEMARRER', null, fn() => $this->finish('titleDone'), null],
+                    ['MULTIJOUEUR', null, fn() => $this->openPage('multi', 0), null],
                     ['OPTIONS', null, fn() => $this->openPage('options', 0), null],
                     ['MEILLEURS TEMPS', null, fn() => $this->openPage('scores', 0), null],
                 ];
@@ -314,10 +335,11 @@ class Screens extends EventEmitter
         $this->fade = null;
     }
 
-    public function showTitle(): void
+    /** The title screen, on the main menu (or another page of it: 'multi' after a multiplayer match). */
+    public function showTitle(string $page = 'menu'): void
     {
         $this->sound?->playMusic('title', false, true);
-        $this->titlePage = 'menu';
+        $this->titlePage = $page;
         $this->menuIndex = 0;
         $this->titleIdle = 0;
         $this->eraseState = '';
@@ -897,7 +919,8 @@ class Screens extends EventEmitter
         $this->blit($press ? 'title-press' : 'title', 0, 0, 256, 192, 0, 0);
         if ($this->text !== null) {
             foreach ($this->menuItems() as $i => [$label]) {
-                $this->menuLine($label, $i === $this->menuIndex, self::MENU_Y + 11 * $i);
+                // 4 lines between the logo and the copyright line of the picture
+                $this->menuLine($label, $i === $this->menuIndex, self::MENU_Y + 10 * $i);
             }
         }
         // wagging finger: alternates every 8 frames 22 times, then rests on the first frame
@@ -934,7 +957,7 @@ class Screens extends EventEmitter
     {
         $scale = $this->scale;
         $title = match ($this->titlePage) {
-            'cheats' => 'CHEATS', 'scores' => 'MEILLEURS TEMPS', 'jukebox' => 'JUKEBOX', default => 'OPTIONS',
+            'cheats' => 'CHEATS', 'scores' => 'MEILLEURS TEMPS', 'jukebox' => 'JUKEBOX', 'multi' => 'MULTIJOUEUR', default => 'OPTIONS',
         };
         $big = 12 * $scale;
         $width = $this->text->styledWidth($title, $big, $scale);
@@ -961,6 +984,19 @@ class Screens extends EventEmitter
                 };
                 $width = $this->text->styledWidth($value, $size, $scale) / $scale;
                 $this->styled($value, 236 - $width, $y, $size, $colours);
+            }
+        }
+        if ($this->titlePage === 'multi') {
+            // the rules of the mode chosen, under the entries
+            $rules = [
+                'race' => ['LE PREMIER AU PANNEAU GAGNE', 'SAUTE OU ROULE SUR LES AUTRES'],
+                'flag' => ['BLEUS CONTRE ROUGES', 'TOUCHE LE DRAPEAU EN PREMIER'],
+                'rings' => ['LES ANNEAUX REVIENNENT', '3 MIN  LE PLUS D ANNEAUX GAGNE'],
+                'deathmatch' => ['SAUTE OU ROULE SUR LES AUTRES', '3 MIN  LE PLUS DE KO GAGNE'],
+            ][$this->options->getVersusMode()];
+            foreach ($rules as $i => $rule) {
+                $width = $this->text->styledWidth($rule, $size, $scale);
+                $this->styled($rule, (256 * $scale - $width) / 2 / $scale, 150 + 12 * $i, $size, [[255, 255, 255], [170, 170, 170]]);
             }
         }
     }

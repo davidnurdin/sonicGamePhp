@@ -1264,12 +1264,15 @@ class GameObjectManager extends EventEmitter
         return $b >= 0x79 && $b <= 0x7B;
     }
 
+    /** Multiplayer (Versus): the rings are a score, no life at 100 and no wrap around. */
+    public bool $ringWrap = true;
+
     private function addRings(int $count): void
     {
         $this->rings += $count;
         $this->score += 10 * $count;
         // The original keeps a 2-digit counter: reaching 100 gives a life and wraps around.
-        while ($this->rings >= 100) {
+        while ($this->ringWrap && $this->rings >= 100) {
             $this->rings -= 100;
             $this->lives++;
             $this->emit('extraLife', []);
@@ -1442,7 +1445,8 @@ class GameObjectManager extends EventEmitter
         return $this->godMode;
     }
 
-    public function hurtPlayer(Player $player): void
+    /** $canDie false (multiplayer, rings mode): without rings Sonic is only thrown back. */
+    public function hurtPlayer(Player $player, bool $canDie = true): void
     {
         if ($this->godMode || $this->dead || $this->hurt || $this->invincibleTimer > 0 || $this->levelComplete) return;
 
@@ -1458,6 +1462,8 @@ class GameObjectManager extends EventEmitter
             // SMS Sonic only pops a single ring out, which can't be recovered.
             $this->transient[] = (new Effect($this->sdl, $player->getX() + 12, $player->getY(), self::RING_POP, 0.05, 1.0))
                 ->withMotion(0, -360, 500);
+        } elseif (!$canDie) {
+            $this->sfx(SoundManager::SFX_HURT);
         } else {
             $this->killPlayer($player);
             return;
@@ -1537,6 +1543,22 @@ class GameObjectManager extends EventEmitter
         $player->setAcceleration(0, 0);
         $player->setState('idle');
         $this->emit('playerRespawned', []);
+    }
+
+    /** Multiplayer: Sonic just appeared somewhere: blinking, the badniks can't hurt him for $seconds. */
+    public function protectPlayer(float $seconds): void
+    {
+        $this->hurt = true;
+        $this->hurtTimer = max($this->hurtTimer, $seconds);
+    }
+
+    /** X of the sign at the end of the act, or null (boss acts, special stages). */
+    public function getEndSignX(): ?float
+    {
+        foreach ($this->objects as $obj) {
+            if ($obj instanceof EndSign) return $obj->getPosX();
+        }
+        return null;
     }
 
     public function isPlayerDead(): bool { return $this->dead; }

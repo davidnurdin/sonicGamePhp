@@ -19,7 +19,8 @@ class Options
         'emeralds' => '6 EMERAUDES',
     ];
 
-    private array $values = ['ghost' => false, 'crt' => false, 'speed' => 'pal', 'cheats' => [], 'startLevel' => 1];
+    private array $values = ['ghost' => false, 'crt' => false, 'speed' => 'pal', 'cheats' => [], 'startLevel' => 1,
+        'versusMode' => 'race', 'versusPlayers' => 5, 'versusLevel' => 1];
 
     public function __construct(private string $file)
     {
@@ -103,6 +104,30 @@ class Options
     public function setStartLevel(int $level): void
     {
         $this->values['startLevel'] = max(1, min(18, $level));
+        $this->save();
+    }
+
+    /** Multiplayer menu: the mode (Versus::MODES), the number of Sonics (2-5, the flag is always 3 against 3), the act. */
+    public function getVersusMode(): string
+    {
+        return in_array($this->values['versusMode'], ['race', 'flag', 'rings', 'deathmatch'], true) ? $this->values['versusMode'] : 'race';
+    }
+
+    public function getVersusPlayers(): int
+    {
+        return max(2, min(5, (int)$this->values['versusPlayers']));
+    }
+
+    public function getVersusLevel(): int
+    {
+        return (int)$this->values['versusLevel'] ?: 1;
+    }
+
+    public function setVersus(string $mode, int $players, int $level): void
+    {
+        $this->values['versusMode'] = $mode;
+        $this->values['versusPlayers'] = $players;
+        $this->values['versusLevel'] = $level;
         $this->save();
     }
 
