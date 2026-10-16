@@ -14,7 +14,7 @@ use SonicGame\SoundManager\SoundManager;
 
 /**
  * Multiplayer match against computer Sonics (title menu > MULTIJOUEUR), on one act:
- *  - race ('COURSE', 2-5 Sonics): the first one at the sign wins;
+ *  - race ('COURSE', 2-5 Sonics): the first one at the finish line (where the sign was) wins;
  *  - flag ('DRAPEAU', 3 blue against 3 red, random places): a flag appears somewhere, the first team to touch
  *    it wins (3 minutes at most);
  *  - rings ('ANNEAUX', 2-5): 3 minutes, every ring taken (or lost) comes back somewhere else, the most rings wins;
@@ -25,7 +25,8 @@ use SonicGame\SoundManager\SoundManager;
  *
  * The human is the first Rival (his Player, GameObjectManager for his rings, hurt, deaths); the others are
  * Players of their own, moved by a BotBrain with the same physics and CollisionSystem, drawn with a sheet of
- * another colour (tools/soniccolors.py). They ignore the badniks and the objects (except what they stand on).
+ * another colour (tools/soniccolors.py). They ignore the objects (except what they stand on). The act has no
+ * badniks and no end sign (GameObjectManager::$noEnemies): the race ends at a finish line drawn here.
  *
  * Events: 'sfx' [index], 'music' [name, loop].
  */
@@ -37,7 +38,7 @@ class Versus extends EventEmitter
     private const ZONES = ['GREEN HILL', 'BRIDGE', 'JUNGLE', 'LABYRINTH', 'SCRAP BRAIN', 'SKY BASE'];
     public const TIME_LIMIT = 180;
     private const COUNTDOWN = 3.0;
-    /** Race: top speed of the bots (Sonic: 500 px/s) — they never stop for a badnik — and far ahead of the human. */
+    /** Race: top speed of the bots (Sonic: 500 px/s), and far ahead of the human. */
     private const BOT_TOP_SPEED = 500 * 0.72;
     private const BOT_TOP_SPEED_STEP = 500 * 0.04;
     private const RUBBER_BAND = 1200;
@@ -67,7 +68,7 @@ class Versus extends EventEmitter
     /** Rings mode: seconds before each taken / lost ring comes back. */
     private array $ringQueue = [];
     private int $humanRings = 0;
-    /** Race: x of the sign (or the end of the act). */
+    /** Race: x of the finish line (the sign of the act, or the end of the act). */
     private float $goalX = 0;
     private ?float $firstArrival = null;
     /** Flag mode: [x, y] of the foot of the pole. */
@@ -83,6 +84,12 @@ class Versus extends EventEmitter
     private array $verdictColour = [255, 255, 255];
     private array $ranking = [];
     private array $start = [0, 0];
+    /** Last time (match clock) each sound effect was played: the same one is not restarted many times in a row. */
+    private array $sfxTime = [];
+    /** Race: y of the ground under the finish line, by height of the view (32 px bands). */
+    private array $finishGround = [];
+    /** Bots: the ring they go to, and when to look for the nearest one again. */
+    private array $ringTarget = [];
     /** The human died (pit, badnik...): put somewhere else once the act is back (the Scene puts him at the start). */
     private bool $humanSpawnPending = false;
 
@@ -113,6 +120,15 @@ class Versus extends EventEmitter
     public static function levelName(int $level): string
     {
         return self::ZONES[intdiv($level - 1, 3)] . ' ' . (($level - 1) % 3 + 1);
+    }
+
+    /** Plays a sound effect, unless the same one has just been played (bots taking rings, bouncing...). */
+    private function sfx(int $index): void
+    {
+        $now = microtime(true);
+        if ($now - ($this->sfxTime[$index] ?? 0) < 0.15) return;
+        $this->sfxTime[$index] = $now;
+        $this->emit('sfx', [$index]);
     }
 
     public function isSimulating(): bool { return $this->simulating; }
@@ -238,7 +254,7 @@ class Versus extends EventEmitter
             }
         }
         $this->flag = $best;
-        $this->emit('sfx', [SoundManager::SFX_SIGN_STOP]);
+        $this->sfx(SoundManager::SFX_SIGN_STOP);
     }
 
     // ------------------------------------------------------------------ frame
@@ -263,7 +279,7 @@ class Versus extends EventEmitter
             $before = (int)ceil($this->countdown);
             $this->countdown -= $deltaTime;
             if ((int)ceil($this->countdown) !== $before) {
-                $this->emit('sfx', [$this->countdown <= 0 ? SoundManager::SFX_EXTRA_LIFE : SoundManager::SFX_SWITCH]);
+                $this->sfx($this->countdown <= 0 ? SoundManager::SFX_EXTRA_LIFE : SoundManager::SFX_SWITCH);
             }
             if ($this->countdown <= 0) {
                 $this->state = 'play';
@@ -327,8 +343,8 @@ class Versus extends EventEmitter
                 if ($rival->jumpHold <= 0) $p->jumpRelease();
             }
 
-            // same steps as Sonic (Game): at most 1/120 s, so that nobody goes through a floor
-            $steps = min(12, max(1, (int)ceil($deltaTime * 120 - 0.01)));
+            // steps of at most 1/60 s (Sonic: 1/120 s; the bots are many, and 1/60 s is the speed of the original)
+            $steps = min(4, max(1, (int)ceil($deltaTime * 60 - 0.01)));
             for ($i = 0; $i < $steps; $i++) {
                 if ($input['dir'] !== 0) $p->moveDirection($input['dir'] > 0 ? 'right' : 'left');
                 if ($input['down']) $p->roll();
@@ -369,7 +385,7 @@ class Versus extends EventEmitter
                 if ($this->flag !== null) return [$this->flag, false];
                 return [[$p->getX(), $p->getY()], false];
             case 'rings':
-                return [$this->nearestRing($p->getX() + 12, $p->getY() + 16) ?? [$this->human->getX(), $this->human->getY()], false];
+                return [$this->ringFor($rival) ?? [$this->human->getX(), $this->human->getY()], false];
             default:
                 $nearest = null;
                 $distance = INF;
@@ -382,14 +398,31 @@ class Versus extends EventEmitter
                     }
                 }
                 // with no rings it takes some first (a hit would knock it out)
-                if ($rival->rings === 0 && $distance > 250 && ($ring = $this->nearestRing($p->getX() + 12, $p->getY() + 16, 400)) !== null) {
+                if ($rival->rings === 0 && $distance > 250 && ($ring = $this->ringFor($rival, 400)) !== null) {
                     return [$ring, false];
                 }
                 return $nearest ? [[$nearest->player->getX() + 12, $nearest->player->getY()], true, $nearest] : [[$p->getX(), $p->getY()], false];
         }
     }
 
-    /** Centre of the nearest ring still there (world pixels), or null. */
+    /**
+     * The ring a bot goes to: the nearest one, looked for again twice a second (all the rings of the act are
+     * scanned) or as soon as it is taken.
+     */
+    private function ringFor(Rival $rival, float $max = INF): ?array
+    {
+        $id = spl_object_id($rival);
+        [$ring, $until, $tx, $ty, $bit] = $this->ringTarget[$id] ?? [null, -1, 0, 0, 0];
+        if ($this->clock >= $until || ($ring !== null && !(($this->level->getTile($tx, $ty) ?? 0) & $bit))) {
+            $p = $rival->player;
+            $found = $this->nearestRing($p->getX() + 12, $p->getY() + 16, $max);
+            $ring = $found ? [$found[0], $found[1]] : null;
+            $this->ringTarget[$id] = [$ring, $this->clock + 0.5, ...($found ? array_slice($found, 2) : [0, 0, 0])];
+        }
+        return $ring;
+    }
+
+    /** Centre of the nearest ring still there (world pixels) and its tile [x, y, tx, ty, bit], or null. */
     private function nearestRing(float $x, float $y, float $max = INF): ?array
     {
         $best = null;
@@ -399,7 +432,7 @@ class Versus extends EventEmitter
             if ($d >= $bestDistance) continue;
             if (!(($this->level->getTile($tx, $ty) ?? 0) & $bit)) continue;
             $bestDistance = $d;
-            $best = [$rx + 8, $ry + 8];
+            $best = [$rx + 8, $ry + 8, $tx, $ty, $bit];
         }
         return $best;
     }
@@ -462,7 +495,7 @@ class Versus extends EventEmitter
                         $level->setTile($tx, $ty, $block);
                         $rival->rings++;
                         if ($this->mode === 'rings') $this->ringQueue[] = 1.5;
-                        if ($this->isOnScreen($rival)) $this->emit('sfx', [SoundManager::SFX_RING]);
+                        if ($this->isOnScreen($rival)) $this->sfx(SoundManager::SFX_RING);
                     }
                 }
             }
@@ -556,7 +589,7 @@ class Versus extends EventEmitter
             $rival->player->setGrounded(false);
             $rival->invulnerable = max($rival->invulnerable, 0.3);
         }
-        if ($this->isOnScreen($a) || $this->isOnScreen($b)) $this->emit('sfx', [SoundManager::SFX_BUMPER]);
+        if ($this->isOnScreen($a) || $this->isOnScreen($b)) $this->sfx(SoundManager::SFX_BUMPER);
     }
 
     /**
@@ -591,13 +624,13 @@ class Versus extends EventEmitter
             }
             $victim->rings = 0;
             $victim->knockBack($fromX);
-            if ($sound) $this->emit('sfx', [SoundManager::SFX_HURT]);
+            if ($sound) $this->sfx(SoundManager::SFX_HURT);
             return;
         }
         $victim->knockOut();
         $victim->deaths++;
         if ($attacker) $attacker->kills++;
-        if ($sound) $this->emit('sfx', [SoundManager::SFX_EXPLOSION]);
+        if ($sound) $this->sfx(SoundManager::SFX_EXPLOSION);
     }
 
     /** The human knocked out by a Sonic: race: back to the start; otherwise somewhere else. */
@@ -608,7 +641,7 @@ class Versus extends EventEmitter
         [$x, $y] = $this->mode === 'race' ? $this->start : $this->randomSpawn($this->me);
         $this->human->resetForStart();
         $this->placeHuman($x, $y);
-        $this->emit('sfx', [SoundManager::SFX_HURT]);
+        $this->sfx(SoundManager::SFX_HURT);
     }
 
     /** The human somewhere else: the camera jumps there, 2 s of blinking (nor Sonics nor badniks hurt him). */
@@ -652,7 +685,7 @@ class Versus extends EventEmitter
     private function updateRace(): void
     {
         foreach ($this->rivals as $rival) {
-            if ($rival->human || $rival->finishTime !== null) continue;
+            if ($rival->finishTime !== null || !$this->canTouch($rival)) continue;
             if ($rival->player->getX() + 12 >= $this->goalX) $this->arrive($rival);
         }
         $everybody = true;
@@ -669,7 +702,7 @@ class Versus extends EventEmitter
     {
         $rival->finishTime = $this->clock;
         $this->firstArrival ??= $this->clock;
-        $this->emit('sfx', [SoundManager::SFX_SIGN_STOP]);
+        $this->sfx(SoundManager::SFX_SIGN_STOP);
     }
 
     /** The human passed the sign (GameObjectManager 'levelComplete'). */
@@ -769,6 +802,9 @@ class Versus extends EventEmitter
             $this->fill($x + 2, $y - 39 + $wave, 16, 2, [255, 255, 170]);
             $this->fill($x + 8, $y - 36 + $wave, 4, 4, [200, 40, 40]);
         }
+        if ($this->mode === 'race') {
+            $this->drawFinishLine((int)round($this->goalX - $cameraX), $cameraY);
+        }
         foreach ($this->rivals as $rival) {
             if ($rival->human || !$rival->isVisible()) continue;
             [$sx, $sy, $sw, $sh, $flip] = $rival->player->getFrameSnapshot();
@@ -779,6 +815,23 @@ class Versus extends EventEmitter
             \SDL_RenderCopyEx($renderer, $this->sdl->getTextures($rival->texture)[0]['texture'], $src, $dst, 0, null,
                 $flip ? \SDL_FLIP_HORIZONTAL : \SDL_FLIP_NONE);
         }
+    }
+
+    /** Race: a chequered post from the ground up, at x (view pixels) of the goal. */
+    private function drawFinishLine(int $x, float $cameraY): void
+    {
+        $height = $this->sdl->getWindow()->getHeight();
+        if ($x < -8 || $x > $this->sdl->getWindow()->getWidth()) return;
+        // the ground under the line, near the middle of the view
+        $band = (int)floor($cameraY / 32);
+        $ground = $this->finishGround[$band] ??= $this->level?->findSurfaceY((int)$this->goalX, $band * 32 + intdiv($height, 2), $height)
+            ?? $band * 32 + $height;
+        $bottom = (int)round($ground - $cameraY);
+        for ($y = $bottom - 8, $row = 0; $y > $bottom - 96; $y -= 8, $row++) {
+            $this->fill($x - 4, $y, 4, 8, $row % 2 ? [20, 20, 20] : [240, 240, 240]);
+            $this->fill($x, $y, 4, 8, $row % 2 ? [240, 240, 240] : [20, 20, 20]);
+        }
+        $this->fill($x - 6, $bottom - 100, 12, 4, [255, 216, 0]);
     }
 
     private function fill(int $x, int $y, int $w, int $h, array $rgb): void

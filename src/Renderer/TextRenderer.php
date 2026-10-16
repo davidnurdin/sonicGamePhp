@@ -16,6 +16,8 @@ class TextRenderer
     /** @var array<string, array{0: mixed, 1: int, 2: int}> glyph texture (SDL texture resource), width, height */
     private array $glyphs = [];
     private mixed $panel = null;
+    /** @var array<string, int> width() by size and text (the multiplayer scores measure the same lines every frame) */
+    private array $widths = [];
 
     public function __construct(private Sdl $sdl, private string $assetFolder)
     {
@@ -92,11 +94,14 @@ class TextRenderer
 
     public function width(string $text, int $size): int
     {
+        $key = $size . '|' . $text;
+        if (isset($this->widths[$key])) return $this->widths[$key];
+        if (count($this->widths) > 512) $this->widths = [];
         $width = 0;
         foreach (str_split($text) as $char) {
             $width += $char === ' ' ? (int)round($size * 0.5) : $this->glyph($char, $size, [255, 255, 255])[1];
         }
-        return $width;
+        return $this->widths[$key] = $width;
     }
 
     /** Half transparent black rectangle. */

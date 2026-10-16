@@ -84,6 +84,10 @@ class GameObjectManager extends EventEmitter
     private ?array $checkpoint = null;
 
     private ?EndSign $sign = null;
+    /** x of the end sign of the act (kept when the sign itself is left out, see $noEnemies). */
+    private ?float $endSignX = null;
+    /** Multiplayer: the act without badniks and without end sign (Versus has its own finish line). */
+    public bool $noEnemies = false;
     private float $signDoneTimer = 0;
     private bool $levelComplete = false;
     private ?Platform $standingOn = null;
@@ -178,6 +182,7 @@ class GameObjectManager extends EventEmitter
             if (Monitor::supports($type)) {
                 $obj = new Monitor($this->sdl, $type, $o['typeName'], $tx, $ty);
             } elseif (Badnik::supports($type)) {
+                if ($this->noEnemies) continue;
                 $obj = new Badnik($this->sdl, $type, $o['typeName'], $tx, $ty);
             } elseif (Boss::supports($type)) {
                 $obj = $this->boss = new Boss($this->sdl, $type, $o['typeName'], $tx, $ty);
@@ -224,6 +229,13 @@ class GameObjectManager extends EventEmitter
                 };
             }
 
+            if ($obj instanceof EndSign) {
+                $this->endSignX = $obj->getPosX();
+                if ($this->noEnemies) {
+                    $this->sign = null;
+                    continue;
+                }
+            }
             if ($obj !== null) {
                 $obj->setLevel($level);
                 $this->objects[] = $obj;
@@ -1555,10 +1567,7 @@ class GameObjectManager extends EventEmitter
     /** X of the sign at the end of the act, or null (boss acts, special stages). */
     public function getEndSignX(): ?float
     {
-        foreach ($this->objects as $obj) {
-            if ($obj instanceof EndSign) return $obj->getPosX();
-        }
-        return null;
+        return $this->endSignX;
     }
 
     public function isPlayerDead(): bool { return $this->dead; }

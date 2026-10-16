@@ -72,7 +72,9 @@ class SoundManager
     public function Init(): void
     {
         \Mix_Init(0x00000008 | 0x00000010); // MP3 | OGG
-        if (\Mix_OpenAudio(44100, \MIX_DEFAULT_FORMAT, 2, 1024) < 0) {
+        // 2048 samples (46 ms): in the browser the mixer is fed between two frames, a slow frame (multiplayer,
+        // phone) with a smaller buffer runs it dry and the sound slows down / repeats
+        if (\Mix_OpenAudio(44100, \MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
             echo 'Audio désactivé, Mix_OpenAudio: ' . \Mix_GetError() . PHP_EOL;
             return;
         }

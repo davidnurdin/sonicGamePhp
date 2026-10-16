@@ -346,6 +346,7 @@ class Game extends EventEmitter
         $this->objectManager->setCheats(['lives' => true]);
         $this->objectManager->setGodMode(false);
         $this->player->setGodLook(false);
+        $this->objectManager->noEnemies = true;
         $level = $this->options->getVersusLevel();
         if ($level !== $this->levelManager->getCurrentLevel()->getLevel()) {
             $this->levelManager->goToLevel($level);
@@ -367,6 +368,7 @@ class Game extends EventEmitter
         $this->scene->worldOverlay = null;
         $this->scene->playerBlink = false;
         $this->objectManager->ringWrap = true;
+        $this->objectManager->noEnemies = false;
     }
 
     /** Results seen: back to the multiplayer page of the menu. */

@@ -6,7 +6,7 @@ use SonicGame\Entities\Player;
 use SonicGame\Level\Level;
 
 /**
- * Joypad of a computer Sonic, decided every frame from the map around it (Level::isSolidAt / findSurfaceY)
+ * Joypad of a computer Sonic, decided every frame from the map around it (Level::isSolidAt)
  * and a target given by Versus (the sign, the flag, a ring, an opponent):
  *  - left / right towards the target;
  *  - jump in front of a wall, a pit, a target above it, when it has been pushing without moving, or to
@@ -83,8 +83,7 @@ class BotBrain
             // a wall at the height of the body (the feet may be on a slope going up)
             $wall = $dir !== 0 && ($level->isSolidAt($aheadX, (int)$y + 6) || $level->isSolidAt($aheadX, (int)$y + 14));
             // nothing under the feet a little ahead: a pit (only worth jumping when running)
-            $pit = $dir !== 0 && abs($vx) > 60
-                && $level->findSurfaceY((int)round($x + $dir * 44), (int)$y + 31, 96) === null;
+            $pit = $dir !== 0 && abs($vx) > 60 && !self::groundBelow($level, (int)round($x + $dir * 44), (int)$y + 31, 96);
             // the target is higher, not far
             $above = $ty < $y - 40 && abs($dx) < 160;
             // pushing without moving
@@ -112,5 +111,14 @@ class BotBrain
         }
 
         return ['dir' => $dir, 'jump' => $jump, 'super' => $super, 'down' => $down, 'warp' => $warp];
+    }
+
+    /** Something solid within $depth pixels below ($x, $y), probed every 8 pixels (cheaper than findSurfaceY). */
+    private static function groundBelow(Level $level, int $x, int $y, int $depth): bool
+    {
+        for ($dy = 0; $dy <= $depth; $dy += 8) {
+            if ($level->isSolidAt($x, $y + $dy)) return true;
+        }
+        return false;
     }
 }
