@@ -199,9 +199,13 @@ class Level
         return $this->solidityIndex;
     }
 
+    /** Online match (VersusNetwork): told of every block that changes, fn(int $x, int $y, int $value). */
+    public ?\Closure $tileListener = null;
+
     public function setTile(int $x, int $y, int $value): void
     {
         if (isset($this->tilemap[$y][$x])) {
+            if ($this->tileListener !== null && $this->tilemap[$y][$x] !== $value) ($this->tileListener)($x, $y, $value);
             // the picture of the block changes (rings taken / back: the same empty block, drawn under the rings)
             if (self::drawnBlock($this->tilemap[$y][$x]) !== self::drawnBlock($value)) $this->version++;
             $this->tilemap[$y][$x] = $value;

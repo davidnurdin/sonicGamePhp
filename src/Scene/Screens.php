@@ -4,6 +4,7 @@ namespace SonicGame\Scene;
 
 use Evenement\EventEmitter;
 use SonicGame\Multiplayer\BotBrain;
+use SonicGame\Multiplayer\Online;
 use SonicGame\Multiplayer\Versus;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Renderer\TextRenderer;
@@ -180,8 +181,31 @@ class Screens extends EventEmitter
                     ['ZONE', Versus::levelName($level), $nextLevel, $nextLevel],
                     ['IA', BotBrain::DIFFICULTIES[$ai], $nextAi, $nextAi],
                     ['LANCER', null, fn() => $this->finish('versusStart'), null],
+                    ['EN LIGNE', null, fn() => $this->openPage('online', 0), null],
                     ['RETOUR', null, fn() => $this->openPage('menu', 1), null],
                 ];
+            case 'online':
+                // online: a room on the relay server; its host starts the match with the settings of MULTIJOUEUR
+                $online = $this->onlineView ? ($this->onlineView)() : null;
+                $act = fn(string $action) => fn() => $this->emit('online', [$action]);
+                if ($online === null || $online->status === 'error' || $online->status === 'closed') {
+                    $net = $options->getVersusNet();
+                    $toggle = fn() => $this->changed(fn() => $options->setVersusNet($net === 'webrtc' ? 'ws' : 'webrtc'));
+                    $items = [
+                        ['CREER UN SALON', null, $act('create'), null],
+                        ['REJOINDRE', null, $act('join'), null],
+                    ];
+                    if (Online::isBrowser()) $items[] = ['RESEAU', $net === 'webrtc' ? 'WEBRTC' : 'WEBSOCKET', $toggle, $toggle];
+                    $items[] = ['RETOUR', null, function () use ($act) {
+                        $this->emit('online', ['leave']);
+                        $this->openPage('multi', 5);
+                    }, null];
+                    return $items;
+                }
+                if ($online->status === 'lobby' && $online->isHost()) {
+                    return [['LANCER', null, $act('start'), null], ['QUITTER', null, $act('leave'), null]];
+                }
+                return [['QUITTER', null, $act('leave'), null]];
             case 'jukebox':
                 $songs = array_keys(self::SONGS);
                 $play = function () use ($songs) {
@@ -268,6 +292,7 @@ class Screens extends EventEmitter
     public function back(): string
     {
         if ($this->screen === 'nameEntry') {
+            if ($this->entryPurpose === 'code') $this->entryName = '';   // Escape: no room
             $this->typeName('ok');
             return 'handled';
         }
@@ -369,9 +394,32 @@ class Screens extends EventEmitter
     private const KEYBOARD_X = 28;
     private const KEYBOARD_Y = 92;
 
+    /** 'name' (a best time: event nameDone) or 'code' (the room to join: event codeDone, '' when cancelled). */
+    private string $entryPurpose = 'name';
+    /** Online: Game's session, for the page EN LIGNE. */
+    private ?\Closure $onlineView = null;
+
+    public function setOnlineView(\Closure $view): void
+    {
+        $this->onlineView = $view;
+    }
+
+    /** The code of a room to join, on the same keyboard (letters only, 4). */
+    public function showCodeEntry(): void
+    {
+        $this->showNameEntry('', 0, '');
+        $this->entryPurpose = 'code';
+    }
+
+    private function entryLength(): int
+    {
+        return $this->entryPurpose === 'code' ? 4 : self::NAME_LENGTH;
+    }
+
     /** A time of the act entered the top 5: the name is typed on the on-screen keyboard. */
     public function showNameEntry(string $act, int $rank, string $time): void
     {
+        $this->entryPurpose = 'name';
         $this->entryAct = $act;
         $this->entryRank = $rank;
         $this->entryTime = $time;
@@ -442,13 +490,18 @@ class Screens extends EventEmitter
             $name = trim($this->entryName);
             $this->screen = null;
             $this->sound?->playSfx(SoundManager::SFX_EXTRA_LIFE);
+            if ($this->entryPurpose === 'code') {
+                $this->emit('codeDone', [$name]);
+                return;
+            }
             $this->emit('nameDone', [$name === '' ? 'SONIC' : $name]);
             return;
         }
         $name = $this->entryName;
         if ($value === 'back') {
             $name = substr($name, 0, -1);
-        } elseif (strlen($value) === 1 && strlen($name) < self::NAME_LENGTH && !($value === ' ' && $name === '')
+        } elseif (strlen($value) === 1 && strlen($name) < $this->entryLength() && !($value === ' ' && $name === '')
+            && ($this->entryPurpose !== 'code' || ctype_alpha($value))
             && ($value === ' ' || str_contains(implode('', self::KEYBOARD), $value))) {
             $name .= $value;
         }
@@ -961,12 +1014,52 @@ class Screens extends EventEmitter
             : [self::MENU_TOP, self::MENU_BOTTOM];
     }
 
+    /** Page EN LIGNE: the room, its players, the state of the connection. */
+    private function renderOnline(int $size): void
+    {
+        $online = $this->onlineView ? ($this->onlineView)() : null;
+        $grey = [[200, 200, 200], [120, 120, 120]];
+        $centre = function (string $text, int $y, array $colours) use ($size): void {
+            $width = $this->text->styledWidth($text, $size, $this->scale);
+            $this->styled($text, (256 * $this->scale - $width) / 2 / $this->scale, $y, $size, $colours);
+        };
+        $options = $this->options;
+        $settings = Versus::MODES[$options->getVersusMode()] . '  ' . Versus::levelName($options->getVersusLevel());
+        if ($online === null) {
+            $centre('JOUE CONTRE TES AMIS', 110, $grey);
+            $centre('CREE UN SALON ET DONNE SON CODE', 124, $grey);
+            $centre($settings, 146, [self::MENU_TOP, self::MENU_BOTTOM]);
+            $centre('REGLAGES DANS MULTIJOUEUR', 160, $grey);
+            return;
+        }
+        if ($online->status === 'error' || $online->status === 'closed') {
+            $centre($online->error ?: 'DECONNECTE', 110, [[255, 170, 170], [200, 60, 60]]);
+            return;
+        }
+        if ($online->status === 'connecting' || $online->room === null) {
+            $centre('CONNEXION' . str_repeat('.', intdiv($this->frames, 20) % 4), 110, $grey);
+            return;
+        }
+        $centre('SALON ' . $online->room, 86, [[255, 255, 255], [85, 170, 255]]);
+        $centre($settings, 100, [self::MENU_TOP, self::MENU_BOTTOM]);
+        $y = 116;
+        foreach ($online->peers() as $i => $peer) {
+            $label = $online->names[$peer] . ($peer === $online->host ? ' HOTE' : '') . ($peer === $online->me ? ' (TOI)' : '');
+            if ($peer !== $online->me && isset($online->links[$peer])) $label .= $online->links[$peer] === 'webrtc' ? ' P2P' : '';
+            $this->styled($label, $i % 2 ? 136 : 20, $y + intdiv($i, 2) * 12, $size, $peer === $online->me
+                ? [[255, 255, 170], [255, 200, 0]] : [[255, 255, 255], [170, 170, 170]]);
+        }
+        $status = $online->isHost() ? 'LANCE QUAND TOUT LE MONDE EST LA' : 'EN ATTENTE DE L HOTE';
+        if ($online->pingMs !== null) $status .= '  ' . (int)round($online->pingMs) . ' MS';
+        $centre($status, 158, $grey);
+    }
+
     /** Options, cheats and high scores: a page of its own, its title on top, the entries below. */
     private function renderMenuPage(): void
     {
         $scale = $this->scale;
         $title = match ($this->titlePage) {
-            'cheats' => 'CHEATS', 'scores' => 'MEILLEURS TEMPS', 'jukebox' => 'JUKEBOX', 'multi' => 'MULTIJOUEUR', default => 'OPTIONS',
+            'cheats' => 'CHEATS', 'scores' => 'MEILLEURS TEMPS', 'jukebox' => 'JUKEBOX', 'multi' => 'MULTIJOUEUR', 'online' => 'EN LIGNE', default => 'OPTIONS',
         };
         $big = 12 * $scale;
         $width = $this->text->styledWidth($title, $big, $scale);
@@ -995,6 +1088,7 @@ class Screens extends EventEmitter
                 $this->styled($value, 236 - $width, $y, $size, $colours);
             }
         }
+        if ($this->titlePage === 'online') $this->renderOnline($size);
         if ($this->titlePage === 'multi') {
             // the rules of the mode chosen, under the entries
             $rules = [
@@ -1021,13 +1115,19 @@ class Screens extends EventEmitter
             $this->styled($text, (256 * $scale - $width) / 2 / $scale, $y, $size * $scale, $colours);
         };
         $blue = [[255, 255, 255], [85, 170, 255]];
-        $centre('NOUVEAU RECORD !', 8, 12, ($this->frames % 30) < 20 ? $blue : [[255, 255, 85], [255, 170, 0]]);
-        $centre($this->entryAct . '   ' . ($this->entryRank === 1 ? '1ER' : $this->entryRank . 'E') . '   ' . $this->entryTime,
-            32, 8, [self::MENU_TOP, self::MENU_BOTTOM]);
+        $length = $this->entryLength();
+        if ($this->entryPurpose === 'code') {
+            $centre('CODE DU SALON', 8, 12, $blue);
+            $centre('4 LETTRES  ECHAP POUR ANNULER', 32, 8, [self::MENU_TOP, self::MENU_BOTTOM]);
+        } else {
+            $centre('NOUVEAU RECORD !', 8, 12, ($this->frames % 30) < 20 ? $blue : [[255, 255, 85], [255, 170, 0]]);
+            $centre($this->entryAct . '   ' . ($this->entryRank === 1 ? '1ER' : $this->entryRank . 'E') . '   ' . $this->entryTime,
+                32, 8, [self::MENU_TOP, self::MENU_BOTTOM]);
+        }
         // the name, with a blinking cursor, in a fixed-width line
-        $cursor = strlen($this->entryName) < self::NAME_LENGTH && ($this->frames % 30) < 15 ? '_' : ' ';
-        $shown = str_pad($this->entryName . $cursor, self::NAME_LENGTH, ' ');
-        $width = $this->text->styledWidth(str_repeat('W', self::NAME_LENGTH), 12 * $scale, $scale);
+        $cursor = strlen($this->entryName) < $length && ($this->frames % 30) < 15 ? '_' : ' ';
+        $shown = str_pad($this->entryName . $cursor, $length, ' ');
+        $width = $this->text->styledWidth(str_repeat('W', $length), 12 * $scale, $scale);
         $this->box(64, 52, 128, 24, [0, 0, 85]);
         $this->styled($shown, (256 * $scale - $width) / 2 / $scale, 57, 12 * $scale, $blue, false);
 

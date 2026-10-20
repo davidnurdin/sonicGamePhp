@@ -34,6 +34,8 @@ use SonicGame\SoundManager\SoundManager;
  */
 class Versus extends EventEmitter
 {
+    use VersusNetwork;
+
     public const MODES = ['race' => 'COURSE', 'flag' => 'DRAPEAU', 'rings' => 'ANNEAUX', 'deathmatch' => 'DEATHMATCH'];
     /** Acts that can be played: 1 and 2 of each zone (the third one is the boss). */
     public const LEVELS = [1, 2, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17];
@@ -128,10 +130,14 @@ class Versus extends EventEmitter
         public readonly string $mode,
         private int $players,
         private int $difficulty = 1,
+        ?Online $online = null,
+        ?array $netConfig = null,
     ) {
         if (!isset(self::MODES[$mode])) throw new \InvalidArgumentException("Mode '$mode' is not valid.");
-        // flag: two teams of 1 to 3
-        $this->players = $mode === 'flag' ? max(2, min(6, $players - $players % 2)) : max(2, min(5, $players));
+        // flag: two teams of 1 to 3; online: up to 6 (VersusNetwork::startConfig)
+        $this->players = $mode === 'flag' ? max(2, min(6, $players - $players % 2)) : max(2, min($online ? 6 : 5, $players));
+        $this->online = $online;
+        $this->netConfig = $netConfig;
     }
 
     /** Rival sheets (tools/soniccolors.py), loaded once. */
@@ -187,7 +193,9 @@ class Versus extends EventEmitter
         for ($i = 0; $i < $this->players; $i++) {
             $team = $teams ? ($i < $this->players / 2 ? 0 : 1) : $i;
             [$sheet, $rgb] = $teams ? [$team === 0 ? 'sonic' : 'sonic-red', self::TEAM_COLOURS[$team]] : self::COLOURS[$i];
-            if ($i === 0) {
+            if ($this->online !== null) {
+                $rival = $this->netRival($i, $team, $sheet, $rgb);
+            } elseif ($i === 0) {
                 $rival = new Rival($this->human, true, 'J1', 'sonic', $rgb, $team);
             } else {
                 $body = new Player($this->sdl);
@@ -215,6 +223,7 @@ class Versus extends EventEmitter
             $this->camera->noSmooth = true;
         }
         $this->humanRings = $this->objects->getRingCount();
+        $this->netBegin();
     }
 
     /** Rings of the map at the start (the rings mode puts them back there) and the places on the ground under them. */
@@ -291,6 +300,7 @@ class Versus extends EventEmitter
     /** Flag mode: on the ground half-way between the bases, as far as possible from every Sonic. */
     private function placeFlag(): void
     {
+        if ($this->isClient()) return;   // the host's flag comes with the snapshots
         $left = min($this->bases[0][0], $this->bases[1][0]);
         $right = max($this->bases[0][0], $this->bases[1][0]);
         $middle = array_values(array_filter($this->spawns,
@@ -320,7 +330,7 @@ class Versus extends EventEmitter
     private function dropFlag(): void
     {
         $carrier = $this->carrier;
-        if ($carrier === null) return;
+        if ($carrier === null || $this->isClient()) return;
         $this->carrier = null;
         $this->lastCarrier = $carrier;
         $this->flagDelay = self::FLAG_DROP_DELAY;
@@ -349,12 +359,25 @@ class Versus extends EventEmitter
         if ($this->level === null) $this->begin($level);
         if ($level !== $this->level) return;
 
+        $this->netReceive();
         if ($this->humanSpawnPending) {
             $this->humanSpawnPending = false;
             [$x, $y] = $this->randomSpawn($this->me);
             $this->placeHuman($x, $y);
         }
+        $this->movePuppets();
+        if ($this->isClient()) {
+            // online, not the host: my Sonic only, the rest comes from the host
+            $this->clientUpdate($deltaTime);
+        } else {
+            $this->updateMatch($deltaTime, $level);
+        }
+        $this->netSend($deltaTime);
+    }
 
+    /** The match itself (offline, or the host online): bots, contacts, rules. */
+    private function updateMatch(float $deltaTime, Level $level): void
+    {
         foreach ($this->rivals as $rival) {
             $rival->invulnerable = max(0, $rival->invulnerable - $deltaTime);
         }
@@ -366,6 +389,7 @@ class Versus extends EventEmitter
                 $this->sfx($this->countdown <= 0 ? SoundManager::SFX_EXTRA_LIFE : SoundManager::SFX_SWITCH);
             }
             if ($this->countdown <= 0) {
+                $this->countdown = 0;
                 $this->state = 'play';
                 if ($this->mode === 'flag') $this->placeFlag();
             }
@@ -401,7 +425,7 @@ class Versus extends EventEmitter
         $this->simulating = true;
         $width = $level->getMapWidth() * 32 - 24;
         foreach ($this->rivals as $rival) {
-            if ($rival->human) continue;
+            if ($rival->human || $rival->puppet) continue;
             $p = $rival->player;
             if ($rival->isKnockedOut()) {
                 if ($rival->updateKnockOut($deltaTime)) $this->respawn($rival);
@@ -685,6 +709,11 @@ class Versus extends EventEmitter
     private function giveAway(Rival $victim, int $count, ?Rival $attacker): void
     {
         if ($this->mode !== 'rings' || $count <= 0) return;
+        if ($this->isClient()) {
+            // the host shares them out (he knows who pushed whom)
+            $this->netEvent(['e' => 'lost', 'n' => $count, 'by' => $this->slotOf($attacker)], $this->online->host);
+            return;
+        }
         if ($attacker === null && $victim->lastHitBy !== null && $this->clock - $victim->lastHitTime <= self::PUSH_TIME) {
             $attacker = $victim->lastHitBy;
         }
@@ -706,6 +735,9 @@ class Versus extends EventEmitter
             $this->objects->gainRings($count);
             $this->humanRings = $this->objects->getRingCount();
             $rival->rings = $this->humanRings;
+        } elseif ($rival->peer !== null) {
+            $rival->rings += $count;
+            $this->netEvent(['e' => 'gain', 'n' => $count], $rival->peer);
         } else {
             $rival->rings += $count;
         }
@@ -748,6 +780,7 @@ class Versus extends EventEmitter
     {
         if ($rival->isKnockedOut() || $rival->finishTime !== null) return false;
         if ($rival->human && ($this->objects->isPlayerDead() || $this->objects->isLevelComplete())) return false;
+        if ($rival->peer !== null && !empty($rival->netInfo['dead'])) return false;
         return true;
     }
 
@@ -768,6 +801,9 @@ class Versus extends EventEmitter
             $rival->player->setVelocity($d * 240, min($rival->player->getVelocity()[1], -200));
             $rival->player->setGrounded(false);
             $rival->invulnerable = max($rival->invulnerable, 0.3);
+            if ($rival->peer !== null) {
+                $this->netEvent(['e' => 'bounce', 'vx' => $d * 240, 'vy' => -200], $rival->peer);
+            }
         }
         $this->pushedBy($a, $b);
         $this->pushedBy($b, $a);
@@ -795,6 +831,16 @@ class Versus extends EventEmitter
             $attacker->player->setVelocity($attacker->player->getVelocity()[0], -300);
         }
 
+        if ($victim->peer !== null) {
+            // a player of another machine: he applies the hit to his Sonic (VersusNetwork 'hurt')
+            $victim->invulnerable = 2.0;
+            if ($this->mode !== 'rings' && empty($victim->netInfo['rings']) && empty($victim->netInfo['shield'])) {
+                $victim->deaths++;
+                if ($attacker) $attacker->kills++;
+            }
+            $this->netEvent(['e' => 'hurt', 'by' => $this->slotOf($attacker)], $victim->peer);
+            return;
+        }
         if ($victim->human) {
             if ($this->objects->isPlayerHurt() || $this->objects->hasInvincibility()) return;
             if ($this->objects->getRingCount() > 0 || $this->objects->hasShield() || $this->mode === 'rings') {
@@ -847,6 +893,7 @@ class Versus extends EventEmitter
         if ($this->me === null) return;
         $this->me->deaths++;
         $this->humanDead = false;
+        if ($this->isClient()) $this->netEvent(['e' => 'died'], $this->online->host);
         $this->humanRings = $this->objects->getRingCount();
         if ($this->mode !== 'race') $this->humanSpawnPending = true;
     }
@@ -882,7 +929,7 @@ class Versus extends EventEmitter
         foreach ($this->rivals as $rival) {
             if ($rival->finishTime === null) $everybody = false;
         }
-        if ($this->me->finishTime !== null || $everybody
+        if (($this->online ? $this->humansArrived() : $this->me->finishTime !== null) || $everybody
             || ($this->firstArrival !== null && $this->clock - $this->firstArrival > self::RACE_GRACE)) {
             $this->finish();
         }
@@ -892,7 +939,7 @@ class Versus extends EventEmitter
     {
         $rival->finishTime = $this->clock;
         $this->firstArrival ??= $this->clock;
-        $this->sfx(SoundManager::SFX_SIGN_STOP);
+        $this->sfxAll(SoundManager::SFX_SIGN_STOP);
     }
 
     /** The human passed the sign (GameObjectManager 'levelComplete'). */
@@ -933,8 +980,7 @@ class Versus extends EventEmitter
             $r = $rival->player->getCollisionRect();
             if ($r['x'] < $fx + 8 && $r['x'] + $r['width'] > $fx - 8 && $r['y'] < $fy && $r['y'] + $r['height'] > $fy - 40) {
                 $this->carrier = $rival;
-                $this->sfx(SoundManager::SFX_SWITCH);
-                $this->banner = [$rival->name . ' A LE DRAPEAU', $rival->rgb, 1.5];
+                $this->showBanner($rival->name . ' A LE DRAPEAU', $rival->rgb, 1.5, SoundManager::SFX_SWITCH);
                 return;
             }
         }
@@ -947,12 +993,12 @@ class Versus extends EventEmitter
         $this->restoreSpeed($carrier);
         $carrier->captures++;
         $this->captures[$carrier->team]++;
-        $this->sfx(SoundManager::SFX_EXTRA_LIFE);
+        $this->sfxAll(SoundManager::SFX_EXTRA_LIFE);
         if ($this->captures[$carrier->team] >= self::FLAG_CAPTURES) {
             $this->finish($carrier->team);
             return;
         }
-        $this->banner = ['POINT POUR LES ' . self::TEAM_NAMES[$carrier->team], self::TEAM_COLOURS[$carrier->team], 2.0];
+        $this->showBanner('POINT POUR LES ' . self::TEAM_NAMES[$carrier->team], self::TEAM_COLOURS[$carrier->team], 2.0);
         $this->placeFlag();
     }
 
@@ -1008,6 +1054,7 @@ class Versus extends EventEmitter
         $this->verdictColour = $won ? [255, 255, 85] : [255, 170, 170];
         $this->ranking = array_map(fn($row) => [$row[0]->name, $row[1], $row[0]->rgb, $row[0] === $this->me], $rows);
         $this->emit('music', [$won ? 'actcomplete' : 'death', false]);
+        $this->netFinish($flagTeam);
     }
 
     private static function time(float $seconds): string
@@ -1040,7 +1087,7 @@ class Versus extends EventEmitter
         }
         foreach ($this->rivals as $rival) {
             if ($rival->human || !$rival->isVisible()) continue;
-            [$sx, $sy, $sw, $sh, $flip] = $rival->player->getFrameSnapshot();
+            [$sx, $sy, $sw, $sh, $flip] = $rival->puppet && $rival->netFrame ? $rival->netFrame : $rival->player->getFrameSnapshot();
             $src = new \SDL_Rect;
             [$src->x, $src->y, $src->w, $src->h] = [$sx, $sy, $sw, $sh];
             $dst = new \SDL_Rect;

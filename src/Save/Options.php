@@ -20,7 +20,7 @@ class Options
     ];
 
     private array $values = ['ghost' => false, 'crt' => false, 'speed' => 'pal', 'cheats' => [], 'startLevel' => 1,
-        'versusMode' => 'race', 'versusSonics' => 3, 'versusTeam' => 2, 'versusLevel' => 1, 'versusAi' => 1];
+        'versusMode' => 'race', 'versusSonics' => 3, 'versusTeam' => 2, 'versusLevel' => 1, 'versusAi' => 1, 'versusNet' => 'webrtc'];
 
     public function __construct(private string $file)
     {
@@ -139,6 +139,18 @@ class Options
     public function setVersusDifficulty(int $difficulty): void
     {
         $this->values['versusAi'] = ($difficulty % 3 + 3) % 3;
+        $this->save();
+    }
+
+    /** Online: 'webrtc' (direct between browsers when possible) or 'ws' (everything through the server). */
+    public function getVersusNet(): string
+    {
+        return $this->values['versusNet'] === 'ws' ? 'ws' : 'webrtc';
+    }
+
+    public function setVersusNet(string $net): void
+    {
+        $this->values['versusNet'] = $net === 'ws' ? 'ws' : 'webrtc';
         $this->save();
     }
 

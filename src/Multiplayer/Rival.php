@@ -29,6 +29,16 @@ class Rival
     public float $jumpHold = 0;
     /** Bots: where they come back to in a race after a knock-out (the start). */
     public array $start = [0, 0];
+    /** Online: the peer id of the player of another machine it is (null: the local human or a bot). */
+    public ?int $peer = null;
+    /** Online: moved by the network (clients: everybody but themselves; host: the other players), not simulated. */
+    public bool $puppet = false;
+    /** Online: frame to draw [x, y, w, h, flip] (sent: Player::getFrameSnapshot of the other machine). */
+    public ?array $netFrame = null;
+    /** Online: received positions [time, x, y, frame], drawn with VersusNetwork::DELAY of delay (interpolated). */
+    public array $track = [];
+    /** Online, host: what the player reports of himself (rings, shield, dead...). */
+    public array $netInfo = [];
     /** Rings mode: the last Sonic that hit or bumped it, and when (match clock): it gets the rings of a fall just after. */
     public ?Rival $lastHitBy = null;
     public float $lastHitTime = -INF;

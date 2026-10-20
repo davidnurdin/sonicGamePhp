@@ -4,8 +4,53 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "735651c0f7cd26d3cc25732e950d0a23",
+    "content-hash": "0dcdda19ca6bee71ece232fb8298f413",
     "packages": [
+        {
+            "name": "davidnurdin/php-wasm-network",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/davidnurdin/php-wasm-network.git",
+                "reference": "93ba3ec9643a9621b9f75443ba5ceaaf9a484783"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/davidnurdin/php-wasm-network/zipball/93ba3ec9643a9621b9f75443ba5ceaaf9a484783",
+                "reference": "93ba3ec9643a9621b9f75443ba5ceaaf9a484783",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=8.1"
+            },
+            "default-branch": true,
+            "bin": [
+                "server/bin/server.php"
+            ],
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "PhpWasmNetwork\\": "php/src/"
+                }
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "Networking for PHP in the browser (php-wasm: WebSocket and WebRTC through a small extension and a JS bridge) and in native PHP, with a lobby / relay / WebRTC signalling server.",
+            "keywords": [
+                "multiplayer",
+                "network",
+                "php-wasm",
+                "webassembly",
+                "webrtc",
+                "websocket"
+            ],
+            "support": {
+                "source": "https://github.com/davidnurdin/php-wasm-network/tree/main",
+                "issues": "https://github.com/davidnurdin/php-wasm-network/issues"
+            },
+            "time": "2026-10-20T11:47:27+00:00"
+        },
         {
             "name": "evenement/evenement",
             "version": "v3.0.2",
@@ -1283,7 +1328,9 @@
     "packages-dev": [],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "davidnurdin/php-wasm-network": 20
+    },
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {},

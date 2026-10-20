@@ -12,6 +12,7 @@ use SonicGame\InputManager\InputManager;
 use SonicGame\InputManager\InputTouchpad;
 use SonicGame\Level\LevelManager;
 use SonicGame\Loop\GameLoop;
+use SonicGame\Multiplayer\Online;
 use SonicGame\Multiplayer\Versus;
 use SonicGame\Renderer\CrtFilter;
 use SonicGame\Renderer\Sdl;
@@ -52,6 +53,10 @@ class Game extends EventEmitter
     private int $fpsShown = 0;
     /** Multiplayer match in progress (title menu > MULTIJOUEUR), or null. */
     private ?Versus $versus = null;
+    /** Online session (menu MULTIJOUEUR > EN LIGNE), kept from the room to the matches and back. */
+    private ?Online $online = null;
+    /** The START of the online match being played (a new one from the host starts the next match). */
+    private ?array $versusConfig = null;
     /** Options > FILTRE CRT (created on first use). */
     private ?CrtFilter $crt = null;
     private bool $smsView = false;
@@ -236,6 +241,12 @@ class Game extends EventEmitter
         });
         $this->screens->on('mapDone', fn() => $this->playLevelMusic(true));
         $this->screens->on('versusStart', fn() => $this->startVersus());
+        $this->screens->setOnlineView(fn() => $this->online);
+        $this->screens->on('online', fn(string $action) => $this->onlineAction($action));
+        $this->screens->on('codeDone', function (string $code) {
+            if (strlen($code) === 4) $this->connectOnline($code);
+            $this->screens->showTitle('online');
+        });
         // a new best time without a name yet: the name is asked after the tally (or the Sky Base 3 teleporter)
         $this->screens->on('nameDone', function (string $name) {
             $this->playerName = $name;
@@ -336,9 +347,60 @@ class Game extends EventEmitter
      * Multiplayer (title menu > MULTIJOUEUR > LANCER): the act of the menu from its start, Sonic and the computer
      * Sonics of Versus, infinite lives (a death is not a game over), no map, no tally.
      */
-    private function startVersus(): void
+    /** Menu EN LIGNE: 'create', 'join', 'leave', 'start' (the host). */
+    private function onlineAction(string $action): void
+    {
+        switch ($action) {
+            case 'create':
+                $this->connectOnline(null);
+                break;
+            case 'join':
+                $this->screens->showCodeEntry();
+                break;
+            case 'leave':
+                $this->leaveOnline();
+                break;
+            case 'start':
+                if ($this->online?->isHost() && $this->online->status === 'lobby') {
+                    $mode = $this->options->getVersusMode();
+                    $this->online->startMatch(Versus::startConfig($this->online, $mode, $this->options->getVersusLevel(),
+                        $this->options->getVersusDifficulty(),
+                        $mode === 'flag' ? 2 * $this->options->getVersusTeamSize() : $this->options->getVersusPlayers()));
+                }
+                break;
+        }
+    }
+
+    private function connectOnline(?string $code): void
+    {
+        $this->leaveOnline();
+        $transport = Online::isBrowser() ? $this->options->getVersusNet() : 'ws';
+        $this->online = new Online(Online::serverUrl(), $transport, $this->playerName ?? '', $code);
+    }
+
+    private function leaveOnline(): void
+    {
+        $this->online?->close();
+        $this->online = null;
+    }
+
+    /** Every frame: the session; a match started by the host starts here too. */
+    private function pollOnline(): void
+    {
+        if ($this->online === null) return;
+        $this->online->poll();
+        $start = $this->online->start;
+        if ($start !== null && $start !== $this->versusConfig && $this->online->status === 'match') {
+            $this->screens->close();
+            $this->startVersus($start);
+        }
+    }
+
+    /** $net: the START of an online match (VersusNetwork::startConfig); null: against the computer. */
+    private function startVersus(?array $net = null): void
     {
         $this->clearVersus();
+        $this->versusConfig = $net;
         $this->actTimeBefore = 0;
         $this->warpFrom = null;
         $this->specialReturn = null;
@@ -347,7 +409,7 @@ class Game extends EventEmitter
         $this->objectManager->setGodMode(false);
         $this->player->setGodLook(false);
         $this->objectManager->noEnemies = true;
-        $level = $this->options->getVersusLevel();
+        $level = $net !== null ? (int)$net['level'] : $this->options->getVersusLevel();
         if ($level !== $this->levelManager->getCurrentLevel()->getLevel()) {
             $this->levelManager->goToLevel($level);
         } else {
@@ -355,9 +417,10 @@ class Game extends EventEmitter
         }
         $this->player->resetForStart();
         $this->versus = new Versus($this->sdl, $this->collisionSystem, $this->objectManager, $this->scene->getCamera(),
-            $this->player, $this->options->getVersusMode(),
-            $this->options->getVersusMode() === 'flag' ? 2 * $this->options->getVersusTeamSize() : $this->options->getVersusPlayers(),
-            $this->options->getVersusDifficulty());
+            $this->player, $net['mode'] ?? $this->options->getVersusMode(),
+            $net['players'] ?? ($this->options->getVersusMode() === 'flag' ? 2 * $this->options->getVersusTeamSize() : $this->options->getVersusPlayers()),
+            $net['difficulty'] ?? $this->options->getVersusDifficulty(),
+            $net !== null ? $this->online : null, $net);
         $this->versus->on('sfx', fn(int $index) => $this->soundManager->playSfx($index));
         $this->versus->on('music', fn(string $name, bool $loop) => $this->soundManager->playMusic($name, $loop, true));
         $this->scene->worldOverlay = fn(float $x, float $y) => $this->versus?->drawWorld($x, $y);
@@ -366,7 +429,9 @@ class Game extends EventEmitter
 
     private function clearVersus(): void
     {
+        $this->versus?->close();
         $this->versus = null;
+        $this->player->setSheet('sonic');
         $this->scene->worldOverlay = null;
         $this->scene->playerBlink = false;
         $this->objectManager->ringWrap = true;
@@ -377,8 +442,11 @@ class Game extends EventEmitter
     /** Results seen: back to the multiplayer page of the menu. */
     private function endVersus(): void
     {
+        $online = $this->versusConfig !== null && $this->online !== null;
+        if ($online && $this->online->start === $this->versusConfig) $this->online->endMatch();
+        $this->versusConfig = null;
         $this->backToTitle();
-        $this->screens->showTitle('multi');
+        $this->screens->showTitle($online ? 'online' : 'multi');
     }
 
     /** Escape during a game: it is abandoned, back to the main menu with a new game ready (like a game over). */
@@ -638,6 +706,7 @@ class Game extends EventEmitter
 
         $closureInputs = function() use (&$vars)
         {
+            $this->pollOnline();
 
             $this->inputManager->poll();
 
@@ -1039,7 +1108,11 @@ class Game extends EventEmitter
 
         if ($keyboard->isKeyPressed(\SDLK_ESCAPE))
         {
-            // back to the main menu (Escape there quits the game)
+            // back to the main menu (Escape there quits the game); an online match: the room is left
+            if ($this->versusConfig !== null) {
+                $this->leaveOnline();
+                $this->versusConfig = null;
+            }
             $this->backToTitle();
         }
 

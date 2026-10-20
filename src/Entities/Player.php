@@ -762,6 +762,12 @@ class Player extends Entity
         return $this->tilesetName === 'sonic-god' ? 'rom-god' : \SonicGame\Entities\Objects\RomSprites::SHEET;
     }
 
+    /** Online match: the sheet of his colour ('sonic', 'sonic-red'... loaded by Versus::loadTextures). */
+    public function setSheet(string $sheet): void
+    {
+        $this->tilesetName = $sheet;
+    }
+
     public function setGodLook(bool $on): void
     {
         $this->tilesetName = $on ? 'sonic-god' : 'sonic';
