@@ -97,6 +97,10 @@ class Game extends EventEmitter
         $root = dirname(__DIR__);
         $this->text = new TextRenderer($sdl, $root . '/assets');
         $this->options = new Options($root . '/var/options.json');
+        // the account of the site (sonic.mimichat.fr, JOUER: ?name= in the page): the name in the online rooms
+        if (defined('SONIC_PLAYER_NAME') && trim((string)constant('SONIC_PLAYER_NAME')) !== '') {
+            $this->options->setOnlineName(Online::cleanName((string)constant('SONIC_PLAYER_NAME'), 0));
+        }
         $this->ghost = new GhostRecorder($root . '/var/ghosts');
         $this->bestTimes = new BestTimes($root . '/var/besttimes.json');
         $this->screens->setMenu($this->text, $this->options, $this->ghost, $this->bestTimes);

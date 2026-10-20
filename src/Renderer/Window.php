@@ -46,7 +46,7 @@ class Window
 
         $this->window = \SDL_CreateWindow(
             $this->title,
-            -1000 , //\SDL_WINDOWPOS_UNDEFINED,
+            \SDL_WINDOWPOS_UNDEFINED,
             \SDL_WINDOWPOS_UNDEFINED,
             $this->width,
             $this->height,
