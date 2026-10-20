@@ -20,7 +20,7 @@ class Options
     ];
 
     private array $values = ['ghost' => false, 'crt' => false, 'speed' => 'pal', 'cheats' => [], 'startLevel' => 1,
-        'versusMode' => 'race', 'versusSonics' => 3, 'versusTeam' => 2, 'versusLevel' => 1, 'versusAi' => 1, 'versusNet' => 'webrtc'];
+        'versusMode' => 'race', 'versusSonics' => 3, 'versusTeam' => 2, 'versusLevel' => 1, 'versusAi' => 1, 'onlineName' => ''];
 
     public function __construct(private string $file)
     {
@@ -142,15 +142,15 @@ class Options
         $this->save();
     }
 
-    /** Online: 'webrtc' (direct between browsers when possible) or 'ws' (everything through the server). */
-    public function getVersusNet(): string
+    /** Online: the player's name in the rooms ('' : not asked yet). */
+    public function getOnlineName(): string
     {
-        return $this->values['versusNet'] === 'ws' ? 'ws' : 'webrtc';
+        return (string)$this->values['onlineName'];
     }
 
-    public function setVersusNet(string $net): void
+    public function setOnlineName(string $name): void
     {
-        $this->values['versusNet'] = $net === 'ws' ? 'ws' : 'webrtc';
+        $this->values['onlineName'] = $name;
         $this->save();
     }
 

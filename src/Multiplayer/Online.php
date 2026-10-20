@@ -18,7 +18,7 @@ use PhpWasmNetwork\Network;
 final class Online
 {
     public const HELLO = 1;      // json {name}: a newcomer introduces himself
-    public const ROSTER = 2;     // json {names: {peer: name}}: the host's list of players
+    public const ROSTER = 2;     // json {names: {peer: name}, info}: the host's list of players and his match
     public const START = 3;      // json: the match (VersusNetwork::startConfig)
     public const SNAPSHOT = 4;   // binary: host -> everybody, the state of the match
     public const STATE = 5;      // binary: player -> host, his Sonic
@@ -41,6 +41,8 @@ final class Online
     /** @var array<int, string> peer id => 'webrtc' / 'relay' */
     public array $links = [];
     public ?float $pingMs = null;
+    /** The match the host will start ("DRAPEAU  GREEN HILL 1"): set by Game for the host, sent in the roster. */
+    public string $info = '';
     /** START received (clients) or sent (host): Game launches the match with it. */
     public ?array $start = null;
     /** Match messages for VersusNetwork: [type, from, payload], or ['leave', peer] / ['host', peer]. */
@@ -172,6 +174,7 @@ final class Online
                 $names = [];
                 foreach (($json['names'] ?? []) as $peer => $name) $names[(int)$peer] = self::cleanName((string)$name, (int)$peer);
                 if ($names) $this->names = $names;
+                $this->info = (string)($json['info'] ?? '');
                 break;
             case self::START:
                 if ($from !== $this->host) break;
@@ -185,7 +188,7 @@ final class Online
 
     private function sendRoster(): void
     {
-        $this->sendJson(self::ROSTER, ['names' => (object)$this->names]);
+        $this->sendJson(self::ROSTER, ['names' => (object)$this->names, 'info' => $this->info]);
     }
 
     /** Host: the match starts for everybody (and for him: $this->start). */

@@ -297,7 +297,7 @@ class Scene extends EventEmitter
             \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(), $this->sdl->getTextures($player->getRomSheet())[0]['texture'],
                 $src, $dst, 0, null, $player->getFacing() === 'left' ? \SDL_FLIP_HORIZONTAL : \SDL_FLIP_NONE);
             if ($this->objectManager && $this->objectManager->hasInvincibility()) {
-                $this->drawInvincibilityStars($destRect->x + 16, $destRect->y + 16);
+                self::drawInvincibilityStars($this->sdl, $destRect->x + 16, $destRect->y + 16);
             }
             return;
         }
@@ -309,7 +309,7 @@ class Scene extends EventEmitter
             \SDL_RenderCopyEx($this->sdl->getRenderer()->getRenderer(), $this->sdl->getTextures($player->getRomSheet())[0]['texture'],
                 $src, $dst, 0, null, $player->getFacing() === 'left' ? \SDL_FLIP_HORIZONTAL : \SDL_FLIP_NONE);
             if ($this->objectManager && $this->objectManager->hasInvincibility()) {
-                $this->drawInvincibilityStars($destRect->x + 16, $destRect->y + 16);
+                self::drawInvincibilityStars($this->sdl, $destRect->x + 16, $destRect->y + 16);
             }
             return;
         }
@@ -337,11 +337,12 @@ class Scene extends EventEmitter
         }
 
         if ($this->objectManager && $this->objectManager->hasInvincibility()) {
-            $this->drawInvincibilityStars($destRect->x + 16, $destRect->y + 16);
+            self::drawInvincibilityStars($this->sdl, $destRect->x + 16, $destRect->y + 16);
         }
     }
 
-    private function drawInvincibilityStars(int $centerX, int $centerY): void
+    /** Four stars turning around ($centerX, $centerY) (view pixels); also the other Sonics of a match (Versus). */
+    public static function drawInvincibilityStars(Sdl $sdl, int $centerX, int $centerY): void
     {
         $t = microtime(true);
         $src = new \SDL_Rect;
@@ -356,7 +357,7 @@ class Scene extends EventEmitter
             $dst->y = (int)round($centerY + sin($angle) * 18 - 8);
             $dst->w = 16;
             $dst->h = 16;
-            \SDL_RenderCopy($this->sdl->getRenderer()->getRenderer(), $this->sdl->getTextures('objects')[0]['texture'], $src, $dst);
+            \SDL_RenderCopy($sdl->getRenderer()->getRenderer(), $sdl->getTextures('objects')[0]['texture'], $src, $dst);
         }
     }
 

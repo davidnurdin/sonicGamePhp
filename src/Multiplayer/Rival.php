@@ -37,6 +37,9 @@ class Rival
     public ?array $netFrame = null;
     /** Online: received positions [time, x, y, frame], drawn with VersusNetwork::DELAY of delay (interpolated). */
     public array $track = [];
+    /** Online: a shield / the invincibility of the other machine, drawn here. */
+    public bool $shield = false;
+    public bool $invincible = false;
     /** Online, host: what the player reports of himself (rings, shield, dead...). */
     public array $netInfo = [];
     /** Rings mode: the last Sonic that hit or bumped it, and when (match clock): it gets the rings of a fall just after. */

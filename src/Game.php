@@ -73,6 +73,8 @@ class Game extends EventEmitter
     private float $actTimeBefore = 0;
     /** Name typed for the first best time of this session, used for the next ones until the game is closed. */
     private ?string $playerName = null;
+    /** Online: the action of the menu EN LIGNE waiting for the player's name ('create' / 'join'). */
+    private ?string $afterPlayerName = null;
     /** Best time waiting for the player's name: [act, index, time], and what to do once it is typed. */
     private ?array $pendingName = null;
     private ?\Closure $afterName = null;
@@ -247,6 +249,16 @@ class Game extends EventEmitter
             if (strlen($code) === 4) $this->connectOnline($code);
             $this->screens->showTitle('online');
         });
+        $this->screens->on('playerDone', function (string $name) {
+            $then = $this->afterPlayerName;
+            $this->afterPlayerName = null;
+            if (trim($name) !== '') $this->options->setOnlineName(Online::cleanName($name, 0));
+            if ($then !== null && $this->options->getOnlineName() !== '') {
+                $this->onlineAction($then);
+                if ($then === 'join') return;   // the code is asked now
+            }
+            $this->screens->showTitle('online');
+        });
         // a new best time without a name yet: the name is asked after the tally (or the Sky Base 3 teleporter)
         $this->screens->on('nameDone', function (string $name) {
             $this->playerName = $name;
@@ -347,10 +359,19 @@ class Game extends EventEmitter
      * Multiplayer (title menu > MULTIJOUEUR > LANCER): the act of the menu from its start, Sonic and the computer
      * Sonics of Versus, infinite lives (a death is not a game over), no map, no tally.
      */
-    /** Menu EN LIGNE: 'create', 'join', 'leave', 'start' (the host). */
+    /** Menu EN LIGNE: 'create', 'join', 'name', 'leave', 'start' (the host). */
     private function onlineAction(string $action): void
     {
+        // the others see a name: asked before the first room
+        if (($action === 'create' || $action === 'join') && $this->options->getOnlineName() === '') {
+            $this->afterPlayerName = $action;
+            $this->screens->showPlayerEntry($this->playerName ?? '');
+            return;
+        }
         switch ($action) {
+            case 'name':
+                $this->screens->showPlayerEntry($this->options->getOnlineName());
+                break;
             case 'create':
                 $this->connectOnline(null);
                 break;
@@ -374,8 +395,10 @@ class Game extends EventEmitter
     private function connectOnline(?string $code): void
     {
         $this->leaveOnline();
-        $transport = Online::isBrowser() ? $this->options->getVersusNet() : 'ws';
-        $this->online = new Online(Online::serverUrl(), $transport, $this->playerName ?? '', $code);
+        // browser: WebRTC between the players, the server relays for those it can't link (php-wasm-network)
+        $transport = Online::isBrowser() ? 'webrtc' : 'ws';
+        $this->online = new Online(Online::serverUrl(), $transport, $this->options->getOnlineName(), $code);
+        $this->online->info = Versus::MODES[$this->options->getVersusMode()] . '  ' . Versus::levelName($this->options->getVersusLevel());
     }
 
     private function leaveOnline(): void

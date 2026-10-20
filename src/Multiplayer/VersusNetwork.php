@@ -60,7 +60,8 @@ trait VersusNetwork
             if (!isset($order[$k])) break;
             $slots[$order[$k]] = ['peer' => $peer, 'name' => $online->names[$peer] ?? 'J' . ($peer + 1)];
         }
-        return ['mode' => $mode, 'level' => $level, 'difficulty' => $difficulty, 'players' => $total, 'slots' => $slots];
+        return ['mode' => $mode, 'level' => $level, 'difficulty' => $difficulty, 'players' => $total, 'slots' => $slots,
+            'swap' => mt_rand(0, 1) === 1];
     }
 
     public function isOnline(): bool
@@ -247,7 +248,9 @@ trait VersusNetwork
             $dead = $rival->human ? $this->objects->isPlayerDead() : !empty($rival->netInfo['dead']);
             $flags = ($frame[4] ? 1 : 0) | ($rival->invulnerable > 0 || ($rival->human && $this->objects->isPlayerHurt()) ? 2 : 0)
                 | ($rival->isKnockedOut() ? 4 : 0) | ($this->isAttacking($rival) ? 8 : 0)
-                | ($p->getState() === 'hurt' ? 16 : 0) | ($dead ? 32 : 0);
+                | ($p->getState() === 'hurt' ? 16 : 0) | ($dead ? 32 : 0)
+                | (($rival->human ? $this->objects->hasShield() : $rival->shield) ? 64 : 0)
+                | (($rival->human ? $this->objects->hasInvincibility() : $rival->invincible) ? 128 : 0);
             $data .= pack('ggvvCCCCvvvCg', $p->getX(), $p->getY(), $frame[0], $frame[1], $frame[2], $frame[3], $flags,
                 self::stateCode($p->getState()), min(65535, $rival->rings), $rival->kills, $rival->deaths, $rival->captures,
                 $rival->finishTime ?? -1.0);
@@ -268,7 +271,9 @@ trait VersusNetwork
         if ($s['flags'] & 2) $rival->invulnerable = max($rival->invulnerable, 0.2);
         $rival->rings = $s['rings'];
         $rival->netInfo = ['rings' => $s['rings'], 'shield' => (bool)($s['flags'] & 32), 'dead' => (bool)($s['flags'] & 16),
-            'attacking' => (bool)($s['flags'] & 4)];
+            'attacking' => (bool)($s['flags'] & 4), 'invincible' => (bool)($s['flags'] & 64)];
+        $rival->shield = $rival->netInfo['shield'];
+        $rival->invincible = $rival->netInfo['invincible'];
     }
 
     /** A player left (host): a bot takes his Sonic over. */
@@ -281,6 +286,7 @@ trait VersusNetwork
         $rival->puppet = false;
         $rival->netFrame = null;
         $rival->track = [];
+        $rival->shield = $rival->invincible = false;
         $rival->brain = new BotBrain($this->difficulty);
         $rival->name = 'CPU' . ($this->slotOf($rival) + 1);
         $this->showBanner($rival->name . ' REMPLACE PAR UN BOT', [255, 255, 255], 2.0);
@@ -305,7 +311,7 @@ trait VersusNetwork
         [$vx, $vy] = $p->getVelocity();
         $flags = ($frame[4] ? 1 : 0) | ($this->me->invulnerable > 0 || $this->objects->isPlayerHurt() ? 2 : 0)
             | ($this->isAttacking($this->me) ? 4 : 0) | ($this->objects->isPlayerDead() ? 16 : 0)
-            | ($this->objects->hasShield() ? 32 : 0);
+            | ($this->objects->hasShield() ? 32 : 0) | ($this->objects->hasInvincibility() ? 64 : 0);
         return pack('ggggvvCCCCv', $p->getX(), $p->getY(), $vx, $vy, $frame[0], $frame[1], $frame[2], $frame[3], $flags,
             self::stateCode($p->getState()), min(65535, $this->objects->getRingCount()));
     }
@@ -345,6 +351,8 @@ trait VersusNetwork
             $rival->player->setState(($r['flags'] & 8) ? 'jump' : (self::STATES[$r['state']] ?? 'idle'));
             $rival->invulnerable = ($r['flags'] & 2) ? max($rival->invulnerable, 0.2) : 0;
             $rival->koTimer = ($r['flags'] & 4) ? 1.0 : 0;
+            $rival->shield = (bool)($r['flags'] & 64);
+            $rival->invincible = (bool)($r['flags'] & 128);
         }
     }
 

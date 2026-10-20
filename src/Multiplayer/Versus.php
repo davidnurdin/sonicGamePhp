@@ -9,7 +9,9 @@ use SonicGame\Entities\Player;
 use SonicGame\Level\Level;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Renderer\TextRenderer;
+use SonicGame\Entities\Objects\RomSprites;
 use SonicGame\Scene\Camera;
+use SonicGame\Scene\Scene;
 use SonicGame\SoundManager\SoundManager;
 
 /**
@@ -284,14 +286,16 @@ class Versus extends EventEmitter
 
     /**
      * Flag mode: the bases, near the two ends of the act (the places to appear, sorted from left to right):
-     * blue (the human's team) on the left, red on the right.
+     * blue (the human's team) and red, one at each end, the side drawn at random.
      */
     private function placeBases(): void
     {
         $spawns = $this->spawns;
         usort($spawns, fn($a, $b) => $a[0] <=> $b[0]);
         $last = count($spawns) - 1;
-        foreach ([0 => 0.08, 1 => 0.92] as $team => $at) {
+        // which team starts on the left: drawn at random (online: by the host, VersusNetwork::startConfig)
+        $swap = $this->netConfig !== null ? !empty($this->netConfig['swap']) : mt_rand(0, 1) === 1;
+        foreach ($swap ? [0 => 0.92, 1 => 0.08] : [0 => 0.08, 1 => 0.92] as $team => $at) {
             [$x, $y] = $spawns[(int)round($last * $at)];
             $this->bases[$team] = [$x + 12, $y + 32];
         }
@@ -773,7 +777,8 @@ class Versus extends EventEmitter
 
     private function isAttacking(Rival $rival): bool
     {
-        return $rival->isAttacking() || ($rival->human && $this->objects->hasInvincibility());
+        return $rival->isAttacking() || ($rival->human && $this->objects->hasInvincibility())
+            || ($rival->peer !== null && !empty($rival->netInfo['invincible']));
     }
 
     private function canTouch(Rival $rival): bool
@@ -822,7 +827,7 @@ class Versus extends EventEmitter
      */
     private function hit(Rival $victim, ?Rival $attacker): void
     {
-        if ($victim->invulnerable > 0) return;
+        if ($victim->invulnerable > 0 || ($victim->peer !== null && !empty($victim->netInfo['invincible']))) return;
         if ($attacker) $this->pushedBy($victim, $attacker);
         if ($victim === $this->carrier) $this->dropFlag();
         $fromX = $attacker ? $attacker->player->getX() : $victim->player->getX() + 1;
@@ -1092,8 +1097,19 @@ class Versus extends EventEmitter
             [$src->x, $src->y, $src->w, $src->h] = [$sx, $sy, $sw, $sh];
             $dst = new \SDL_Rect;
             [$dst->x, $dst->y, $dst->w, $dst->h] = [(int)round($rival->player->getX() - 4 - $cameraX), (int)round($rival->player->getY() - $cameraY), 32, 32];
-            \SDL_RenderCopyEx($renderer, $this->sdl->getTextures($rival->texture)[0]['texture'], $src, $dst, 0, null,
-                $flip ? \SDL_FLIP_HORIZONTAL : \SDL_FLIP_NONE);
+            if ($rival->shield && (int)floor(fmod(microtime(true), 86400.0) * 60) % 2 === 0) {
+                // online: a shield, like Scene::drawPlayer (every other frame the ring instead of the Sonic)
+                [$src->x, $src->y, $src->w, $src->h] = RomSprites::SHIELD;
+                [$dst->x, $dst->w] = [$dst->x + 4, 24];
+                \SDL_RenderCopy($renderer, $this->sdl->getTextures(RomSprites::SHEET)[0]['texture'], $src, $dst);
+            } else {
+                \SDL_RenderCopyEx($renderer, $this->sdl->getTextures($rival->texture)[0]['texture'], $src, $dst, 0, null,
+                    $flip ? \SDL_FLIP_HORIZONTAL : \SDL_FLIP_NONE);
+            }
+            if ($rival->invincible) {
+                Scene::drawInvincibilityStars($this->sdl, (int)round($rival->player->getX() - 4 - $cameraX) + 16,
+                    (int)round($rival->player->getY() - $cameraY) + 16);
+            }
         }
         // carried: a small flag over the head of its carrier
         if ($this->carrier !== null && $this->carrier->isVisible()) {
