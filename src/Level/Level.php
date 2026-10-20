@@ -98,8 +98,14 @@ class Level
             return;
         }
         
-        $solidity = file_get_contents($colisionFile);
+        $this->applySolidity(file_get_contents($colisionFile));
+    }
+
+    /** One collision byte a block (level<N>.solidity): the shapes of tileCol.data.php and their sides. */
+    private function applySolidity(string $solidity): void
+    {
         $this->solidity = str_split($solidity);
+        $this->tileTops = [];
 
         $tilesColision = [];
         $tilesColisionWay = [];
@@ -121,6 +127,49 @@ class Level
 
         $this->tilesColision = $tilesColision;
         $this->tilesColisionWay = $tilesColisionWay;
+    }
+
+    /**
+     * A level made in the site's editor (LevelManager::loadCustom): {width, height, blocks (base64, one byte a
+     * block), start [x, y], objects [[type, x, y]], solidity [byte a block], behaviour [byte a block], music,
+     * sp (the zone its tiles come from, 0-6)}.
+     */
+    public function loadCustom(array $data): void
+    {
+        $this->mapWidth = (int)$data['width'];
+        $this->mapHeight = (int)$data['height'];
+        [$this->currentPositionSoniceXinTile, $this->currentPositionSoniceYinTile] = array_map('intval', $data['start']);
+        // the zone of its tiles (the platforms' look...); the blocks' behaviours come with the level
+        $this->solidityIndex = (int)($data['sp'] ?? 0);
+        $this->behaviours = array_map('intval', $data['behaviour'] ?? []);
+        // the HUD with rings (SR bit 2), 10 minutes at most (TL bit 5), the camera inside the map
+        $this->meta = ['FW' => $this->mapWidth, 'FH' => $this->mapHeight, 'SX' => $this->currentPositionSoniceXinTile,
+            'SY' => $this->currentPositionSoniceYinTile, 'SP' => $this->solidityIndex, 'SR' => 4, 'TL' => 32, 'MU' => (int)($data['music'] ?? 0)];
+        $blocks = (string)base64_decode((string)$data['blocks']);
+        $tilemap = [];
+        for ($y = 0; $y < $this->mapHeight; $y++) {
+            for ($x = 0; $x < $this->mapWidth; $x++) {
+                $tilemap[$y][$x] = ord($blocks[$x + $y * $this->mapWidth] ?? "\0");
+            }
+        }
+        $this->tilemap = $this->originalTilemap = $tilemap;
+        $this->version++;
+        $this->applySolidity(implode('', array_map(fn($v) => chr((int)$v & 0xFF), $data['solidity'] ?? [])));
+        $this->objects = array_map(fn(array $o) => ['type' => (int)$o[0], 'typeName' => '', 'x' => (int)$o[1], 'y' => (int)$o[2]],
+            $data['objects'] ?? []);
+    }
+
+    /** null: the ROM table of the zone (blockBehaviour.data.php, by SP); a level of the site: its own. */
+    private ?array $behaviours = null;
+    private static array $romBehaviours = [];
+
+    /** @return array<int, int> block => behaviour (springs, spikes, conveyors... see CollisionSystem::B_*) */
+    public function getBlockBehaviours(): array
+    {
+        if ($this->behaviours !== null) return $this->behaviours;
+        self::$romBehaviours = self::$romBehaviours ?: require __DIR__ . '/../../assets/levels/blockBehaviour.data.php';
+
+        return self::$romBehaviours[$this->solidityIndex] ?? [];
     }
 
     private function readObjects(): void

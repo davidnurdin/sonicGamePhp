@@ -66,6 +66,19 @@ class Sdl
         }
     }
 
+    /** Forgets a lazy texture and frees its file, with the other names of that file (registered again later). */
+    public function releaseTexture(string $name): void
+    {
+        if (!isset($this->lazy[$name])) return;
+        [$path, $key] = $this->lazy[$name];
+        $pathKey = self::pathKey($path, $key);
+        foreach ($this->lazy as $other => [$otherPath, $otherKey]) {
+            if (self::pathKey($otherPath, $otherKey) === $pathKey) unset($this->textures[$other], $this->lazy[$other]);
+        }
+        foreach ($this->byPath[$pathKey] ?? [] as $texture) \SDL_DestroyTexture($texture['texture']);
+        unset($this->byPath[$pathKey]);
+    }
+
     /** Sizes of the parts of a texture ([['width' => , 'height' => ], ...]) without loading it. */
     public function getTextureSizes(string $name): array
     {

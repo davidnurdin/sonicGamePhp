@@ -359,7 +359,7 @@ class GameObjectManager extends EventEmitter
         if ($this->level !== $level || $this->currentLevel !== $level->getLevel()) {
             $this->loadLevel($level);
         }
-        $player->setBallOnly($this->currentLevel >= 28);
+        $player->setBallOnly($this->currentLevel >= 28 && $this->currentLevel <= 35);
 
         if ($this->dead) {
             $this->updateDeath($deltaTime, $player);
@@ -850,13 +850,10 @@ class GameObjectManager extends EventEmitter
     private ?array $teleport = null;
     private float $teleportClock = 0;
 
-    private static array $blockBehaviour = [];
-
     private static function blockBehaviourAt(Level $level, int $bx, int $by): int
     {
-        self::$blockBehaviour = self::$blockBehaviour ?: require __DIR__ . '/../../assets/levels/blockBehaviour.data.php';
         $block = $level->getTile($bx, $by);
-        return $block === null ? 0 : (self::$blockBehaviour[$level->getSolidityIndex()][$block] ?? 0);
+        return $block === null ? 0 : ($level->getBlockBehaviours()[$block] ?? 0);
     }
 
     /**
@@ -1148,7 +1145,7 @@ class GameObjectManager extends EventEmitter
             $this->continues++;
         }
         // _155e: special stages played ($D281) and finished before the time ran out ($D282)
-        if ($this->currentLevel >= 28) {
+        if ($this->currentLevel >= 28 && $this->currentLevel <= 35) {
             $this->stats['specialEntered']++;
             if (!$timedOut) $this->stats['specialCleared']++;
         }
@@ -1442,7 +1439,7 @@ class GameObjectManager extends EventEmitter
             case 'life':
                 $this->lives++;
                 // $D280: 1-ups from the monitors outside the special stages
-                if ($this->currentLevel < 28) $this->stats['oneUps']++;
+                if ($this->currentLevel < 28 || $this->currentLevel > 35) $this->stats['oneUps']++;
                 $this->emit('extraLife', []);
                 break;
             case 'shield':

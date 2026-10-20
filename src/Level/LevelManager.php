@@ -9,6 +9,9 @@ use SonicGame\Scene\TileSet;
 
 class LevelManager extends EventEmitter
 {
+    /** The number of a level made in the site's editor (after the 35 of the game). */
+    public const CUSTOM = 36;
+
     private array $levels = [];
     private int $currentLevelIndex = 0;
 
@@ -72,6 +75,46 @@ class LevelManager extends EventEmitter
         $this->sdl->loadGroup($group);
     }
 
+    /**
+     * A level of the site's editor: $file (JSON, see Level::loadCustom) and its tiles next to it (tiles.png: 32px
+     * blocks, 16 a row). It becomes level CUSTOM, played like the others. False if the files are not right.
+     */
+    public function loadCustom(string $file): bool
+    {
+        $data = is_file($file) ? json_decode((string)file_get_contents($file), true) : null;
+        $png = dirname($file) . '/tiles.png';
+        if (!is_array($data) || !isset($data['width'], $data['height'], $data['blocks'], $data['start']) || !is_file($png)) return false;
+        // the textures are found from the assets folder
+        $path = self::relativePath($this->assetManager->getAssetFolder(), realpath($png));
+        $group = 'tileset' . $this->convertLevelToTileSet(self::CUSTOM);
+        $name = 'tileset' . self::CUSTOM;
+        $this->sdl->releaseTexture($name);
+        $this->sdl->registerTexture($name, $path, $group);
+        // the blocks in front of Sonic: the same picture (its transparent pixels stay transparent)
+        $this->sdl->registerTexture($name . '-fg', $path, $group);
+        $level = new Level(new TileSet($this->sdl), self::CUSTOM, $this->sdl, $this->assetManager);
+        $level->loadCustom($data);
+        foreach ($this->levels as $index => $candidate) {
+            if ($candidate->getLevel() === self::CUSTOM) {
+                $this->levels[$index] = $level;
+                return true;
+            }
+        }
+        $this->levels[] = $level;
+        return true;
+    }
+
+    private static function relativePath(string $from, string $to): string
+    {
+        $from = explode('/', trim($from, '/'));
+        $to = explode('/', trim($to, '/'));
+        while ($from && $to && $from[0] === $to[0]) {
+            array_shift($from);
+            array_shift($to);
+        }
+        return str_repeat('../', count($from)) . implode('/', $to);
+    }
+
     public function convertLevelToTileSet($level)
     {
         $levelNTile[1] = 1 ; $levelNTile[2] = 2 ; $levelNTile[3] = 3 ; // green hill zone
@@ -92,6 +135,7 @@ class LevelManager extends EventEmitter
         $levelNTile[25] = 15 ; // $19: Scrap Brain Act 2, from Ballhog Area
         $levelNTile[26] = 26 ; // $1A: Sky Base interior
         $levelNTile[27] = 27 ; // $1B: Sky Base interior
+        $levelNTile[self::CUSTOM] = 'custom'; // a level of the site's editor (loadCustom)
 
         // Bonus stages: tileset31 is the complete set decoded from the ROM (the ripped tileset30 stops at block 54,
         // which misses the ring background block 120 among others).

@@ -463,7 +463,6 @@ class Scene extends EventEmitter
 
         $tileSet = $level->getTileSet();
         $textures = $this->sdl->getTextures($name);
-        $maxWidth = floor(4096 / 32) * 32; // = 4064
         $rings = [];
         $foreground = [];
         $dst = new \SDL_Rect;
@@ -484,7 +483,7 @@ class Scene extends EventEmitter
                 if (!$tileRect) continue;
                 $dst->x = ($x - $col) * $tileSize;
                 $dst->y = ($y - $row) * $tileSize;
-                \SDL_RenderCopy($renderer, $textures[(int)floor($drawn * $tileSize / $maxWidth)]['texture'], $tileRect, $dst);
+                \SDL_RenderCopy($renderer, $textures[$tileSet->getTextureIndex($drawn)]['texture'], $tileRect, $dst);
             }
         }
 
@@ -534,11 +533,10 @@ class Scene extends EventEmitter
         }
         $textures = $this->sdl->getTextures($name);
         $tileSet = $level->getTileSet();
-        $maxWidth = floor(4096 / 32) * 32;
         $renderer = $this->sdl->getRenderer()->getRenderer();
         foreach ($this->foregroundBlocks as [$sx, $sy, $block]) {
             $src = $tileSet->getTile($block);
-            $texture = $textures[(int)floor($block * 32 / $maxWidth)]['texture'] ?? null;
+            $texture = $textures[$tileSet->getTextureIndex($block)]['texture'] ?? null;
             if (!$src || !$texture) continue;
             $dst = new \SDL_Rect;
             $dst->x = $sx;

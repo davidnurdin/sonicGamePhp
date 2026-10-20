@@ -246,6 +246,10 @@ class Game extends EventEmitter
                 $this->startLevel();
                 return;
             }
+            if ($this->levelManager->getCurrentLevel()->getLevel() === LevelManager::CUSTOM) {
+                $this->endCustom();
+                return;
+            }
             $this->actTimeBefore = 0;
             $this->objectManager->resetGame();
             $this->warpFrom = null;
@@ -348,6 +352,10 @@ class Game extends EventEmitter
         $this->actTimeBefore = 0;
         $this->objectManager->setScore($this->screens->getScore());
         $current = $this->levelManager->getCurrentLevel()->getLevel();
+        if ($current === LevelManager::CUSTOM) {
+            $this->endCustom();
+            return;
+        }
         // _1fa9: the sign showed "!": the next special stage ($D23F) is played, then the next act
         if ($this->objectManager->takeSpecialStage() && $this->nextSpecialStage <= 35) {
             $this->specialReturn = $this->warpFrom ?? $current;
@@ -552,6 +560,7 @@ class Game extends EventEmitter
         }
         if ($this->objectManager->hasCheats() || $this->objectManager->isLevelComplete()) return;
         $number = $this->levelManager->getCurrentLevel()->getLevel();
+        if ($number === LevelManager::CUSTOM) return;   // not kept yet: the replay would need the level of the site
         if (!$this->recorder->isRecording('solo', $number)) {
             $this->recorder->begin('solo', $number, 'solo', [[$this->options->getOnlineName() ?: 'SONIC', $this->player->getSheet(), [80, 140, 255]]], 0);
         }
@@ -572,6 +581,35 @@ class Game extends EventEmitter
     private function sendReplay(?string $file): void
     {
         if ($file !== null) Bridge::send(['t' => 'replay', 'file' => $file]);
+    }
+
+    /** A level of the site's editor (LevelManager::CUSTOM), from its start, without the cheats of the options. */
+    private function startCustom(): void
+    {
+        $this->actTimeBefore = 0;
+        $this->objectManager->setCheats([]);
+        $this->objectManager->setGodMode(false);
+        $this->player->setGodLook(false);
+        $this->objectManager->resetGame();
+        $this->screens->close();
+        if ($this->levelManager->getCurrentLevel()->getLevel() !== LevelManager::CUSTOM) {
+            $this->levelManager->goToLevel(LevelManager::CUSTOM);
+        } else {
+            $this->levelReload(LevelManager::CUSTOM);
+        }
+        $this->player->resetForStart();
+        $this->startLevel();
+    }
+
+    /** The level of the site is over (tally, game over, escape): back to its page, or to the menu. */
+    private function endCustom(): void
+    {
+        if (Bridge::fromSite()) {
+            $this->soundManager->stopMusic();
+            Bridge::send(['t' => 'back']);
+            return;
+        }
+        $this->backToTitle();
     }
 
     /** "Revoir" on the site: the level of the replay, the Sonics where they were (nothing is played). */
@@ -782,6 +820,8 @@ class Game extends EventEmitter
     {
         if ($this->demo || $this->objectManager->hasCheats()) return;
         $level = $this->levelManager->getCurrentLevel()->getLevel();
+        // a level of the site: all of them have the same number
+        if ($level === LevelManager::CUSTOM) return;
         $time = $this->actTimeBefore + $this->objectManager->getLevelTime();
         $added = $this->bestTimes->add($level, $time, $this->playerName ?? '');
         if ($added === null) return;
@@ -934,7 +974,12 @@ class Game extends EventEmitter
         $this->registerEvents();
         $this->registerLevelEvents();
         $replay = defined('SONIC_REPLAY') && constant('SONIC_REPLAY') !== '' ? ReplayPlayer::load((string)constant('SONIC_REPLAY')) : null;
-        if ($replay !== null) {
+        $custom = defined('SONIC_CUSTOM_LEVEL') && constant('SONIC_CUSTOM_LEVEL') !== ''
+            && $this->levelManager->loadCustom((string)constant('SONIC_CUSTOM_LEVEL'));
+        if ($custom) {
+            // JOUER on a level of the site's editor: that level, straight away
+            $this->startCustom();
+        } elseif ($replay !== null) {
             // "Revoir" on the site: the replay, straight away
             $this->startReplay($replay);
         } elseif ($this->siteRoom !== null) {
@@ -1418,6 +1463,10 @@ class Game extends EventEmitter
                 $this->leaveOnline();
                 $this->versusConfig = null;
                 if ($this->siteRoom !== null && Bridge::fromSite()) Bridge::send(['t' => 'back']);
+            }
+            if ($this->levelManager->getCurrentLevel()->getLevel() === LevelManager::CUSTOM) {
+                $this->endCustom();
+                return;
             }
             $this->backToTitle();
         }

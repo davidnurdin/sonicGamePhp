@@ -45,7 +45,6 @@ class CollisionSystem extends EventEmitter
 	private const B_BUMPER_VERTICAL_2 = 22;
 	private const B_ELECTRIC = 23;
 
-	private static array $blockBehaviour = [];
 	private array $behaviour = [];
 	private float $bumperCooldown = 0;
 	/** Time (microtime) each sound effect was last emitted, so blocks acting every frame don't spam it. */
@@ -71,14 +70,12 @@ class CollisionSystem extends EventEmitter
 
 	private function updateLevelConfig(Level $level): void
 	{
-		$lvl = $level->getLevel();
+		// by object: the levels of the site all have the same number
+		$lvl = spl_object_id($level);
 		if ($lvl === $this->currentLevel) return;
 		$this->currentLevel = $lvl;
 
-		if (empty(self::$blockBehaviour)) {
-			self::$blockBehaviour = require __DIR__ . '/../../../assets/levels/blockBehaviour.data.php';
-		}
-		$this->behaviour = self::$blockBehaviour[$level->getSolidityIndex()] ?? [];
+		$this->behaviour = $level->getBlockBehaviours();
 
 	}
 

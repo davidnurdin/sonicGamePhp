@@ -7,6 +7,8 @@ use SonicGame\Renderer\Sdl;
 class TileSet
 {
     private array $tiles = [];
+    /** For each block: which of the level's textures has it (a strip cut every 4064px, or one sheet). */
+    private array $textureIndex = [];
     private int $tileWidth = 32;
     private int $tileHeight = 32;
 
@@ -18,6 +20,7 @@ class TileSet
     public function generateTiles($textures): void {
 
         $this->tiles = [];
+        $this->textureIndex = [];
 
         $width = $height = 0;
 //        \SDL_QueryTexture($texture, $format , $access , $width, $height);
@@ -40,6 +43,7 @@ class TileSet
                 $tileRect->w = $this->tileWidth;
                 $tileRect->h = $this->tileHeight;
                 $this->tiles[] = $tileRect;
+                $this->textureIndex[] = $indexTexture;
             }
         }
     }
@@ -50,6 +54,11 @@ class TileSet
         }
 
         return $this->tiles[$index];
+    }
+
+    public function getTextureIndex(int $index): int
+    {
+        return $this->textureIndex[$index] ?? 0;
     }
 
     public function getSurface(): \SDL_Surface {

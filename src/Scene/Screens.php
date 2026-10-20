@@ -668,7 +668,7 @@ class Screens extends EventEmitter
 
     private function isBonusStage(): bool
     {
-        return $this->actLevel >= 28;
+        return $this->actLevel >= 28 && $this->actLevel <= 35;
     }
 
     public function update(float $deltaTime, bool $buttonPressed): void
