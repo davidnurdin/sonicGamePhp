@@ -35,8 +35,8 @@ final class Online
     public const CHAT_LENGTH = 30;
     private const CHAT_LINES = 20;
 
-    /** Default relay server (the page defines SONIC_NET_URL; native: env SONIC_NET_URL). */
-    public const DEFAULT_URL = 'ws://localhost:8090/ws';
+    /** Relay server: the page defines SONIC_NET_URL (?net=), native: env SONIC_NET_URL (start.sh), else this one. */
+    public const DEFAULT_URL = 'wss://sonic.mimichat.fr/ws';
 
     public const MAX_HUMANS = 6;
 
@@ -244,6 +244,13 @@ final class Online
         $this->inbox = [];
         if ($this->status === 'match') $this->status = 'lobby';
         if ($this->public && $this->isHost()) $this->net->lockRoom(false);
+    }
+
+    /** The host changed the match (EN LIGNE > MODE / ZONE): the others see it in the room. */
+    public function setInfo(string $info): void
+    {
+        $this->info = $info;
+        if ($this->isHost()) $this->sendRoster();
     }
 
     /** A line of mine in the chat (one a second at most). */

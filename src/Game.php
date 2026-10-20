@@ -383,6 +383,9 @@ class Game extends EventEmitter
             case 'chat':
                 if ($this->online !== null) $this->screens->showChatEntry();
                 break;
+            case 'settings':
+                $this->online?->setInfo($this->onlineInfo());
+                break;
             case 'create':
                 $this->connectOnline(null);
                 break;
@@ -409,7 +412,13 @@ class Game extends EventEmitter
         // browser: WebRTC between the players, the server relays for those it can't link (php-wasm-network)
         $transport = Online::isBrowser() ? 'webrtc' : 'ws';
         $this->online = new Online(Online::serverUrl(), $transport, $this->options->getOnlineName(), $code, $public);
-        $this->online->info = Versus::MODES[$this->options->getVersusMode()] . '  ' . Versus::levelName($this->options->getVersusLevel());
+        $this->online->info = $this->onlineInfo();
+    }
+
+    /** The match the host would start, for the room: "DRAPEAU  GREEN HILL 1". */
+    private function onlineInfo(): string
+    {
+        return Versus::MODES[$this->options->getVersusMode()] . '  ' . Versus::levelName($this->options->getVersusLevel());
     }
 
     private function leaveOnline(): void

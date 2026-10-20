@@ -201,7 +201,20 @@ class Screens extends EventEmitter
                     ];
                 }
                 $items = [['PARLER', null, $act('chat'), null], ['QUITTER', null, $act('leave'), null]];
-                if ($online->status === 'lobby' && $online->isHost()) array_unshift($items, ['LANCER', null, $act('start'), null]);
+                if ($online->status === 'lobby' && $online->isHost()) {
+                    // the host chooses the match here too (the settings of MULTIJOUEUR), the others see it
+                    $mode = $options->getVersusMode();
+                    $level = $options->getVersusLevel();
+                    $cycle = fn(array $list, $current, int $step) => $list[((int)array_search($current, $list, true) + $step + count($list)) % count($list)];
+                    $set = fn(string $m, int $l) => $this->changed(function () use ($options, $m, $l, $act) {
+                        $options->setVersus($m, $options->getVersusPlayers(), $l);
+                        $act('settings')();
+                    });
+                    $nextMode = fn(int $step = 1) => $set($cycle(array_keys(Versus::MODES), $mode, $step), $level);
+                    $nextLevel = fn(int $step = 1) => $set($mode, $cycle(Versus::LEVELS, $level, $step));
+                    array_unshift($items, ['LANCER', null, $act('start'), null], ['MODE', Versus::MODES[$mode], $nextMode, $nextMode],
+                        ['ZONE', Versus::levelName($level), $nextLevel, $nextLevel]);
+                }
                 return $items;
             case 'jukebox':
                 $songs = array_keys(self::SONGS);
@@ -1035,7 +1048,8 @@ class Screens extends EventEmitter
     }
 
     /** Page EN LIGNE: the room, its players, the state of the connection. */
-    private function renderOnline(int $size): void
+    /** The page EN LIGNE under its entries ($top: below the last one, SMS pixels). */
+    private function renderOnline(int $size, int $top): void
     {
         $online = $this->onlineView ? ($this->onlineView)() : null;
         $grey = [[200, 200, 200], [120, 120, 120]];
@@ -1060,17 +1074,23 @@ class Screens extends EventEmitter
             $centre('CONNEXION' . str_repeat('.', intdiv($this->frames, 20) % 4), 150, $grey);
             return;
         }
-        $centre(($online->public ? 'SALON PUBLIC ' : 'SALON ') . $online->room, 84, [[255, 255, 255], [85, 170, 255]]);
-        // the host's match (a player who joined may have other settings)
-        $centre($online->isHost() ? $settings : $online->info, 96, [self::MENU_TOP, self::MENU_BOTTOM]);
+        // from the entries down: the room, the match (the host chooses it in the entries), the players, the chat
+        $y = $top + 4;
+        $centre(($online->public ? 'SALON PUBLIC ' : 'SALON ') . $online->room, $y, [[255, 255, 255], [85, 170, 255]]);
+        $y += 12;
+        if (!$online->isHost()) {
+            $centre($online->info, $y, [self::MENU_TOP, self::MENU_BOTTOM]);
+            $y += 12;
+        }
         foreach ($online->peers() as $i => $peer) {
             // me in yellow
             $label = $online->names[$peer] . ($peer === $online->host ? ' HOTE' : '');
-            $this->styled($label, $i % 2 ? 136 : 16, 110 + intdiv($i, 2) * 10, $size, $peer === $online->me
+            $this->styled($label, $i % 2 ? 136 : 16, $y + intdiv($i, 2) * 10, $size, $peer === $online->me
                 ? [[255, 255, 170], [255, 200, 0]] : [[255, 255, 255], [170, 170, 170]]);
         }
-        foreach ($this->chatLines($online, 3, 236, $size) as $i => [$line, $colours]) {
-            $this->styled($line, 10, 144 + 10 * $i, $size, $colours);
+        $y += (int)ceil(count($online->names) / 2) * 10 + 4;
+        foreach ($this->chatLines($online, max(1, intdiv(172 - $y, 10)), 236, $size) as $i => [$line, $colours]) {
+            $this->styled($line, 10, $y + 10 * $i, $size, $colours);
         }
         $status = $online->isHost() ? 'LANCE QUAND TOUT LE MONDE EST LA' : 'EN ATTENTE DE L HOTE';
         if ($online->pingMs !== null) $status .= '  ' . (int)round($online->pingMs) . ' MS';
@@ -1121,7 +1141,7 @@ class Screens extends EventEmitter
         $step = count($items) > 6 ? 14 : (count($items) === 6 ? 18 : 20);
         // in a room: the entries close together, the room and its chat below
         $inRoom = $this->titlePage === 'online' && in_array(($this->onlineView ? ($this->onlineView)() : null)?->status, ['lobby', 'match'], true);
-        if ($inRoom) $step = 14;
+        if ($inRoom) $step = count($items) > 3 ? 12 : 14;
         foreach ($items as $i => [$label, $value]) {
             $y = 40 + $step * $i;
             $selected = $i === $this->menuIndex;
@@ -1138,7 +1158,7 @@ class Screens extends EventEmitter
                 $this->styled($value, 236 - $width, $y, $size, $colours);
             }
         }
-        if ($this->titlePage === 'online') $this->renderOnline($size);
+        if ($this->titlePage === 'online') $this->renderOnline($size, 40 + $step * count($items));
         if ($this->titlePage === 'multi') {
             // the rules of the mode chosen, under the entries
             $rules = [
