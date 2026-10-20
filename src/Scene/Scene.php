@@ -127,7 +127,7 @@ class Scene extends EventEmitter
         }
 
         // Afficher le HUD en dernier (par-dessus tout)
-        if ($this->hud && $this->objectManager) {
+        if ($this->hud && $this->objectManager && !$this->replayView) {
             $this->hud->draw($this->objectManager, $level);
             $this->drawAirCountdown();
         }
@@ -157,8 +157,8 @@ class Scene extends EventEmitter
             ($this->worldOverlay)($this->camera->getX(), $this->camera->getY());
         }
 
-        // Afficher le joueur par-dessus
-        $this->drawPlayer($player);
+        // Afficher le joueur par-dessus (not in a replay: ReplayPlayer draws every Sonic)
+        if (!$this->replayView) $this->drawPlayer($player);
 
         // Blocs prioritaires (arbres, piliers...) devant les sprites, comme le VDP de la SMS
         if ($this->debugMode != 1) {
@@ -267,6 +267,8 @@ class Scene extends EventEmitter
 
     /** Drawn between the objects and Sonic: fn(float $cameraX, float $cameraY) (multiplayer). */
     public ?\Closure $worldOverlay = null;
+    /** A replay is shown (Game::startReplay): no Sonic of the engine, no HUD. */
+    public bool $replayView = false;
     /** Sonic blinks (multiplayer: hit or put back by the match). */
     public bool $playerBlink = false;
 

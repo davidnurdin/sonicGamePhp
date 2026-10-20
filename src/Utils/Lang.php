@@ -62,6 +62,8 @@ final class Lang
         'CONNEXION PERDUE' => 'CONNECTION LOST', 'ERREUR' => 'ERROR',
         // best times, ranks
         'ZONE {zone} ACTE {act}' => 'ZONE {zone} ACT {act}',
+        // replay
+        'REPLAY' => 'REPLAY', 'PAUSE' => 'PAUSE', '{n} ANNEAUX  {time}' => '{n} RINGS  {time}',
     ];
 
     public static function set(?string $lang): void

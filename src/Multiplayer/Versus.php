@@ -181,6 +181,42 @@ class Versus extends EventEmitter
     }
 
     public function isSimulating(): bool { return $this->simulating; }
+
+    // ------------------------------------------------------------------ the replay (ReplayRecorder)
+
+    /** The Sonics are placed (the first update()). */
+    public function hasBegun(): bool { return $this->level !== null; }
+
+    /** @return list<array{0: string, 1: string, 2: array}> each Sonic: name, sheet, colour */
+    public function replayEntities(): array
+    {
+        return array_map(fn(Rival $r) => [$r->name, $r->texture, $r->rgb], $this->rivals);
+    }
+
+    /** Each Sonic this frame: [x, y, drawn frame], or null (blinking, not drawn). */
+    public function replayStates(): array
+    {
+        return array_map(fn(Rival $r) => !$r->isVisible() ? null : [$r->player->getX(), $r->player->getY(),
+            $r->puppet && $r->netFrame ? $r->netFrame : $r->player->getDrawnFrame()], $this->rivals);
+    }
+
+    /** The Sonic of this player. */
+    public function replayFollow(): int
+    {
+        return max(0, (int)array_search($this->me, $this->rivals, true));
+    }
+
+    /** @return list<array{0: string, 1: string}> the results: name, score */
+    public function replayResult(): array
+    {
+        return array_map(fn(array $row) => [$row[0], (string)$row[1]], $this->ranking);
+    }
+
+    /** Online: the id of the match (the same for every player, VersusNetwork::startConfig). */
+    public function matchId(): ?string
+    {
+        return isset($this->netConfig['id']) ? (string)$this->netConfig['id'] : null;
+    }
     public function isOver(): bool { return $this->state === 'over'; }
     /** The human can't move (countdown, results). */
     public function isLocked(): bool { return $this->state !== 'play'; }

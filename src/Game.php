@@ -20,7 +20,9 @@ use SonicGame\Renderer\TextRenderer;
 use SonicGame\Save\GhostRecorder;
 use SonicGame\Save\BestTimes;
 use SonicGame\Save\Options;
+use SonicGame\Save\ReplayRecorder;
 use SonicGame\Save\Stats;
+use SonicGame\Scene\ReplayPlayer;
 use SonicGame\Scene\Scene;
 use SonicGame\Scene\Screens;
 use SonicGame\SoundManager\SoundManager;
@@ -120,6 +122,7 @@ class Game extends EventEmitter
             }
         }
         $this->ghost = new GhostRecorder($root . '/var/ghosts');
+        $this->recorder = new ReplayRecorder($root . '/var/replays/last.json.gz');
         $this->bestTimes = new BestTimes($root . '/var/besttimes.json');
         $this->screens->setMenu($this->text, $this->options, $this->ghost, $this->bestTimes);
     }
@@ -144,6 +147,13 @@ class Game extends EventEmitter
     private bool $demo = false;
     /** The player's statistics (var/stats.json): time played, jumps, rings... (not during the demo). */
     private Stats $stats;
+    /** The replay of the act / the match being played (sent to the site by the page), and the one being shown. */
+    private ReplayRecorder $recorder;
+    private ?ReplayPlayer $replay = null;
+    /** While a replay is shown: the Sonic the level's objects see (far away: they are not touched). */
+    private ?Player $replayDummy = null;
+    /** The match has been recorded (once over). */
+    private bool $versusRecorded = false;
     /** Rings / emeralds at the last frame: what was gained since. */
     private int $statRings = 0;
     private int $statEmeralds = 0;
@@ -204,6 +214,10 @@ class Game extends EventEmitter
         // ghost: a completed act is kept when it is the fastest; a restart from a checkpoint is not recorded
         // best times: the act timer when it is completed (not with cheats)
         $this->objectManager->on('levelComplete', fn() => $this->recordActTime());
+        // the replay of an act played alone: kept once it is completed; after a death, the next life only
+        $this->objectManager->on('levelComplete', fn() => $this->finishSoloReplay());
+        $this->objectManager->on('teleportEnd', fn() => $this->finishSoloReplay());
+        $this->objectManager->on('playerRespawned', fn() => $this->recorder->isRecording('solo') ? $this->recorder->cancel() : null);
         $this->objectManager->on('teleportEnd', fn() => $this->recordActTime());
         $this->objectManager->on('levelComplete', fn() => $this->objectManager->hasCheats() ? null : $this->ghost->finish(
             $this->levelManager->getCurrentLevel()->getLevel(), $this->objectManager->getLevelTime()));
@@ -511,6 +525,101 @@ class Game extends EventEmitter
         $this->versus->chatDraft = $draft;
     }
 
+    /**
+     * The replay, each frame of play: an act alone (not the demo, not with cheats), or the match (from its first
+     * frame to its results).
+     */
+    private function recordReplay(float $deltaTime): void
+    {
+        $level = $this->scene->getCurrentLevel();
+        if ($level !== null && $level->tileRecorder === null) {
+            $level->tileRecorder = fn(int $x, int $y, int $value) => $this->recorder->tile($x, $y, $value);
+        }
+        if ($this->demo) return;
+        if ($this->versus !== null) {
+            if ($this->versusRecorded || !$this->versus->hasBegun()) return;
+            $kind = $this->versusConfig !== null ? 'online' : 'versus';
+            if (!$this->recorder->isRecording($kind)) {
+                $this->recorder->begin($kind, $this->levelManager->getCurrentLevel()->getLevel(), $this->versus->mode,
+                    $this->versus->replayEntities(), $this->versus->replayFollow(), $this->versus->matchId());
+            }
+            $this->recorder->sample($deltaTime, $this->versus->replayStates());
+            if ($this->versus->isOver()) {
+                $this->versusRecorded = true;
+                $this->sendReplay($this->recorder->finish($this->versus->replayResult()));
+            }
+            return;
+        }
+        if ($this->objectManager->hasCheats() || $this->objectManager->isLevelComplete()) return;
+        $number = $this->levelManager->getCurrentLevel()->getLevel();
+        if (!$this->recorder->isRecording('solo', $number)) {
+            $this->recorder->begin('solo', $number, 'solo', [[$this->options->getOnlineName() ?: 'SONIC', $this->player->getSheet(), [80, 140, 255]]], 0);
+        }
+        $this->recorder->sample($deltaTime, [$this->objectManager->isPlayerDead() ? null
+            : [$this->player->getX(), $this->player->getY(), $this->player->getDrawnFrame()]]);
+    }
+
+    /** An act completed alone: its replay, with the time. */
+    private function finishSoloReplay(): void
+    {
+        if ($this->demo || $this->versus !== null || !$this->recorder->isRecording('solo')) return;
+        $time = $this->objectManager->getLevelTime();
+        $this->sendReplay($this->recorder->finish([[$this->options->getOnlineName() ?: 'SONIC',
+            sprintf('%d:%05.2f', (int)($time / 60), fmod($time, 60))]]));
+    }
+
+    /** The page sends it to the site (if the player came from his account there). */
+    private function sendReplay(?string $file): void
+    {
+        if ($file !== null) Bridge::send(['t' => 'replay', 'file' => $file]);
+    }
+
+    /** "Revoir" on the site: the level of the replay, the Sonics where they were (nothing is played). */
+    private function startReplay(ReplayPlayer $replay): void
+    {
+        $this->replay = $replay;
+        $this->objectManager->resetGame();
+        $this->objectManager->setCheats(['lives' => true]);
+        $this->objectManager->noEnemies = true;
+        $level = $replay->level();
+        if ($level !== $this->levelManager->getCurrentLevel()->getLevel()) {
+            $this->levelManager->goToLevel($level);
+        } else {
+            $this->levelReload($level);
+        }
+        $this->player->resetForStart();
+        Versus::loadTextures($this->sdl);
+        $this->replayDummy ??= new Player($this->sdl);
+        $this->replayDummy->setXY(-4096, -4096);
+        $this->scene->replayView = true;
+        $this->scene->worldOverlay = fn(float $x, float $y) => $this->replay?->drawWorld($this->sdl, $x, $y);
+        $this->playLevelMusic(true);
+    }
+
+    private function updateReplay(float $deltaTime): void
+    {
+        $level = $this->scene->getCurrentLevel();
+        $this->replay->update($deltaTime, $level, $this->player);
+        // the platforms move, the rings turn... nobody touches them
+        $this->objectManager->update($this->replay->paused ? 0.0 : $deltaTime, $this->replayDummy, $level);
+        if ($this->replay->isFinished()) $this->endReplay();
+    }
+
+    private function endReplay(): void
+    {
+        $this->replay = null;
+        $this->scene->replayView = false;
+        $this->scene->worldOverlay = null;
+        $this->objectManager->noEnemies = false;
+        // opened from the site: back to it
+        if (Bridge::available() && defined('SONIC_RETURN') && constant('SONIC_RETURN') === true) {
+            Bridge::send(['t' => 'back']);
+            return;
+        }
+        $this->backToTitle();
+        $this->screens->showTitle();
+    }
+
     /** Statistics: a jump, an enemy / monitor destroyed, a spring (the sounds of Sonic only, not the demo's). */
     private function countSfx(int $index): void
     {
@@ -559,6 +668,7 @@ class Game extends EventEmitter
             $this->levelReload($level);
         }
         $this->player->resetForStart();
+        $this->versusRecorded = false;
         $this->versus = new Versus($this->sdl, $this->collisionSystem, $this->objectManager, $this->scene->getCamera(),
             $this->player, $net['mode'] ?? $this->options->getVersusMode(),
             $net['players'] ?? ($this->options->getVersusMode() === 'flag' ? 2 * $this->options->getVersusTeamSize() : $this->options->getVersusPlayers()),
@@ -572,6 +682,8 @@ class Game extends EventEmitter
 
     private function clearVersus(): void
     {
+        // a match left before its end: no replay
+        if (!$this->versusRecorded && ($this->recorder->isRecording('versus') || $this->recorder->isRecording('online'))) $this->recorder->cancel();
         $this->versus?->close();
         $this->versus = null;
         $this->player->setSheet('sonic');
@@ -821,7 +933,11 @@ class Game extends EventEmitter
         $this->levelManager->loadLevels();
         $this->registerEvents();
         $this->registerLevelEvents();
-        if ($this->siteRoom !== null) {
+        $replay = defined('SONIC_REPLAY') && constant('SONIC_REPLAY') !== '' ? ReplayPlayer::load((string)constant('SONIC_REPLAY')) : null;
+        if ($replay !== null) {
+            // "Revoir" on the site: the replay, straight away
+            $this->startReplay($replay);
+        } elseif ($this->siteRoom !== null) {
             // opened from a room of the site: straight into it
             $this->connectOnline($this->siteRoom);
             $this->screens->showTitle('online');
@@ -949,6 +1065,10 @@ class Game extends EventEmitter
 				if ($this->versus && !$this->screens->isActive()) {
 					$this->versus->drawOverlay($this->text, $dst, $scale, $height);
 				}
+				if ($this->replay && !$this->screens->isActive()) {
+					$camera = $this->scene->getCamera();
+					$this->replay->drawOverlay($this->sdl, $this->text, $dst, $scale, $height, $camera->getX(), $camera->getY());
+				}
 				if ($this->options->isCrtEnabled()) {
 					$this->crt ??= new CrtFilter($this->sdl->getRenderer());
 					$this->crt->draw($dst, $this->sdl->getWindow()->getHeight());
@@ -1016,7 +1136,9 @@ class Game extends EventEmitter
 				return;
 			}
 
-			if ($this->scene->getCurrentLevel() && $this->carryPlayer) {
+			if ($this->replay !== null && $this->scene->getCurrentLevel()) {
+                $this->updateReplay($deltaTime);
+			} elseif ($this->scene->getCurrentLevel() && $this->carryPlayer) {
                 // debug (keypad 5): Sonic is carried at the centre of the free camera, no physics
                 $camera = $this->scene->getCamera();
                 $this->player->setXY(
@@ -1060,6 +1182,7 @@ class Game extends EventEmitter
                 }
 
                 $this->countPlay($deltaTime);
+                $this->recordReplay($deltaTime);
 
                 // speed shoes: the song plays faster while they last (the driver's tickDivider1 + 1)
                 $this->soundManager->setFast($this->objectManager->hasSpeedShoes() && !$this->objectManager->isPlayerDead());
@@ -1146,6 +1269,14 @@ class Game extends EventEmitter
 
     private function eventKeyPressed(InputKeyboard $keyboard, ?int $keyPressed)
     {
+        if ($this->replay !== null && !$this->screens->isActive()) {
+            // a replay: left / right another Sonic, space (or enter) pause, escape leaves
+            if ($keyboard->isKeyPressed(\SDLK_LEFT)) $this->replay->next(-1);
+            if ($keyboard->isKeyPressed(\SDLK_RIGHT)) $this->replay->next(1);
+            if ($keyboard->isKeyPressed(\SDLK_SPACE) || $keyboard->isKeyPressed(\SDLK_RETURN)) $this->replay->paused = !$this->replay->paused;
+            if ($keyboard->isKeyPressed(\SDLK_ESCAPE)) $this->endReplay();
+            return;
+        }
         if ($this->demo && ($keyboard->isKeyPressed(\SDLK_SPACE) || $keyboard->isKeyPressed(\SDLK_RETURN))) {
             $this->endDemo();
             return;

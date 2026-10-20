@@ -1025,6 +1025,12 @@ class Screens extends EventEmitter
             // the lines between the logo and the copyright line of the picture (5: a little tighter)
             $items = $this->menuItems();
             $step = count($items) > 4 ? 9 : 10;
+            if (count($items) > 4) {
+                // 5 lines reach the copyright line of the picture (rows 168-174): moved down to the bottom,
+                // its place covered with the black rows under it
+                $this->blit('title', 0, 168, 256, 7, 0, 181);
+                $this->blit('title', 0, 176, 256, 7, 0, 168);
+            }
             foreach ($items as $i => [$label]) {
                 $this->menuLine($label, $i === $this->menuIndex, self::MENU_Y - (count($items) > 4 ? 5 : 0) + $step * $i);
             }

@@ -77,7 +77,7 @@ trait VersusNetwork
             $slots[$order[$k]] = ['peer' => $peer, 'name' => $online->names[$peer] ?? 'J' . ($peer + 1)];
         }
         return ['mode' => $mode, 'level' => $level, 'difficulty' => $difficulty, 'players' => $total, 'slots' => $slots,
-            'swap' => mt_rand(0, 1) === 1];
+            'swap' => mt_rand(0, 1) === 1, 'id' => bin2hex(random_bytes(6))];
     }
 
     public function isOnline(): bool

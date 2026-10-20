@@ -790,6 +790,12 @@ class Player extends Entity
         return \SonicGame\Entities\Objects\RomSprites::SHEET;
     }
 
+    /** The sheet of his colour ('sonic', 'sonic-red'...). */
+    public function getSheet(): string
+    {
+        return $this->tilesetName;
+    }
+
     /** Online match: the sheet of his colour ('sonic', 'sonic-red'... loaded by Versus::loadTextures). */
     public function setSheet(string $sheet): void
     {
