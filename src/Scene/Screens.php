@@ -4,6 +4,7 @@ namespace SonicGame\Scene;
 
 use Evenement\EventEmitter;
 use SonicGame\Multiplayer\BotBrain;
+use SonicGame\Multiplayer\Online;
 use SonicGame\Multiplayer\Versus;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Renderer\TextRenderer;
@@ -189,7 +190,8 @@ class Screens extends EventEmitter
                 $act = fn(string $action) => fn() => $this->emit('online', [$action]);
                 if ($online === null || $online->status === 'error' || $online->status === 'closed') {
                     return [
-                        ['CREER UN SALON', null, $act('create'), null],
+                        ['SALON PUBLIC', null, $act('public'), null],
+                        ['SALON PRIVE', null, $act('create'), null],
                         ['REJOINDRE', null, $act('join'), null],
                         ['NOM', $options->getOnlineName() ?: '?', $act('name'), null],
                         ['RETOUR', null, function () use ($act) {
@@ -198,10 +200,9 @@ class Screens extends EventEmitter
                         }, null],
                     ];
                 }
-                if ($online->status === 'lobby' && $online->isHost()) {
-                    return [['LANCER', null, $act('start'), null], ['QUITTER', null, $act('leave'), null]];
-                }
-                return [['QUITTER', null, $act('leave'), null]];
+                $items = [['PARLER', null, $act('chat'), null], ['QUITTER', null, $act('leave'), null]];
+                if ($online->status === 'lobby' && $online->isHost()) array_unshift($items, ['LANCER', null, $act('start'), null]);
+                return $items;
             case 'jukebox':
                 $songs = array_keys(self::SONGS);
                 $play = function () use ($songs) {
@@ -364,11 +365,12 @@ class Screens extends EventEmitter
     }
 
     /** The title screen, on the main menu (or another page of it: 'multi' after a multiplayer match). */
-    public function showTitle(string $page = 'menu'): void
+    /** The title menu, on its page $page, the cursor on entry $index. */
+    public function showTitle(string $page = 'menu', int $index = 0): void
     {
         $this->sound?->playMusic('title', false, true);
         $this->titlePage = $page;
-        $this->menuIndex = 0;
+        $this->menuIndex = $index;
         $this->titleIdle = 0;
         $this->eraseState = '';
         $this->start('title');
@@ -392,7 +394,8 @@ class Screens extends EventEmitter
 
     /**
      * 'name' (a best time: event nameDone), 'code' (the room to join: event codeDone, '' when cancelled) or
-     * 'player' (the name shown online: event playerDone, '' when cancelled).
+     * 'player' (the name shown online: event playerDone, '' when cancelled), 'chat' (a line for the room's chat:
+     * event chatDone, '' when cancelled).
      */
     private string $entryPurpose = 'name';
     /** Online: Game's session, for the page EN LIGNE. */
@@ -418,9 +421,16 @@ class Screens extends EventEmitter
         $this->entryName = $name;
     }
 
+    /** A line for the chat of the room (EN LIGNE > PARLER). */
+    public function showChatEntry(): void
+    {
+        $this->showNameEntry('', 0, '');
+        $this->entryPurpose = 'chat';
+    }
+
     private function entryLength(): int
     {
-        return $this->entryPurpose === 'code' ? 4 : self::NAME_LENGTH;
+        return match ($this->entryPurpose) { 'code' => 4, 'chat' => Online::CHAT_LENGTH, default => self::NAME_LENGTH };
     }
 
     /** A time of the act entered the top 5: the name is typed on the on-screen keyboard. */
@@ -464,10 +474,13 @@ class Screens extends EventEmitter
                 $this->sound?->playSfx(SoundManager::SFX_SWITCH);
                 return;
             case 'back':
-                $this->typeName('back');
+            case 'ok':
+                $this->typeName($key);
                 return;
             default:
+                // the real keyboard: the cursor goes to ESPACE, so that the space bar (also the button) types a space
                 $this->typeName(strtoupper($key));
+                [$this->entryRow, $this->entryCol] = [count(self::KEYBOARD), self::KEYBOARD_KEYS[0][2]];
         }
     }
 
@@ -1033,33 +1046,59 @@ class Screens extends EventEmitter
         $options = $this->options;
         $settings = Versus::MODES[$options->getVersusMode()] . '  ' . Versus::levelName($options->getVersusLevel());
         if ($online === null) {
-            $centre('JOUE CONTRE TES AMIS', 120, $grey);
-            $centre('CREE UN SALON ET DONNE SON CODE', 133, $grey);
-            $centre($settings, 152, [self::MENU_TOP, self::MENU_BOTTOM]);
-            $centre('REGLAGES DANS MULTIJOUEUR', 165, $grey);
+            $centre('PUBLIC  AVEC D AUTRES JOUEURS', 140, $grey);
+            $centre('PRIVE  UN CODE POUR TES AMIS', 152, $grey);
+            $centre($settings, 168, [self::MENU_TOP, self::MENU_BOTTOM]);
+            $centre('REGLAGES DANS MULTIJOUEUR', 180, $grey);
             return;
         }
         if ($online->status === 'error' || $online->status === 'closed') {
-            $centre($online->error ?: 'DECONNECTE', 124, [[255, 170, 170], [200, 60, 60]]);
+            $centre($online->error ?: 'DECONNECTE', 150, [[255, 170, 170], [200, 60, 60]]);
             return;
         }
         if ($online->status === 'connecting' || $online->room === null) {
-            $centre('CONNEXION' . str_repeat('.', intdiv($this->frames, 20) % 4), 110, $grey);
+            $centre('CONNEXION' . str_repeat('.', intdiv($this->frames, 20) % 4), 150, $grey);
             return;
         }
-        $centre('SALON ' . $online->room, 86, [[255, 255, 255], [85, 170, 255]]);
+        $centre(($online->public ? 'SALON PUBLIC ' : 'SALON ') . $online->room, 84, [[255, 255, 255], [85, 170, 255]]);
         // the host's match (a player who joined may have other settings)
-        $centre($online->isHost() ? $settings : $online->info, 100, [self::MENU_TOP, self::MENU_BOTTOM]);
-        $y = 116;
+        $centre($online->isHost() ? $settings : $online->info, 96, [self::MENU_TOP, self::MENU_BOTTOM]);
         foreach ($online->peers() as $i => $peer) {
             // me in yellow
             $label = $online->names[$peer] . ($peer === $online->host ? ' HOTE' : '');
-            $this->styled($label, $i % 2 ? 136 : 16, $y + intdiv($i, 2) * 12, $size, $peer === $online->me
+            $this->styled($label, $i % 2 ? 136 : 16, 110 + intdiv($i, 2) * 10, $size, $peer === $online->me
                 ? [[255, 255, 170], [255, 200, 0]] : [[255, 255, 255], [170, 170, 170]]);
+        }
+        foreach ($this->chatLines($online, 3, 236, $size) as $i => [$line, $colours]) {
+            $this->styled($line, 10, 144 + 10 * $i, $size, $colours);
         }
         $status = $online->isHost() ? 'LANCE QUAND TOUT LE MONDE EST LA' : 'EN ATTENTE DE L HOTE';
         if ($online->pingMs !== null) $status .= '  ' . (int)round($online->pingMs) . ' MS';
-        $centre($status, 158, $grey);
+        $centre($status, 180, $grey);
+    }
+
+    /**
+     * The last $count lines of the room's chat, cut between the words to fit $width SMS pixels:
+     * [text, colours] (the game's lines in grey, mine in yellow).
+     */
+    private function chatLines(Online $online, int $count, int $width, int $size): array
+    {
+        $lines = [];
+        foreach ($online->chat as [$peer, $name, $text]) {
+            $colours = $peer < 0 ? [[170, 170, 170], [110, 110, 110]]
+                : ($peer === $online->me ? [[255, 255, 170], [255, 200, 0]] : [[255, 255, 255], [170, 200, 255]]);
+            $line = '';
+            foreach (explode(' ', $peer < 0 ? $text : $name . ': ' . $text) as $word) {
+                $next = $line === '' ? $word : $line . ' ' . $word;
+                if ($line !== '' && $this->text->styledWidth($next, $size, $this->scale) / $this->scale > $width) {
+                    $lines[] = [$line, $colours];
+                    $next = '  ' . $word;
+                }
+                $line = $next;
+            }
+            $lines[] = [$line, $colours];
+        }
+        return array_slice($lines, -$count);
     }
 
     /** Options, cheats and high scores: a page of its own, its title on top, the entries below. */
@@ -1080,6 +1119,9 @@ class Screens extends EventEmitter
         }
         $size = 8 * $scale;
         $step = count($items) > 6 ? 14 : (count($items) === 6 ? 18 : 20);
+        // in a room: the entries close together, the room and its chat below
+        $inRoom = $this->titlePage === 'online' && in_array(($this->onlineView ? ($this->onlineView)() : null)?->status, ['lobby', 'match'], true);
+        if ($inRoom) $step = 14;
         foreach ($items as $i => [$label, $value]) {
             $y = 40 + $step * $i;
             $selected = $i === $this->menuIndex;
@@ -1130,6 +1172,9 @@ class Screens extends EventEmitter
         } elseif ($this->entryPurpose === 'player') {
             $centre('TON NOM', 8, 12, $blue);
             $centre('VU PAR LES AUTRES JOUEURS', 32, 8, [self::MENU_TOP, self::MENU_BOTTOM]);
+        } elseif ($this->entryPurpose === 'chat') {
+            $centre('MESSAGE', 8, 12, $blue);
+            $centre('ENTREE ENVOIE  ECHAP ANNULE', 32, 8, [self::MENU_TOP, self::MENU_BOTTOM]);
         } else {
             $centre('NOUVEAU RECORD !', 8, 12, ($this->frames % 30) < 20 ? $blue : [[255, 255, 85], [255, 170, 0]]);
             $centre($this->entryAct . '   ' . ($this->entryRank === 1 ? '1ER' : $this->entryRank . 'E') . '   ' . $this->entryTime,
@@ -1137,10 +1182,22 @@ class Screens extends EventEmitter
         }
         // the name, with a blinking cursor, in a fixed-width line
         $cursor = strlen($this->entryName) < $length && ($this->frames % 30) < 15 ? '_' : ' ';
-        $shown = str_pad($this->entryName . $cursor, $length, ' ');
-        $width = $this->text->styledWidth(str_repeat('W', $length), 12 * $scale, $scale);
-        $this->box(64, 52, 128, 24, [0, 0, 85]);
-        $this->styled($shown, (256 * $scale - $width) / 2 / $scale, 57, 12 * $scale, $blue, false);
+        if ($this->entryPurpose === 'chat') {
+            // a chat line: small, on the whole width; the last lines of the room under the keyboard
+            $this->box(8, 52, 240, 24, [0, 0, 85]);
+            $this->styled($this->entryName . $cursor, 14, 60, 8 * $scale, $blue, false);
+            $online = $this->onlineView ? ($this->onlineView)() : null;
+            if ($online !== null) {
+                foreach ($this->chatLines($online, 2, 236, 8 * $scale) as $i => [$line, $colours]) {
+                    $this->styled($line, 10, 172 + 10 * $i, 8 * $scale, $colours);
+                }
+            }
+        } else {
+            $shown = str_pad($this->entryName . $cursor, $length, ' ');
+            $width = $this->text->styledWidth(str_repeat('W', $length), 12 * $scale, $scale);
+            $this->box(64, 52, 128, 24, [0, 0, 85]);
+            $this->styled($shown, (256 * $scale - $width) / 2 / $scale, 57, 12 * $scale, $blue, false);
+        }
 
         // keyboard: the key under the cursor on a blue background
         $size = 8 * $scale;

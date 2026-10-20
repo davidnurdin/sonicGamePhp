@@ -241,6 +241,13 @@ class GameObjectManager extends EventEmitter
                 $this->objects[] = $obj;
             }
         }
+        // multiplayer: a respawn doesn't bring back the monitors and badniks gone; a new match does
+        if (!$keepCheckpoint || !$this->keepTilemap) $this->goneObjects = [];
+        foreach (array_keys($this->goneObjects) as $id) {
+            $obj = $this->objects[$id] ?? null;
+            if ($obj instanceof Monitor) $obj->breakMonitor();
+            if ($obj instanceof Badnik) $obj->destroy();
+        }
     }
 
     /** Sprite of a platform in its ROM routine, which depends on the level solidity (tools/romsprites.py). */
@@ -1295,6 +1302,49 @@ class GameObjectManager extends EventEmitter
 
     /** Multiplayer: the map is not loaded again when Sonic dies (the rings taken stay taken). */
     public bool $keepTilemap = false;
+    /** Online match: told of every monitor broken / badnik destroyed by Sonic, fn(int $id) (removeObject). */
+    public ?\Closure $objectListener = null;
+    /** Multiplayer: ids of the monitors and badniks gone, still gone after a respawn (like the rings). */
+    private array $goneObjects = [];
+
+    /** A monitor or a badnik gone here: kept gone, and told to the online match. */
+    private function objectGone(GameObject $obj): void
+    {
+        $id = array_search($obj, $this->objects, true);
+        if ($id === false) return;
+        $this->goneObjects[$id] = true;
+        if ($this->objectListener !== null) ($this->objectListener)($id);
+    }
+
+    /** Online: a monitor broken / a badnik destroyed on another machine (nothing given here). */
+    public function removeObject(int $id): void
+    {
+        $obj = $this->objects[$id] ?? null;
+        if (!($obj instanceof Monitor || $obj instanceof Badnik) || !$obj->isActive()) return;
+        $this->goneObjects[$id] = true;
+        $obj instanceof Monitor ? $obj->breakMonitor() : $obj->destroy();
+        $box = $obj->getBoundingBox();
+        $this->transient[] = new Effect($this->sdl, $box['x'] + $box['width'] / 2, $box['y'] + $box['height'] / 2, Effect::PUFF, 0.1);
+        if ($this->isShootingObject($obj)) $this->sfx(SoundManager::SFX_EXPLOSION);
+    }
+
+    /**
+     * Online: a bridge block changed on another machine ($88 whole, $89 / $8A one half, 0): the halves gone
+     * fall here too.
+     */
+    public function collapseBridge(int $bx, int $by, int $value): void
+    {
+        $halves = fn(int $block) => match ($block) { 0x88 => [0, 16], 0x89 => [16], 0x8A => [0], default => [] };
+        $level = $this->level;
+        $block = $level?->getTile($bx, $by);
+        if ($block === null || $block < 0x88 || $block > 0x8A) return;
+        foreach (array_diff($halves($block), $halves($value)) as $offset) {
+            $piece = new BridgePiece($this->sdl, $bx * 32 + $offset, $by * 32);
+            $piece->setLevel($level);
+            $this->objects[] = $piece;
+        }
+        $level->setTile($bx, $by, $value);
+    }
 
     private function addRings(int $count): void
     {
@@ -1323,6 +1373,7 @@ class GameObjectManager extends EventEmitter
 
         if ($attacking) {
             $item = $monitor->breakMonitor();
+            $this->objectGone($monitor);
             $this->sfx(SoundManager::SFX_EXPLOSION);
             $this->transient[] = new Effect($this->sdl, $monitor->getPosX() + 11, $monitor->getPosY() + 12, Effect::PUFF, 0.08);
             $this->applyItem($item, $player, $monitor);
@@ -1386,6 +1437,7 @@ class GameObjectManager extends EventEmitter
     private function destroyBadnik(Badnik $badnik, Player $player): void
     {
         $badnik->destroy();
+        $this->objectGone($badnik);
         $this->sfx(SoundManager::SFX_EXPLOSION);
         $this->score += 100;
         $box = $badnik->getBoundingBox();

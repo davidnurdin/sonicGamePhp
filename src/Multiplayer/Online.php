@@ -23,6 +23,17 @@ final class Online
     public const SNAPSHOT = 4;   // binary: host -> everybody, the state of the match
     public const STATE = 5;      // binary: player -> host, his Sonic
     public const EVENT = 6;      // json: reliable match events, both ways
+    public const CHAT = 7;       // text: a line of the room's chat
+
+    /**
+     * Version of the messages of a match: in the meta of the rooms, a player with another version of the game
+     * (an old page in the cache) can't join, and the public rooms only bring together the same versions.
+     */
+    public const VERSION = 2;
+    private const META = ['game' => 'sonic', 'v' => self::VERSION];
+    /** Chat: characters of a line (the game's font, the on-screen keyboard) and lines kept. */
+    public const CHAT_LENGTH = 30;
+    private const CHAT_LINES = 20;
 
     /** Default relay server (the page defines SONIC_NET_URL; native: env SONIC_NET_URL). */
     public const DEFAULT_URL = 'ws://localhost:8090/ws';
@@ -43,6 +54,11 @@ final class Online
     public ?float $pingMs = null;
     /** The match the host will start ("DRAPEAU  GREEN HILL 1"): set by Game for the host, sent in the roster. */
     public string $info = '';
+    /** A public room (strangers come in through SALON PUBLIC). */
+    public bool $public = false;
+    /** @var array<int, array{0: int, 1: string, 2: string}> chat lines [peer (-1: the game), name, text], oldest first */
+    public array $chat = [];
+    private float $lastChat = 0;
     /** START received (clients) or sent (host): Game launches the match with it. */
     public ?array $start = null;
     /** Match messages for VersusNetwork: [type, from, payload], or ['leave', peer] / ['host', peer]. */
@@ -54,12 +70,14 @@ final class Online
 
     /**
      * @param string|null $join code of the room to join (null: create one)
+     * @param bool $quick a public room with strangers (the server finds one with a free place, or makes one)
      */
     public function __construct(
         public readonly string $url,
         public readonly string $transport,
         private string $name,
         private ?string $join = null,
+        private bool $quick = false,
     ) {
         $this->since = microtime(true);
         $this->net = Network::connect($url, ['transport' => $transport]);
@@ -94,7 +112,11 @@ final class Online
         foreach ($this->net->poll() as $event) {
             switch ($event->type) {
                 case Event::OPEN:
-                    $this->join !== null ? $this->net->joinRoom($this->join) : $this->net->createRoom(self::MAX_HUMANS, ['game' => 'sonic']);
+                    match (true) {
+                        $this->quick => $this->net->quickJoin(self::MAX_HUMANS, self::META),
+                        $this->join !== null => $this->net->joinRoom($this->join),
+                        default => $this->net->createRoom(self::MAX_HUMANS, self::META),
+                    };
                     break;
                 case Event::ROOM:
                     $info = $event->info();
@@ -102,6 +124,13 @@ final class Online
                         $this->fail('CE SALON N EST PAS UNE PARTIE DE SONIC');
                         break;
                     }
+                    if (($info['meta']['v'] ?? 0) !== self::VERSION) {
+                        $this->net->leaveRoom();
+                        $this->fail('AUTRE VERSION  RECHARGE LA PAGE');
+                        break;
+                    }
+                    $this->public = !empty($info['public']);
+                    if ($this->public) $this->say(-1, '', 'SALON PUBLIC  DIS BONJOUR !');
                     $this->room = $info['room'];
                     $this->me = (int)$info['peer'];
                     $this->host = (int)$info['host'];
@@ -114,6 +143,7 @@ final class Online
                     $this->names[$event->from] ??= 'J' . ($event->from + 1);
                     break;
                 case Event::PEER_LEAVE:
+                    if (isset($this->names[$event->from])) $this->say(-1, '', $this->names[$event->from] . ' EST PARTI');
                     unset($this->names[$event->from], $this->links[$event->from]);
                     if ($this->status === 'match') $this->inbox[] = ['leave', $event->from];
                     if ($this->isHost()) $this->sendRoster();
@@ -166,6 +196,7 @@ final class Online
             case self::HELLO:
                 $json = json_decode($payload, true);
                 $this->names[$from] = self::cleanName((string)($json['name'] ?? ''), $from);
+                $this->say(-1, '', $this->names[$from] . ' EST ARRIVE');
                 if ($this->isHost()) $this->sendRoster();
                 break;
             case self::ROSTER:
@@ -175,6 +206,10 @@ final class Online
                 foreach (($json['names'] ?? []) as $peer => $name) $names[(int)$peer] = self::cleanName((string)$name, (int)$peer);
                 if ($names) $this->names = $names;
                 $this->info = (string)($json['info'] ?? '');
+                break;
+            case self::CHAT:
+                $text = self::cleanChat($payload);
+                if ($text !== '' && isset($this->names[$from])) $this->say($from, $this->names[$from], $text);
                 break;
             case self::START:
                 if ($from !== $this->host) break;
@@ -198,6 +233,8 @@ final class Online
         $this->status = 'match';
         $this->inbox = [];
         $this->sendJson(self::START, $config);
+        // a public room: nobody else comes in through SALON PUBLIC during the match
+        if ($this->public) $this->net->lockRoom(true);
     }
 
     /** Back to the room after a match. */
@@ -206,6 +243,30 @@ final class Online
         $this->start = null;
         $this->inbox = [];
         if ($this->status === 'match') $this->status = 'lobby';
+        if ($this->public && $this->isHost()) $this->net->lockRoom(false);
+    }
+
+    /** A line of mine in the chat (one a second at most). */
+    public function sendChat(string $text): void
+    {
+        $text = self::cleanChat($text);
+        if ($text === '' || $this->status === 'error' || $this->status === 'closed' || microtime(true) - $this->lastChat < 1) return;
+        $this->lastChat = microtime(true);
+        $this->say($this->me, $this->name, $text);
+        $this->send(self::CHAT, $text);
+    }
+
+    private function say(int $peer, string $name, string $text): void
+    {
+        $this->chat[] = [$peer, $name, $text];
+        if (count($this->chat) > self::CHAT_LINES) array_shift($this->chat);
+    }
+
+    /** What the game's font and keyboard can show: A-Z 0-9 space . - ! ?, CHAT_LENGTH characters. */
+    public static function cleanChat(string $text): string
+    {
+        $text = preg_replace('/ +/', ' ', preg_replace('/[^A-Z0-9 .!?-]/', '', strtoupper($text)));
+        return trim(substr(trim($text), 0, self::CHAT_LENGTH));
     }
 
     public function sendJson(int $type, array $data, ?int $to = null): void

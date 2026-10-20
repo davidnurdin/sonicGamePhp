@@ -249,6 +249,11 @@ class Game extends EventEmitter
             if (strlen($code) === 4) $this->connectOnline($code);
             $this->screens->showTitle('online');
         });
+        $this->screens->on('chatDone', function (string $text) {
+            $this->online?->sendChat($text);
+            // back on PARLER (the host's first entry is LANCER)
+            $this->screens->showTitle('online', $this->online?->isHost() && $this->online->status === 'lobby' ? 1 : 0);
+        });
         $this->screens->on('playerDone', function (string $name) {
             $then = $this->afterPlayerName;
             $this->afterPlayerName = null;
@@ -359,11 +364,11 @@ class Game extends EventEmitter
      * Multiplayer (title menu > MULTIJOUEUR > LANCER): the act of the menu from its start, Sonic and the computer
      * Sonics of Versus, infinite lives (a death is not a game over), no map, no tally.
      */
-    /** Menu EN LIGNE: 'create', 'join', 'name', 'leave', 'start' (the host). */
+    /** Menu EN LIGNE: 'public', 'create', 'join', 'name', 'chat', 'leave', 'start' (the host). */
     private function onlineAction(string $action): void
     {
         // the others see a name: asked before the first room
-        if (($action === 'create' || $action === 'join') && $this->options->getOnlineName() === '') {
+        if (in_array($action, ['public', 'create', 'join'], true) && $this->options->getOnlineName() === '') {
             $this->afterPlayerName = $action;
             $this->screens->showPlayerEntry($this->playerName ?? '');
             return;
@@ -371,6 +376,12 @@ class Game extends EventEmitter
         switch ($action) {
             case 'name':
                 $this->screens->showPlayerEntry($this->options->getOnlineName());
+                break;
+            case 'public':
+                $this->connectOnline(null, true);
+                break;
+            case 'chat':
+                if ($this->online !== null) $this->screens->showChatEntry();
                 break;
             case 'create':
                 $this->connectOnline(null);
@@ -392,12 +403,12 @@ class Game extends EventEmitter
         }
     }
 
-    private function connectOnline(?string $code): void
+    private function connectOnline(?string $code, bool $public = false): void
     {
         $this->leaveOnline();
         // browser: WebRTC between the players, the server relays for those it can't link (php-wasm-network)
         $transport = Online::isBrowser() ? 'webrtc' : 'ws';
-        $this->online = new Online(Online::serverUrl(), $transport, $this->options->getOnlineName(), $code);
+        $this->online = new Online(Online::serverUrl(), $transport, $this->options->getOnlineName(), $code, $public);
         $this->online->info = Versus::MODES[$this->options->getVersusMode()] . '  ' . Versus::levelName($this->options->getVersusLevel());
     }
 
@@ -1013,18 +1024,20 @@ class Game extends EventEmitter
             return;
         }
         if ($this->screens->isActive()) {
-            if ($keyboard->isKeyPressed(\SDLK_SPACE) || $keyboard->isKeyPressed(\SDLK_RETURN)) {
-                $this->buttonPressed = true;
-            }
             // title menu (start / options), or the on-screen keyboard of a new best time
             $naming = $this->screens->isNameEntry();
+            // Enter: OK on the keyboard (Space types the key under the cursor)
+            if ($keyboard->isKeyPressed(\SDLK_SPACE) || (!$naming && $keyboard->isKeyPressed(\SDLK_RETURN))) {
+                $this->buttonPressed = true;
+            }
+            if ($naming && $keyboard->isKeyPressed(\SDLK_RETURN)) $this->screens->nameKey('ok');
             foreach ([\SDLK_UP => 'up', \SDLK_DOWN => 'down', \SDLK_LEFT => 'left', \SDLK_RIGHT => 'right'] as $key => $direction) {
                 if (!$keyboard->isKeyPressed($key)) continue;
                 $naming ? $this->screens->nameKey($direction) : $this->screens->menuInput($direction);
             }
             if ($naming) {
                 // the real keyboard also types: A-Z, 0-9, backspace
-                foreach (array_merge(range(ord('a'), ord('z')), range(ord('0'), ord('9'))) as $code) {
+                foreach (array_merge(range(ord('a'), ord('z')), range(ord('0'), ord('9')), [ord('.'), ord('-')]) as $code) {
                     if ($keyboard->isKeyPressed($code)) $this->screens->nameKey(chr($code));
                 }
                 if ($keyboard->isKeyPressed(\SDLK_BACKSPACE)) $this->screens->nameKey('back');

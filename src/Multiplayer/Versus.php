@@ -1092,18 +1092,21 @@ class Versus extends EventEmitter
         }
         foreach ($this->rivals as $rival) {
             if ($rival->human || !$rival->isVisible()) continue;
-            [$sx, $sy, $sw, $sh, $flip] = $rival->puppet && $rival->netFrame ? $rival->netFrame : $rival->player->getFrameSnapshot();
+            [$sx, $sy, $sw, $sh, $flip, $rom] = $rival->puppet && $rival->netFrame ? $rival->netFrame : $rival->player->getDrawnFrame();
             $src = new \SDL_Rect;
             [$src->x, $src->y, $src->w, $src->h] = [$sx, $sy, $sw, $sh];
             $dst = new \SDL_Rect;
             [$dst->x, $dst->y, $dst->w, $dst->h] = [(int)round($rival->player->getX() - 4 - $cameraX), (int)round($rival->player->getY() - $cameraY), 32, 32];
+            // a frame of the ROM art (spring, slide, waiting): 24px wide at the engine position, like Scene::drawPlayer
+            $texture = $rom ? RomSprites::SHEET : $rival->texture;
+            if ($rom) [$dst->x, $dst->w] = [$dst->x + 4, 24];
             if ($rival->shield && (int)floor(fmod(microtime(true), 86400.0) * 60) % 2 === 0) {
                 // online: a shield, like Scene::drawPlayer (every other frame the ring instead of the Sonic)
                 [$src->x, $src->y, $src->w, $src->h] = RomSprites::SHIELD;
-                [$dst->x, $dst->w] = [$dst->x + 4, 24];
+                [$dst->x, $dst->w] = [(int)round($rival->player->getX() - $cameraX), 24];
                 \SDL_RenderCopy($renderer, $this->sdl->getTextures(RomSprites::SHEET)[0]['texture'], $src, $dst);
             } else {
-                \SDL_RenderCopyEx($renderer, $this->sdl->getTextures($rival->texture)[0]['texture'], $src, $dst, 0, null,
+                \SDL_RenderCopyEx($renderer, $this->sdl->getTextures($texture)[0]['texture'], $src, $dst, 0, null,
                     $flip ? \SDL_FLIP_HORIZONTAL : \SDL_FLIP_NONE);
             }
             if ($rival->invincible) {

@@ -2,6 +2,7 @@
 
 namespace SonicGame\Entities;
 
+use SonicGame\Entities\Objects\RomSprites;
 use SonicGame\Entities\Physics\Colision;
 use SonicGame\Entities\Physics\Gravity;
 use SonicGame\Renderer\Sdl;
@@ -531,6 +532,22 @@ class Player extends Entity
 		if ($frames < 16) return 0x16;
 		if ($frames < 34) return 0x15;
 		return (intdiv($frames - 34, 16) % 2) ? 0x17 : 0x16;
+	}
+
+	/**
+	 * The frame drawn, as Scene::drawPlayer chooses it: [x, y, w, h, flip, rom] (rom 1: a frame of the ROM art,
+	 * RomSprites::SHEET, 24px wide at the engine position; 0: of his sheet, 32px wide 4px to the left).
+	 * Multiplayer: the other Sonics (Versus::drawWorld, VersusNetwork).
+	 */
+	public function getDrawnFrame(): array
+	{
+		$flip = $this->getFacing() === 'left' ? 1 : 0;
+		$slide = $this->getSlideFrame();
+		if ($slide !== null) return [...RomSprites::SONIC_SLIDE[$slide], $flip, 1];
+		if ($this->getSpringFrame() !== null) return [...RomSprites::SONIC_SPRING, $flip, 1];
+		$wait = $this->getWaitFrame();
+		if ($wait !== null) return [...RomSprites::SONIC_WAIT[$wait], $flip, 1];
+		return [...$this->getFrameSnapshot(), 0];
 	}
 
 	/** _5206: a big bubble was taken, Sonic gulps it for $20 frames. */

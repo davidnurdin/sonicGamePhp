@@ -14,8 +14,8 @@ use SonicGame\SoundManager\SoundManager;
  * state 30 times a second (Online::STATE); on the host it is a puppet that the rules see. The host sends
  * the whole match 20 times a second (Online::SNAPSHOT) and, reliably, what a player must apply to his Sonic
  * (Online::EVENT: hurt, bounce, rings won, where to appear) and the end. The other Sonics are drawn
- * DELAY seconds late, between two received positions. The rings taken (blocks of the map) are sent as events
- * and applied everywhere.
+ * DELAY seconds late, between two received positions. The rings taken and the bridges (blocks of the map), the
+ * monitors broken and the badniks destroyed (GameObjectManager ids) are sent as events and applied everywhere.
  */
 trait VersusNetwork
 {
@@ -28,6 +28,8 @@ trait VersusNetwork
     /** Ring blocks changed here, to send: [x, y, value]. */
     private array $tileOutbox = [];
     private bool $applyingTiles = false;
+    /** Monitors broken / badniks destroyed here, to send: their ids (GameObjectManager::removeObject). */
+    private array $objectOutbox = [];
     /** The client lost his host: the match is over for him. */
     private ?string $netLost = null;
 
@@ -104,7 +106,14 @@ trait VersusNetwork
         if ($this->online === null) return;
         $this->me = $this->rivals[$this->mySlot];
         $this->level->tileListener = function (int $x, int $y, int $value) {
-            if (!$this->applyingTiles && GameObjectManager::isRingBlock($value)) $this->tileOutbox[] = [$x, $y, $value];
+            // rings taken, bridges falling apart (the block before the change: $88-$8A)
+            $before = $this->level->getTile($x, $y) ?? 0;
+            if (!$this->applyingTiles && (GameObjectManager::isRingBlock($value) || ($before >= 0x88 && $before <= 0x8A))) {
+                $this->tileOutbox[] = [$x, $y, $value];
+            }
+        };
+        $this->objects->objectListener = function (int $id) {
+            if (!$this->applyingTiles) $this->objectOutbox[] = $id;
         };
         if ($this->isHost()) {
             // every player where the host placed him
@@ -120,6 +129,7 @@ trait VersusNetwork
     public function close(): void
     {
         if ($this->level !== null) $this->level->tileListener = null;
+        $this->objects->objectListener = null;
     }
 
     private function netEvent(array $event, ?int $to = null): void
@@ -184,6 +194,10 @@ trait VersusNetwork
             $this->netEvent(['e' => 'tiles', 't' => $this->tileOutbox]);
             $this->tileOutbox = [];
         }
+        if ($this->objectOutbox) {
+            $this->netEvent(['e' => 'gone', 'o' => $this->objectOutbox]);
+            $this->objectOutbox = [];
+        }
         if ($this->isHost()) {
             $this->snapshotTimer += $deltaTime;
             if ($this->snapshotTimer >= 1 / self::SNAPSHOT_RATE) {
@@ -244,7 +258,7 @@ trait VersusNetwork
             $this->slotOf($this->carrier), $fx, $fy, count($this->rivals));
         foreach ($this->rivals as $rival) {
             $p = $rival->player;
-            $frame = $rival->puppet && $rival->netFrame ? $rival->netFrame : $p->getFrameSnapshot();
+            $frame = $rival->puppet && $rival->netFrame ? $rival->netFrame : $p->getDrawnFrame();
             $dead = $rival->human ? $this->objects->isPlayerDead() : !empty($rival->netInfo['dead']);
             $flags = ($frame[4] ? 1 : 0) | ($rival->invulnerable > 0 || ($rival->human && $this->objects->isPlayerHurt()) ? 2 : 0)
                 | ($rival->isKnockedOut() ? 4 : 0) | ($this->isAttacking($rival) ? 8 : 0)
@@ -252,7 +266,7 @@ trait VersusNetwork
                 | (($rival->human ? $this->objects->hasShield() : $rival->shield) ? 64 : 0)
                 | (($rival->human ? $this->objects->hasInvincibility() : $rival->invincible) ? 128 : 0);
             $data .= pack('ggvvCCCCvvvCg', $p->getX(), $p->getY(), $frame[0], $frame[1], $frame[2], $frame[3], $flags,
-                self::stateCode($p->getState()), min(65535, $rival->rings), $rival->kills, $rival->deaths, $rival->captures,
+                self::stateCode($p->getState(), $frame[5]), min(65535, $rival->rings), $rival->kills, $rival->deaths, $rival->captures,
                 $rival->finishTime ?? -1.0);
         }
         return $data;
@@ -264,10 +278,10 @@ trait VersusNetwork
         $rival = $this->rivalOfPeer($peer);
         if ($rival === null || strlen($data) < 26) return;
         $s = unpack('gx/gy/gvx/gvy/vsx/vsy/Csw/Csh/Cflags/Cstate/vrings', $data);
-        $frame = [$s['sx'], $s['sy'], $s['sw'], $s['sh'], $s['flags'] & 1];
+        $frame = [$s['sx'], $s['sy'], $s['sw'], $s['sh'], $s['flags'] & 1, $s['state'] >> 7];
         $this->remember($rival, $s['x'], $s['y'], $frame);
         $rival->player->setVelocity($s['vx'], $s['vy']);
-        $rival->player->setState(self::STATES[$s['state']] ?? 'idle');
+        $rival->player->setState(self::STATES[$s['state'] & 0x7F] ?? 'idle');
         if ($s['flags'] & 2) $rival->invulnerable = max($rival->invulnerable, 0.2);
         $rival->rings = $s['rings'];
         $rival->netInfo = ['rings' => $s['rings'], 'shield' => (bool)($s['flags'] & 32), 'dead' => (bool)($s['flags'] & 16),
@@ -307,13 +321,13 @@ trait VersusNetwork
     private function encodeState(): string
     {
         $p = $this->human;
-        $frame = $p->getFrameSnapshot();
+        $frame = $p->getDrawnFrame();
         [$vx, $vy] = $p->getVelocity();
         $flags = ($frame[4] ? 1 : 0) | ($this->me->invulnerable > 0 || $this->objects->isPlayerHurt() ? 2 : 0)
             | ($this->isAttacking($this->me) ? 4 : 0) | ($this->objects->isPlayerDead() ? 16 : 0)
             | ($this->objects->hasShield() ? 32 : 0) | ($this->objects->hasInvincibility() ? 64 : 0);
         return pack('ggggvvCCCCv', $p->getX(), $p->getY(), $vx, $vy, $frame[0], $frame[1], $frame[2], $frame[3], $flags,
-            self::stateCode($p->getState()), min(65535, $this->objects->getRingCount()));
+            self::stateCode($p->getState(), $frame[5]), min(65535, $this->objects->getRingCount()));
     }
 
     private function applySnapshot(string $data): void
@@ -347,8 +361,8 @@ trait VersusNetwork
             $rival->finishTime = $r['finish'] >= 0 ? $r['finish'] : null;
             if ($rival === $this->me) continue;   // my Sonic and my rings are mine
             $rival->rings = $r['rings'];
-            $this->remember($rival, $r['x'], $r['y'], [$r['sx'], $r['sy'], $r['sw'], $r['sh'], $r['flags'] & 1]);
-            $rival->player->setState(($r['flags'] & 8) ? 'jump' : (self::STATES[$r['state']] ?? 'idle'));
+            $this->remember($rival, $r['x'], $r['y'], [$r['sx'], $r['sy'], $r['sw'], $r['sh'], $r['flags'] & 1, $r['state'] >> 7]);
+            $rival->player->setState(($r['flags'] & 8) ? 'jump' : (self::STATES[$r['state'] & 0x7F] ?? 'idle'));
             $rival->invulnerable = ($r['flags'] & 2) ? max($rival->invulnerable, 0.2) : 0;
             $rival->koTimer = ($r['flags'] & 4) ? 1.0 : 0;
             $rival->shield = (bool)($r['flags'] & 64);
@@ -395,10 +409,21 @@ trait VersusNetwork
                 $this->applyingTiles = true;
                 foreach ($event['t'] ?? [] as [$x, $y, $value]) {
                     $current = $this->level->getTile((int)$x, (int)$y);
+                    if ($current >= 0x88 && $current <= 0x8A) {
+                        $this->objects->collapseBridge((int)$x, (int)$y, (int)$value);
+                        continue;
+                    }
                     if ($current === null || !GameObjectManager::isRingBlock($current)) continue;
                     $taken = ($current & 3) & ~((int)$value & 3);
                     if ($taken) $this->level->setTile((int)$x, (int)$y, $current & ~$taken);
                 }
+                $this->applyingTiles = false;
+                if ($this->isHost() && !$host) $this->netEvent($event);
+                break;
+            case 'gone':
+                // monitors broken, badniks destroyed somewhere: gone here too; the host passes them on
+                $this->applyingTiles = true;
+                foreach ($event['o'] ?? [] as $id) $this->objects->removeObject((int)$id);
                 $this->applyingTiles = false;
                 if ($this->isHost() && !$host) $this->netEvent($event);
                 break;
@@ -492,9 +517,10 @@ trait VersusNetwork
         return true;
     }
 
-    private static function stateCode(string $state): int
+    /** The state of a Sonic in one byte; bit 7: his frame is one of the ROM art (Player::getDrawnFrame). */
+    private static function stateCode(string $state, int $rom = 0): int
     {
         $code = array_search($state, self::STATES, true);
-        return $code === false ? 0 : $code;
+        return ($code === false ? 0 : $code) | ($rom ? 0x80 : 0);
     }
 }
