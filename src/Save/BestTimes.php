@@ -89,7 +89,7 @@ class BestTimes
     /** "ZONE 2 ACTE 3". */
     public static function place(int $act): string
     {
-        return sprintf('ZONE %d ACTE %d', intdiv($act - 1, 3) + 1, ($act - 1) % 3 + 1);
+        return \SonicGame\Utils\Lang::t('ZONE {zone} ACTE {act}', ['zone' => intdiv($act - 1, 3) + 1, 'act' => ($act - 1) % 3 + 1]);
     }
 
     /** "1:23.45" */

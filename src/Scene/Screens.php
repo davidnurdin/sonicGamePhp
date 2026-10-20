@@ -12,6 +12,7 @@ use SonicGame\Save\GhostRecorder;
 use SonicGame\Save\BestTimes;
 use SonicGame\Save\Options;
 use SonicGame\SoundManager\SoundManager;
+use SonicGame\Utils\Lang;
 
 /**
  * Title screen, map screen and act-complete tally, rendered from the images extracted from the ROM
@@ -148,12 +149,19 @@ class Screens extends EventEmitter
                 $ghost = fn() => $this->changed(fn() => $options->setGhostEnabled(!$options->isGhostEnabled()));
                 $crt = fn() => $this->changed(fn() => $options->setCrtEnabled(!$options->isCrtEnabled()));
                 $speed = fn() => $this->changed(fn() => $options->setSpeed($options->getSpeed() === 'pal' ? 'ntsc' : 'pal'));
+                // language: AUTO (the site / the browser / the system), FRANCAIS, ANGLAIS
+                $langs = ['', 'fr', 'en'];
+                $lang = fn(int $step = 1) => $this->changed(function () use ($options, $langs, $step) {
+                    $options->setLang($langs[((int)array_search($options->getLang(), $langs, true) + $step + 3) % 3]);
+                    Lang::set($options->getLang() ?: Lang::detect());
+                });
                 return [
                     ['GHOST', $options->isGhostEnabled() ? 'ON' : 'OFF', $ghost, $ghost],
                     [match ($this->eraseState) { 'confirm' => 'CONFIRMER ?', 'done' => 'GHOSTS EFFACES', default => 'EFFACER GHOSTS' },
                         null, fn() => $this->eraseGhosts(), null],
                     ['FILTRE CRT', $options->isCrtEnabled() ? 'ON' : 'OFF', $crt, $crt],
                     ['VITESSE', $options->getSpeed() === 'pal' ? 'PAL 50HZ' : 'NTSC 60HZ', $speed, $speed],
+                    ['LANGUE', match ($options->getLang()) { 'fr' => 'FRANCAIS', 'en' => 'ANGLAIS', default => 'AUTO' }, $lang, $lang],
                     ['JUKEBOX', null, fn() => $this->openPage('jukebox', 0), null],
                     ['CHEATS', null, fn() => $this->openPage('cheats', 0), null],
                     ['RETOUR', null, fn() => $this->openPage('menu', 2), null],
@@ -177,7 +185,7 @@ class Screens extends EventEmitter
                 $nextAi = fn(int $step = 1) => $this->changed(fn() => $options->setVersusDifficulty($ai + $step));
                 return [
                     ['MODE', Versus::MODES[$mode], $nextMode, $nextMode],
-                    ['SONICS', $mode === 'flag' ? $team . ' CONTRE ' . $team : (string)$players, $nextPlayers, $nextPlayers],
+                    ['SONICS', $mode === 'flag' ? Lang::t('{a} CONTRE {b}', ['a' => $team, 'b' => $team]) : (string)$players, $nextPlayers, $nextPlayers],
                     ['ZONE', Versus::levelName($level), $nextLevel, $nextLevel],
                     ['IA', BotBrain::DIFFICULTIES[$ai], $nextAi, $nextAi],
                     ['LANCER', null, fn() => $this->finish('versusStart'), null],
@@ -200,7 +208,9 @@ class Screens extends EventEmitter
                         }, null],
                     ];
                 }
-                $items = [['PARLER', null, $act('chat'), null], ['QUITTER', null, $act('leave'), null]];
+                // opened from the site: QUITTER goes back to it
+                $items = [['PARLER', null, $act('chat'), null], ['PARTAGER', null, $act('share'), null],
+                    [defined('SONIC_RETURN') && constant('SONIC_RETURN') === true ? 'RETOUR AU SITE' : 'QUITTER', null, $act('leave'), null]];
                 if ($online->status === 'lobby' && $online->isHost()) {
                     // the host chooses the match here too (the settings of MULTIJOUEUR), the others see it
                     $mode = $options->getVersusMode();
@@ -212,7 +222,7 @@ class Screens extends EventEmitter
                     });
                     $nextMode = fn(int $step = 1) => $set($cycle(array_keys(Versus::MODES), $mode, $step), $level);
                     $nextLevel = fn(int $step = 1) => $set($mode, $cycle(Versus::LEVELS, $level, $step));
-                    array_unshift($items, ['LANCER', null, $act('start'), null], ['MODE', Versus::MODES[$mode], $nextMode, $nextMode],
+                    array_unshift($items, ['LANCER', null, $act('start'), null], ['MODE', Lang::t(Versus::MODES[$mode]), $nextMode, $nextMode],
                         ['ZONE', Versus::levelName($level), $nextLevel, $nextLevel]);
                 }
                 return $items;
@@ -234,7 +244,7 @@ class Screens extends EventEmitter
                     ['STOP', null, fn() => $this->sound?->stopMusic(), null],
                     ['RETOUR', null, function () {
                         $this->sound?->playMusic('title', false, true);
-                        $this->openPage('options', 4);
+                        $this->openPage('options', 5);
                     }, null],
                 ];
             case 'cheats':
@@ -248,7 +258,7 @@ class Screens extends EventEmitter
                 $items[] = ['DEPART', BestTimes::place($start),
                     fn() => $this->changed(fn() => $options->setStartLevel($start % 18 + 1)),
                     fn(int $direction) => $this->changed(fn() => $options->setStartLevel(($start - 1 + $direction + 18) % 18 + 1))];
-                $items[] = ['RETOUR', null, fn() => $this->openPage('options', 5), null];
+                $items[] = ['RETOUR', null, fn() => $this->openPage('options', 6), null];
                 return $items;
             case 'scores':
                 // the act: left / right, or the button for the next one
@@ -1058,7 +1068,7 @@ class Screens extends EventEmitter
             $this->styled($text, (256 * $this->scale - $width) / 2 / $this->scale, $y, $size, $colours);
         };
         $options = $this->options;
-        $settings = Versus::MODES[$options->getVersusMode()] . '  ' . Versus::levelName($options->getVersusLevel());
+        $settings = Lang::t(Versus::MODES[$options->getVersusMode()]) . '  ' . Versus::levelName($options->getVersusLevel());
         if ($online === null) {
             $centre('PUBLIC  AVEC D AUTRES JOUEURS', 140, $grey);
             $centre('PRIVE  UN CODE POUR TES AMIS', 152, $grey);
@@ -1076,19 +1086,25 @@ class Screens extends EventEmitter
         }
         // from the entries down: the room, the match (the host chooses it in the entries), the players, the chat
         $y = $top + 4;
-        $centre(($online->public ? 'SALON PUBLIC ' : 'SALON ') . $online->room, $y, [[255, 255, 255], [85, 170, 255]]);
+        $centre(Lang::t($online->public ? 'SALON PUBLIC {code}' : 'SALON {code}', ['code' => $online->room]), $y, [[255, 255, 255], [85, 170, 255]]);
         $y += 12;
         if (!$online->isHost()) {
-            $centre($online->info, $y, [self::MENU_TOP, self::MENU_BOTTOM]);
+            $centre(Lang::t(Versus::MODES[$online->mode]) . '  ' . Versus::levelName($online->level), $y, [self::MENU_TOP, self::MENU_BOTTOM]);
             $y += 12;
         }
         foreach ($online->peers() as $i => $peer) {
             // me in yellow
-            $label = $online->names[$peer] . ($peer === $online->host ? ' HOTE' : '');
+            $label = $peer === $online->host ? Lang::t('{name} HOTE', ['name' => $online->names[$peer]]) : $online->names[$peer];
             $this->styled($label, $i % 2 ? 136 : 16, $y + intdiv($i, 2) * 10, $size, $peer === $online->me
                 ? [[255, 255, 170], [255, 200, 0]] : [[255, 255, 255], [170, 170, 170]]);
         }
         $y += (int)ceil(count($online->names) / 2) * 10 + 4;
+        // the pages of the site following the room (sonic.mimichat.fr/salon/CODE)
+        $sites = array_filter($online->watchers);
+        if ($sites) {
+            $centre(Lang::t('SUR LE SITE') . '  ' . implode(' ', $sites), $y, [[170, 220, 255], [85, 140, 220]]);
+            $y += 10;
+        }
         foreach ($this->chatLines($online, max(1, intdiv(172 - $y, 10)), 236, $size) as $i => [$line, $colours]) {
             $this->styled($line, 10, $y + 10 * $i, $size, $colours);
         }
@@ -1104,7 +1120,9 @@ class Screens extends EventEmitter
     private function chatLines(Online $online, int $count, int $width, int $size): array
     {
         $lines = [];
-        foreach ($online->chat as [$peer, $name, $text]) {
+        foreach ($online->chat as $chatLine) {
+            [$peer, $name] = $chatLine;
+            $text = Online::chatText($chatLine);
             $colours = $peer < 0 ? [[170, 170, 170], [110, 110, 110]]
                 : ($peer === $online->me ? [[255, 255, 170], [255, 200, 0]] : [[255, 255, 255], [170, 200, 255]]);
             $line = '';
@@ -1197,7 +1215,7 @@ class Screens extends EventEmitter
             $centre('ENTREE ENVOIE  ECHAP ANNULE', 32, 8, [self::MENU_TOP, self::MENU_BOTTOM]);
         } else {
             $centre('NOUVEAU RECORD !', 8, 12, ($this->frames % 30) < 20 ? $blue : [[255, 255, 85], [255, 170, 0]]);
-            $centre($this->entryAct . '   ' . ($this->entryRank === 1 ? '1ER' : $this->entryRank . 'E') . '   ' . $this->entryTime,
+            $centre($this->entryAct . '   ' . Lang::rank($this->entryRank) . '   ' . $this->entryTime,
                 32, 8, [self::MENU_TOP, self::MENU_BOTTOM]);
         }
         // the name, with a blinking cursor, in a fixed-width line

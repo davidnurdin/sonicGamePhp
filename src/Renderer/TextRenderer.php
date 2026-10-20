@@ -2,10 +2,14 @@
 
 namespace SonicGame\Renderer;
 
+use SonicGame\Utils\Lang;
+
 /**
  * Text over the game (debug panel, title menu): one cached texture per character, size and colour, so that
  * changing strings (coordinates every frame) never create new textures. Panels are drawn with panel.png
  * (a black pixel at alpha 170) stretched: the SDL binding has no draw blend mode.
+ *
+ * Every text is translated here (Lang::t: the French texts of the code, in the game's language).
  */
 class TextRenderer
 {
@@ -51,6 +55,7 @@ class TextRenderer
     /** Draws $text at ($x, $y) in view pixels; returns its width. */
     public function draw(string $text, int $x, int $y, int $size, array $rgb = [255, 255, 255]): int
     {
+        $text = Lang::t($text);
         $renderer = $this->sdl->getRenderer()->getRenderer();
         $start = $x;
         foreach (str_split($text) as $char) {
@@ -77,6 +82,7 @@ class TextRenderer
     {
         // ~37 copies per letter (outline): a text drawn again the next frame (menus) is kept in a texture.
         // That texture is copied opaque (the SDL extension has no SDL_SetTextureBlendMode): only over black.
+        $text = Lang::t($text);
         if (!$cache) return $this->renderStyled($text, $x, $y, $size, $top, $bottom, $outline);
         $key = $size . '|' . $outline . '|' . implode(',', $top) . '|' . implode(',', $bottom) . '|' . $text;
         if (isset($this->styled[$key])) {
@@ -153,6 +159,7 @@ class TextRenderer
 
     public function styledWidth(string $text, int $size, int $outline = 1): int
     {
+        $text = Lang::t($text);
         $width = 2 * $outline;
         foreach (str_split($text) as $char) {
             $width += ($char === ' ' ? (int)round($size * 0.5) : $this->glyph($char, $size, [255, 255, 255])[1]) + $outline;
@@ -162,6 +169,7 @@ class TextRenderer
 
     public function width(string $text, int $size): int
     {
+        $text = Lang::t($text);
         $key = $size . '|' . $text;
         if (isset($this->widths[$key])) return $this->widths[$key];
         if (count($this->widths) > 512) $this->widths = [];

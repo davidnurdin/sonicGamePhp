@@ -192,7 +192,8 @@ class GameObjectManager extends EventEmitter
                 $this->water = new Water($ty * 32);
             } else {
                 $obj = match ($type) {
-                    0x06 => new ChaosEmerald($this->sdl, $tx, $ty),
+                    // multiplayer in a special stage: no emerald to take
+                    0x06 => $this->noEnemies ? null : new ChaosEmerald($this->sdl, $tx, $ty),
                     0x07 => $this->sign = new EndSign($this->sdl, $tx, $ty),
                     0x09 => new SwingingPlatform($this->sdl, $tx, $ty, $platformSprite),
                     0x0B, 0x0C, 0x0F, 0x27, 0x28, 0x29, 0x38, 0x3B => new Platform($this->sdl, $type, $o['typeName'], $tx, $ty,
@@ -1705,6 +1706,8 @@ class GameObjectManager extends EventEmitter
 
     public function getTimeLimit(): ?int
     {
+        // multiplayer (noEnemies): the match has its own clock
+        if ($this->noEnemies) return null;
         return self::SPECIAL_STAGE_TIME[$this->currentLevel] ?? null;
     }
 

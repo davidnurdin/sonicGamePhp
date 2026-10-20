@@ -20,9 +20,12 @@ use SonicGame\Renderer\TextRenderer;
 use SonicGame\Save\GhostRecorder;
 use SonicGame\Save\BestTimes;
 use SonicGame\Save\Options;
+use SonicGame\Save\Stats;
 use SonicGame\Scene\Scene;
 use SonicGame\Scene\Screens;
 use SonicGame\SoundManager\SoundManager;
+use SonicGame\Utils\Bridge;
+use SonicGame\Utils\Lang;
 
 class Game extends EventEmitter
 {
@@ -75,6 +78,8 @@ class Game extends EventEmitter
     private ?string $playerName = null;
     /** Online: the action of the menu EN LIGNE waiting for the player's name ('create' / 'join'). */
     private ?string $afterPlayerName = null;
+    /** Opened from a room of the site (SONIC_ROOM, sonic.mimichat.fr/salon/CODE > JOUER): straight into that room. */
+    private ?string $siteRoom = null;
     /** Best time waiting for the player's name: [act, index, time], and what to do once it is typed. */
     private ?array $pendingName = null;
     private ?\Closure $afterName = null;
@@ -97,9 +102,20 @@ class Game extends EventEmitter
         $root = dirname(__DIR__);
         $this->text = new TextRenderer($sdl, $root . '/assets');
         $this->options = new Options($root . '/var/options.json');
+        Lang::set($this->options->getLang() ?: Lang::detect());
+        $this->stats = new Stats($root . '/var/stats.json');
         // the account of the site (sonic.mimichat.fr, JOUER: ?name= in the page): the name in the online rooms
         if (defined('SONIC_PLAYER_NAME') && trim((string)constant('SONIC_PLAYER_NAME')) !== '') {
             $this->options->setOnlineName(Online::cleanName((string)constant('SONIC_PLAYER_NAME'), 0));
+        }
+        // a room of the site: its code, and the match chosen there (used if this player is the host)
+        if (defined('SONIC_ROOM') && preg_match('/^[A-Z]{4}$/', (string)constant('SONIC_ROOM'))) {
+            $this->siteRoom = (string)constant('SONIC_ROOM');
+            $mode = defined('SONIC_MODE') ? (string)constant('SONIC_MODE') : '';
+            $level = defined('SONIC_LEVEL') ? (int)constant('SONIC_LEVEL') : 0;
+            if (isset(Versus::MODES[$mode]) && in_array($level, Versus::LEVELS, true)) {
+                $this->options->setVersus($mode, $this->options->getVersusPlayers(), $level);
+            }
         }
         $this->ghost = new GhostRecorder($root . '/var/ghosts');
         $this->bestTimes = new BestTimes($root . '/var/besttimes.json');
@@ -124,6 +140,11 @@ class Game extends EventEmitter
         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
     ];
     private bool $demo = false;
+    /** The player's statistics (var/stats.json): time played, jumps, rings... (not during the demo). */
+    private Stats $stats;
+    /** Rings / emeralds at the last frame: what was gained since. */
+    private int $statRings = 0;
+    private int $statEmeralds = 0;
     private int $demoFrames = 0;
     private float $demoClock = 0;
     private int $demoPrevious = 0xFF;
@@ -162,6 +183,15 @@ class Game extends EventEmitter
         // the multiplayer Sonics' springs, bumpers... are silent (Versus plays its own sounds)
         $playSfx = fn(int $index, bool $loop = false) => $this->versus?->isSimulating() ? null : $this->soundManager->playSfx($index, $loop);
         $this->player->on('sfx', $playSfx);
+        $this->player->on('sfx', fn(int $index) => $this->countSfx($index));
+        $this->collisionSystem->on('sfx', fn(int $index) => $this->countSfx($index));
+        $this->objectManager->on('sfx', fn(int $index) => $this->countSfx($index));
+        $this->objectManager->on('music', fn(string $name) => $name === 'death' && !$this->demo ? $this->stats->add('deaths') : null);
+        $this->objectManager->on('levelComplete', function () {
+            if ($this->demo || $this->versus) return;
+            $this->stats->add('acts');
+            $this->stats->save(true);
+        });
         $this->collisionSystem->on('sfx', $playSfx);
         $this->scene->on('sfx', $playSfx);
         $this->objectManager->on('sfx', $playSfx);
@@ -255,8 +285,8 @@ class Game extends EventEmitter
         });
         $this->screens->on('chatDone', function (string $text) {
             $this->online?->sendChat($text);
-            // back on PARLER (the host's first entry is LANCER)
-            $this->screens->showTitle('online', $this->online?->isHost() && $this->online->status === 'lobby' ? 1 : 0);
+            // back on PARLER (the host's first entries are LANCER, MODE, ZONE)
+            $this->screens->showTitle('online', $this->online?->isHost() && $this->online->status === 'lobby' ? 3 : 0);
         });
         $this->screens->on('playerDone', function (string $name) {
             $then = $this->afterPlayerName;
@@ -388,7 +418,16 @@ class Game extends EventEmitter
                 if ($this->online !== null) $this->screens->showChatEntry();
                 break;
             case 'settings':
-                $this->online?->setInfo($this->onlineInfo());
+                $this->online?->setMatch($this->options->getVersusMode(), $this->options->getVersusLevel());
+                break;
+            case 'share':
+                // the link of the room's page on the site: the phone's share sheet (or the clipboard) in the
+                // browser, in the chat for the native game
+                if ($this->online?->room === null) break;
+                $url = $this->online->shareUrl();
+                if (!Bridge::send(['t' => 'share', 'url' => $url, 'text' => Lang::t('VIENS JOUER A SONIC AVEC MOI ! SALON {code}', ['code' => $this->online->room])])) {
+                    $this->online->note('LIEN {name}', strtoupper(preg_replace('#^https?://#', '', $url)));
+                }
                 break;
             case 'create':
                 $this->connectOnline(null);
@@ -398,6 +437,8 @@ class Game extends EventEmitter
                 break;
             case 'leave':
                 $this->leaveOnline();
+                // opened from the site: back to it
+                if ($this->siteRoom !== null && Bridge::fromSite()) Bridge::send(['t' => 'back']);
                 break;
             case 'start':
                 if ($this->online?->isHost() && $this->online->status === 'lobby') {
@@ -416,13 +457,9 @@ class Game extends EventEmitter
         // browser: WebRTC between the players, the server relays for those it can't link (php-wasm-network)
         $transport = Online::isBrowser() ? 'webrtc' : 'ws';
         $this->online = new Online(Online::serverUrl(), $transport, $this->options->getOnlineName(), $code, $public);
-        $this->online->info = $this->onlineInfo();
-    }
-
-    /** The match the host would start, for the room: "DRAPEAU  GREEN HILL 1". */
-    private function onlineInfo(): string
-    {
-        return Versus::MODES[$this->options->getVersusMode()] . '  ' . Versus::levelName($this->options->getVersusLevel());
+        // the match the host would start, for the room
+        $this->online->mode = $this->options->getVersusMode();
+        $this->online->level = $this->options->getVersusLevel();
     }
 
     private function leaveOnline(): void
@@ -463,6 +500,34 @@ class Game extends EventEmitter
             }
         }
         $this->versus->chatDraft = $draft;
+    }
+
+    /** Statistics: a jump, an enemy / monitor destroyed, a spring (the sounds of Sonic only, not the demo's). */
+    private function countSfx(int $index): void
+    {
+        if ($this->demo || $this->versus?->isSimulating()) return;
+        $key = match ($index) {
+            SoundManager::SFX_JUMP => 'jumps', SoundManager::SFX_EXPLOSION => 'enemies', SoundManager::SFX_SPRING => 'springs',
+            default => null,
+        };
+        if ($key !== null) $this->stats->add($key);
+    }
+
+    /** Statistics, each frame of play: the time (solo, online match, match against the computer), rings and emeralds gained. */
+    private function countPlay(float $deltaTime): void
+    {
+        $rings = $this->objectManager->getRingCount();
+        $emeralds = $this->objectManager->getEmeralds();
+        if (!$this->demo) {
+            $this->stats->add($this->versus ? ($this->versusConfig !== null ? 'time_online' : 'time_versus') : 'time_solo', min($deltaTime, 0.25));
+            if ($this->versus || !$this->objectManager->hasCheats()) {   // not the rings / emeralds of the cheats
+                $this->stats->add('rings', $rings - $this->statRings);
+                $this->stats->add('emeralds', $emeralds - $this->statEmeralds);
+            }
+            $this->stats->save();
+        }
+        $this->statRings = $rings;
+        $this->statEmeralds = $emeralds;
     }
 
     /** $net: the START of an online match (VersusNetwork::startConfig); null: against the computer. */
@@ -512,10 +577,20 @@ class Game extends EventEmitter
     private function endVersus(): void
     {
         $online = $this->versusConfig !== null && $this->online !== null;
+        if ($this->versus?->humanWon !== null) {
+            $this->stats->add($online ? 'matches_online' : 'matches_versus');
+            if ($this->versus->humanWon) $this->stats->add($online ? 'wins_online' : 'wins_versus');
+            $this->stats->save(true);
+        }
         if ($online && $this->online->start === $this->versusConfig) $this->online->endMatch();
         $this->versusConfig = null;
         $this->backToTitle();
         $this->screens->showTitle($online ? 'online' : 'multi');
+        // opened from a room of the site: the match is over, back to the room's page
+        if ($online && $this->siteRoom !== null && Bridge::fromSite()) {
+            $this->leaveOnline();
+            Bridge::send(['t' => 'back']);
+        }
     }
 
     /** Escape during a game: it is abandoned, back to the main menu with a new game ready (like a game over). */
@@ -737,7 +812,13 @@ class Game extends EventEmitter
         $this->levelManager->loadLevels();
         $this->registerEvents();
         $this->registerLevelEvents();
-        $this->screens->showTitle();
+        if ($this->siteRoom !== null) {
+            // opened from a room of the site: straight into it
+            $this->connectOnline($this->siteRoom);
+            $this->screens->showTitle('online');
+        } else {
+            $this->screens->showTitle();
+        }
         $frameDuration = 0 ; // 1 / 60; // 60Hz
         $inputDuration = 0 ; // 1 / 600; // 240Hz
 
@@ -969,6 +1050,8 @@ class Game extends EventEmitter
                     $this->scene->playerBlink = $this->versus->isHumanBlinking();
                 }
 
+                $this->countPlay($deltaTime);
+
                 // speed shoes: the song plays faster while they last (the driver's tickDivider1 + 1)
                 $this->soundManager->setFast($this->objectManager->hasSpeedShoes() && !$this->objectManager->isPlayerDead());
 
@@ -1194,6 +1277,7 @@ class Game extends EventEmitter
             if ($this->versusConfig !== null) {
                 $this->leaveOnline();
                 $this->versusConfig = null;
+                if ($this->siteRoom !== null && Bridge::fromSite()) Bridge::send(['t' => 'back']);
             }
             $this->backToTitle();
         }

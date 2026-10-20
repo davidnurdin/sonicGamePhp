@@ -13,6 +13,7 @@ use SonicGame\Entities\Objects\RomSprites;
 use SonicGame\Scene\Camera;
 use SonicGame\Scene\Scene;
 use SonicGame\SoundManager\SoundManager;
+use SonicGame\Utils\Lang;
 
 /**
  * Multiplayer match against computer Sonics (title menu > MULTIJOUEUR), on one act:
@@ -39,8 +40,8 @@ class Versus extends EventEmitter
     use VersusNetwork;
 
     public const MODES = ['race' => 'COURSE', 'flag' => 'DRAPEAU', 'rings' => 'ANNEAUX', 'deathmatch' => 'DEATHMATCH'];
-    /** Acts that can be played: 1 and 2 of each zone (the third one is the boss). */
-    public const LEVELS = [1, 2, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17];
+    /** Acts that can be played: 1 and 2 of each zone (the third one is the boss), and the 8 special stages. */
+    public const LEVELS = [1, 2, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17, 28, 29, 30, 31, 32, 33, 34, 35];
     private const ZONES = ['GREEN HILL', 'BRIDGE', 'JUNGLE', 'LABYRINTH', 'SCRAP BRAIN', 'SKY BASE'];
     public const TIME_LIMIT = 180;
     /** Rings mode: a fall this long after a hit / bump gives the rings to the one who pushed. */
@@ -111,6 +112,8 @@ class Versus extends EventEmitter
     private float $trailClock = 0;
     /** Results once over: verdict line, colour, and the ranking [name, value, colour, me]. */
     private string $verdict = '';
+    /** Once over: did the human win (the statistics)? */
+    public ?bool $humanWon = null;
     private array $verdictColour = [255, 255, 255];
     private array $ranking = [];
     private array $start = [0, 0];
@@ -154,9 +157,10 @@ class Versus extends EventEmitter
         }
     }
 
-    /** "GREEN HILL 1" */
+    /** "GREEN HILL 1", "BONUS 3" (the special stages, levels 28-35) */
     public static function levelName(int $level): string
     {
+        if ($level >= 28) return 'BONUS ' . ($level - 27);
         return self::ZONES[intdiv($level - 1, 3)] . ' ' . (($level - 1) % 3 + 1);
     }
 
@@ -214,6 +218,10 @@ class Versus extends EventEmitter
             $this->rivals[] = $rival;
         }
         $this->me = $this->rivals[0];
+        // special stages: every Sonic is a ball (the human: GameObjectManager)
+        foreach ($this->rivals as $rival) {
+            if (!$rival->human) $rival->player->setBallOnly($level->getLevel() >= 28);
+        }
 
         if ($this->mode === 'race') {
             // everybody on the start line, the bots just behind
@@ -992,7 +1000,7 @@ class Versus extends EventEmitter
             $r = $rival->player->getCollisionRect();
             if ($r['x'] < $fx + 8 && $r['x'] + $r['width'] > $fx - 8 && $r['y'] < $fy && $r['y'] + $r['height'] > $fy - 40) {
                 $this->carrier = $rival;
-                $this->showBanner($rival->name . ' A LE DRAPEAU', $rival->rgb, 1.5, SoundManager::SFX_SWITCH);
+                $this->showBanner('{name} A LE DRAPEAU', ['name' => $rival->name], $rival->rgb, 1.5, SoundManager::SFX_SWITCH);
                 return;
             }
         }
@@ -1010,7 +1018,7 @@ class Versus extends EventEmitter
             $this->finish($carrier->team);
             return;
         }
-        $this->showBanner('POINT POUR LES ' . self::TEAM_NAMES[$carrier->team], self::TEAM_COLOURS[$carrier->team], 2.0);
+        $this->showBanner('POINT POUR LES {team}', ['team' => self::TEAM_NAMES[$carrier->team]], self::TEAM_COLOURS[$carrier->team], 2.0);
         $this->placeFlag();
     }
 
@@ -1030,7 +1038,7 @@ class Versus extends EventEmitter
                     $rows[] = [$rival, $rival->finishTime !== null ? self::time($rival->finishTime) : 'ABANDON'];
                 }
                 $won = $sorted[0] === $this->me && $this->me->finishTime !== null;
-                $this->verdict = $won ? 'VICTOIRE' : ($sorted[0]->finishTime !== null ? $sorted[0]->name . ' GAGNE' : 'PERSONNE N EST ARRIVE');
+                $this->verdict = $won ? 'VICTOIRE' : ($sorted[0]->finishTime !== null ? Lang::t('{name} GAGNE', ['name' => $sorted[0]->name]) : 'PERSONNE N EST ARRIVE');
                 break;
             case 'flag':
                 // time over: the team with the most flags (none: a draw)
@@ -1043,26 +1051,27 @@ class Versus extends EventEmitter
                 foreach ($sorted as $rival) $rows[] = [$rival, self::TEAM_NAMES[$rival->team] . '  ' . $rival->captures . ' DRAPEAU' . ($rival->captures > 1 ? 'X' : '')];
                 $score = $this->captures[0] . '-' . $this->captures[1];
                 if ($flagTeam === null) {
-                    $this->verdict = 'EGALITE ' . $score;
+                    $this->verdict = Lang::t('EGALITE {score}', ['score' => $score]);
                 } else {
                     $won = $flagTeam === $this->me->team;
-                    $this->verdict = 'LES ' . self::TEAM_NAMES[$flagTeam] . ' GAGNENT ' . $score;
+                    $this->verdict = Lang::t('LES {team} GAGNENT {score}', ['team' => Lang::t(self::TEAM_NAMES[$flagTeam]), 'score' => $score]);
                 }
                 break;
             case 'rings':
                 $sorted = $this->rivals;
                 usort($sorted, fn(Rival $a, Rival $b) => $b->rings <=> $a->rings);
-                foreach ($sorted as $rival) $rows[] = [$rival, $rival->rings . ' ANNEAUX'];
+                foreach ($sorted as $rival) $rows[] = [$rival, Lang::t('{n} ANNEAUX', ['n' => $rival->rings])];
                 $won = $sorted[0] === $this->me || $sorted[0]->rings === $this->me->rings;
-                $this->verdict = $won ? 'VICTOIRE' : $sorted[0]->name . ' GAGNE';
+                $this->verdict = $won ? 'VICTOIRE' : Lang::t('{name} GAGNE', ['name' => $sorted[0]->name]);
                 break;
             default:
                 $sorted = $this->rivals;
                 usort($sorted, fn(Rival $a, Rival $b) => [$b->kills, $a->deaths] <=> [$a->kills, $b->deaths]);
                 foreach ($sorted as $rival) $rows[] = [$rival, $rival->kills . ' KO  ' . $rival->deaths . ' MORTS'];
                 $won = $sorted[0] === $this->me || ($sorted[0]->kills === $this->me->kills && $sorted[0]->deaths === $this->me->deaths);
-                $this->verdict = $won ? 'VICTOIRE' : $sorted[0]->name . ' GAGNE';
+                $this->verdict = $won ? 'VICTOIRE' : Lang::t('{name} GAGNE', ['name' => $sorted[0]->name]);
         }
+        $this->humanWon = $won;
         $this->verdictColour = $won ? [255, 255, 85] : [255, 170, 170];
         $this->ranking = array_map(fn($row) => [$row[0]->name, $row[1], $row[0]->rgb, $row[0] === $this->me], $rows);
         $this->emit('music', [$won ? 'actcomplete' : 'death', false]);
@@ -1138,7 +1147,9 @@ class Versus extends EventEmitter
     {
         if ($this->online === null) return;
         $lines = [];
-        foreach ($this->online->chat as [$peer, $name, $line, $time]) {
+        foreach ($this->online->chat as $chatLine) {
+            [$peer, $name, , $time] = $chatLine;
+            $line = Online::chatText($chatLine);
             if (microtime(true) - $time > self::CHAT_SECONDS) continue;
             $lines[] = $peer < 0 ? [$line, [200, 200, 200]] : [$name . ': ' . $line, $peer === $this->online->me ? [255, 255, 170] : [255, 255, 255]];
         }
@@ -1308,16 +1319,16 @@ class Versus extends EventEmitter
             // time left in whole seconds: the line changes once a second (kept in a texture, TextRenderer)
             default => sprintf('%d:%02d', intdiv($left = (int)ceil(max(0, self::TIME_LIMIT - $this->clock)), 60), $left % 60),
         };
-        $lines[] = [self::MODES[$this->mode] . '  ' . $time, [255, 255, 255]];
+        $lines[] = [Lang::t(self::MODES[$this->mode]) . '  ' . $time, [255, 255, 255]];
         if ($this->mode === 'flag') {
-            $lines[] = ['BLEUS ' . $this->captures[0] . ' - ' . $this->captures[1] . ' ROUGES', [255, 255, 85]];
+            $lines[] = [Lang::t('BLEUS {a} - {b} ROUGES', ['a' => $this->captures[0], 'b' => $this->captures[1]]), [255, 255, 85]];
         }
         $places = $this->mode === 'race' ? $this->racePlaces() : [];
         foreach ($this->rivals as $i => $rival) {
             $value = match ($this->mode) {
-                'race' => ($places[$i] === 1 ? '1ER' : $places[$i] . 'E') . ($rival->finishTime !== null ? ' ARRIVE' : ''),
-                'flag' => self::TEAM_NAMES[$rival->team] . ($rival === $this->carrier ? '  DRAPEAU' : ''),
-                'rings' => $rival->rings . ' ANNEAUX',
+                'race' => Lang::rank($places[$i]) . ($rival->finishTime !== null ? Lang::t(' ARRIVE') : ''),
+                'flag' => Lang::t(self::TEAM_NAMES[$rival->team]) . ($rival === $this->carrier ? '  ' . Lang::t('DRAPEAU') : ''),
+                'rings' => Lang::t('{n} ANNEAUX', ['n' => $rival->rings]),
                 default => $rival->kills . ' KO',
             };
             $lines[] = [($rival->human ? '> ' : '  ') . $rival->name . '  ' . $value, $rival->rgb];

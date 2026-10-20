@@ -20,7 +20,8 @@ class Options
     ];
 
     private array $values = ['ghost' => false, 'crt' => false, 'speed' => 'pal', 'cheats' => [], 'startLevel' => 1,
-        'versusMode' => 'race', 'versusSonics' => 3, 'versusTeam' => 2, 'versusLevel' => 1, 'versusAi' => 1, 'onlineName' => ''];
+        'versusMode' => 'race', 'versusSonics' => 3, 'versusTeam' => 2, 'versusLevel' => 1, 'versusAi' => 1, 'onlineName' => '',
+        'lang' => ''];
 
     public function __construct(private string $file)
     {
@@ -143,6 +144,18 @@ class Options
     }
 
     /** Online: the player's name in the rooms ('' : not asked yet). */
+    /** '' (automatic: Lang::detect), 'fr' or 'en'. */
+    public function getLang(): string
+    {
+        return in_array($this->values['lang'], ['fr', 'en'], true) ? $this->values['lang'] : '';
+    }
+
+    public function setLang(string $lang): void
+    {
+        $this->values['lang'] = $lang;
+        $this->save();
+    }
+
     public function getOnlineName(): string
     {
         return (string)$this->values['onlineName'];

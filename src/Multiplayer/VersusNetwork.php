@@ -5,6 +5,7 @@ namespace SonicGame\Multiplayer;
 use SonicGame\Entities\GameObjectManager;
 use SonicGame\Entities\Player;
 use SonicGame\SoundManager\SoundManager;
+use SonicGame\Utils\Lang;
 
 /**
  * Online match, part of Versus (a trait: it reads and changes the state of the match).
@@ -380,7 +381,7 @@ trait VersusNetwork
         $rival->shield = $rival->invincible = false;
         $rival->brain = new BotBrain($this->difficulty);
         $rival->name = 'CPU' . ($this->slotOf($rival) + 1);
-        $this->showBanner($rival->name . ' REMPLACE PAR UN BOT', [255, 255, 255], 2.0);
+        $this->showBanner('{name} REMPLACE PAR UN BOT', ['name' => $rival->name], [255, 255, 255], 2.0);
     }
 
     private function netFinish(?int $flagTeam): void
@@ -568,7 +569,9 @@ trait VersusNetwork
                 break;
             case 'banner':
                 if ($host) {
-                    $this->banner = [(string)$event['text'], $event['rgb'] ?? [255, 255, 255], (float)($event['s'] ?? 2)];
+                    // the host sends the text to translate (Lang key) and its values: each one in his language
+                    $values = array_map(fn($v) => Lang::t((string)$v), (array)($event['v'] ?? []));
+                    $this->banner = [Lang::t((string)$event['text'], $values), $event['rgb'] ?? [255, 255, 255], (float)($event['s'] ?? 2)];
                     if (isset($event['sfx'])) $this->sfx((int)$event['sfx']);
                 }
                 break;
@@ -587,13 +590,13 @@ trait VersusNetwork
         }
     }
 
-    /** A message in the middle of the screen, here and (host) on every machine. */
-    private function showBanner(string $text, array $rgb, float $seconds, ?int $sfx = null): void
+    /** A message in the middle of the screen ($text: a Lang key, {key} from $values), here and (host) on every machine. */
+    private function showBanner(string $text, array $values, array $rgb, float $seconds, ?int $sfx = null): void
     {
-        $this->banner = [$text, $rgb, $seconds];
+        $this->banner = [Lang::t($text, array_map(fn($v) => Lang::t((string)$v), $values)), $rgb, $seconds];
         if ($sfx !== null) $this->sfx($sfx);
         if ($this->online !== null && $this->isHost()) {
-            $this->netEvent(['e' => 'banner', 'text' => $text, 'rgb' => $rgb, 's' => $seconds] + ($sfx !== null ? ['sfx' => $sfx] : []));
+            $this->netEvent(['e' => 'banner', 'text' => $text, 'v' => $values, 'rgb' => $rgb, 's' => $seconds] + ($sfx !== null ? ['sfx' => $sfx] : []));
         }
     }
 
