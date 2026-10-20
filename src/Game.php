@@ -430,6 +430,28 @@ class Game extends EventEmitter
         }
     }
 
+    /** Online match: a key of the chat line (Enter sends it, Escape gives it up). */
+    private function typeMatchChat(InputKeyboard $keyboard): void
+    {
+        $draft = $this->versus->chatDraft;
+        if ($keyboard->isKeyPressed(\SDLK_ESCAPE)) {
+            $this->versus->chatDraft = null;
+            return;
+        }
+        if ($keyboard->isKeyPressed(\SDLK_RETURN)) {
+            $this->online?->sendChat($draft);
+            $this->versus->chatDraft = null;
+            return;
+        }
+        if ($keyboard->isKeyPressed(\SDLK_BACKSPACE)) $draft = substr($draft, 0, -1);
+        foreach (array_merge(range(ord('a'), ord('z')), range(ord('0'), ord('9')), [ord('.'), ord('-'), ord(' ')]) as $code) {
+            if ($keyboard->isKeyPressed($code) && strlen($draft) < Online::CHAT_LENGTH && !($code === ord(' ') && $draft === '')) {
+                $draft .= strtoupper(chr($code));
+            }
+        }
+        $this->versus->chatDraft = $draft;
+    }
+
     /** $net: the START of an online match (VersusNetwork::startConfig); null: against the computer. */
     private function startVersus(?array $net = null): void
     {
@@ -927,7 +949,7 @@ class Game extends EventEmitter
                 $window = $this->sdl->getWindow();
                 $this->objectManager->setView($this->scene->getCamera()->getX(), $this->scene->getCamera()->getY(), $window->getWidth(), $window->getHeight());
                 $this->objectManager->setWave($this->scene->getCamera()->getWave());
-                $this->objectManager->update($deltaTime, $this->player, $this->scene->getCurrentLevel());
+                $this->objectManager->update(($this->versus?->freezesObjects() ?? false) ? 0.0 : $deltaTime, $this->player, $this->scene->getCurrentLevel());
                 $this->updateGhost();
                 if ($this->versus) {
                     $this->versus->update($deltaTime, $this->scene->getCurrentLevel());
@@ -1061,6 +1083,17 @@ class Game extends EventEmitter
             if ($keyboard->isKeyPressed(\SDLK_ESCAPE)) $this->endDemo();
             if ($keyboard->isKeyPressed(\SDLK_F12)) $this->sdl->getWindow()->toggleFullscreen();
             return;
+        }
+        // online match: T or Enter opens a chat line (Sonic waits while it is typed)
+        if ($this->versusConfig !== null && $this->online !== null && $this->versus !== null) {
+            if ($this->versus->chatDraft !== null) {
+                $this->typeMatchChat($keyboard);
+                return;
+            }
+            if ($keyboard->isKeyPressed(ord('t')) || (!$this->versus->isOver() && $keyboard->isKeyPressed(\SDLK_RETURN))) {
+                $this->versus->chatDraft = '';
+                return;
+            }
         }
         // multiplayer results: the button goes back to the menu
         if ($this->versus?->isOver() && ($keyboard->isKeyPressed(\SDLK_SPACE) || $keyboard->isKeyPressed(\SDLK_RETURN))) {

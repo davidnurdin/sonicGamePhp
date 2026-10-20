@@ -15,7 +15,8 @@ use SonicGame\SoundManager\SoundManager;
  * the whole match 20 times a second (Online::SNAPSHOT) and, reliably, what a player must apply to his Sonic
  * (Online::EVENT: hurt, bounce, rings won, where to appear) and the end. The other Sonics are drawn
  * DELAY seconds late, between two received positions. The rings taken and the bridges (blocks of the map), the
- * monitors broken and the badniks destroyed (GameObjectManager ids) are sent as events and applied everywhere.
+ * monitors broken, badniks destroyed, platforms stood on and floor switches (GameObjectManager ids) are sent as
+ * events and applied everywhere.
  */
 trait VersusNetwork
 {
@@ -28,8 +29,20 @@ trait VersusNetwork
     /** Ring blocks changed here, to send: [x, y, value]. */
     private array $tileOutbox = [];
     private bool $applyingTiles = false;
-    /** Monitors broken / badniks destroyed here, to send: their ids (GameObjectManager::removeObject). */
+    /** What was done here to the objects, to send: [id, what] (GameObjectManager::applyObject). */
     private array $objectOutbox = [];
+    /**
+     * Host, anti-cheat: per player, what his states may say (a player can't go faster than MAX_SPEED, nor have
+     * rings, a shield or the invincibility he didn't get). rings: accepted; credit: rings he may still gain
+     * (blocks and monitors he took, rings given by the host); dropped: rings lost, that he may give away;
+     * shield / invincible (until): from a monitor he broke; excuse (until): a jump in place is allowed (start,
+     * death, hit by the host); x, y, t: his last accepted place.
+     */
+    private array $guards = [];
+    /** Host, anti-cheat: px per second a Sonic can't go faster than (springs included), and the slack in px. */
+    private const MAX_SPEED = 1800;
+    private const MAX_JUMP = 64;
+
     /** The client lost his host: the match is over for him. */
     private ?string $netLost = null;
 
@@ -112,8 +125,8 @@ trait VersusNetwork
                 $this->tileOutbox[] = [$x, $y, $value];
             }
         };
-        $this->objects->objectListener = function (int $id) {
-            if (!$this->applyingTiles) $this->objectOutbox[] = $id;
+        $this->objects->objectListener = function (int $id, string $what) {
+            if (!$this->applyingTiles) $this->objectOutbox[] = [$id, $what];
         };
         if ($this->isHost()) {
             // every player where the host placed him
@@ -135,6 +148,18 @@ trait VersusNetwork
     private function netEvent(array $event, ?int $to = null): void
     {
         $this->online?->sendJson(Online::EVENT, $event, $to);
+        if ($to === null || !$this->isHost()) return;
+        // anti-cheat: what the host gives a player
+        $guard = &$this->guard($to);
+        if ($event['e'] === 'gain') $guard['credit'] += (int)$event['n'];
+        if ($event['e'] === 'hurt' || $event['e'] === 'place') $guard['excuse'] = microtime(true) + 4;
+    }
+
+    private function &guard(int $peer): array
+    {
+        $this->guards[$peer] ??= ['rings' => 0, 'credit' => 0, 'dropped' => 0, 'shield' => false, 'invincible' => 0.0,
+            'excuse' => microtime(true) + 6, 'x' => null, 'y' => null, 't' => 0.0];
+        return $this->guards[$peer];
     }
 
     private function slotOf(?Rival $rival): int
@@ -195,7 +220,7 @@ trait VersusNetwork
             $this->tileOutbox = [];
         }
         if ($this->objectOutbox) {
-            $this->netEvent(['e' => 'gone', 'o' => $this->objectOutbox]);
+            $this->netEvent(['e' => 'obj', 'o' => $this->objectOutbox]);
             $this->objectOutbox = [];
         }
         if ($this->isHost()) {
@@ -278,16 +303,68 @@ trait VersusNetwork
         $rival = $this->rivalOfPeer($peer);
         if ($rival === null || strlen($data) < 26) return;
         $s = unpack('gx/gy/gvx/gvy/vsx/vsy/Csw/Csh/Cflags/Cstate/vrings', $data);
+        if (!is_finite($s['x']) || !is_finite($s['y']) || !is_finite($s['vx']) || !is_finite($s['vy'])) return;
+        // anti-cheat: no jump in place (but after a death, a hit, the start, or to a place to appear)
+        $guard = &$this->guard($peer);
+        $now = microtime(true);
+        if ($guard['x'] !== null && $now > $guard['excuse'] && !$this->nearSpawn($s['x'], $s['y'])
+            && hypot($s['x'] - $guard['x'], $s['y'] - $guard['y']) > self::MAX_SPEED * max(1 / 30, $now - $guard['t']) + self::MAX_JUMP) {
+            return;
+        }
+        if ($s['flags'] & 16) $guard['excuse'] = $now + 4;
+        [$guard['x'], $guard['y'], $guard['t']] = [$s['x'], $s['y'], $now];
+        $vx = max(-self::MAX_SPEED, min(self::MAX_SPEED, $s['vx']));
+        $vy = max(-self::MAX_SPEED, min(self::MAX_SPEED, $s['vy']));
+        // rings: only those he could take; shield and invincibility: only from a monitor he broke
+        if ($s['rings'] > $guard['rings']) {
+            $up = min($s['rings'] - $guard['rings'], $guard['credit']);
+            $guard['credit'] -= $up;
+            $guard['rings'] += $up;
+        } else {
+            $guard['dropped'] += $guard['rings'] - $s['rings'];
+            $guard['rings'] = $s['rings'];
+        }
+        if (!($s['flags'] & 32)) $guard['shield'] = false;
+        $shield = ($s['flags'] & 32) && $guard['shield'];
+        $invincible = ($s['flags'] & 64) && $now < $guard['invincible'];
+
         $frame = [$s['sx'], $s['sy'], $s['sw'], $s['sh'], $s['flags'] & 1, $s['state'] >> 7];
         $this->remember($rival, $s['x'], $s['y'], $frame);
-        $rival->player->setVelocity($s['vx'], $s['vy']);
+        $rival->latest = [$now, $s['x'], $s['y'], $vx, $vy];
+        $rival->player->setVelocity($vx, $vy);
         $rival->player->setState(self::STATES[$s['state'] & 0x7F] ?? 'idle');
         if ($s['flags'] & 2) $rival->invulnerable = max($rival->invulnerable, 0.2);
-        $rival->rings = $s['rings'];
-        $rival->netInfo = ['rings' => $s['rings'], 'shield' => (bool)($s['flags'] & 32), 'dead' => (bool)($s['flags'] & 16),
-            'attacking' => (bool)($s['flags'] & 4), 'invincible' => (bool)($s['flags'] & 64)];
+        $rival->rings = $guard['rings'];
+        $rival->netInfo = ['rings' => $guard['rings'], 'shield' => $shield, 'dead' => (bool)($s['flags'] & 16),
+            'attacking' => (bool)($s['flags'] & 4), 'invincible' => $invincible];
         $rival->shield = $rival->netInfo['shield'];
         $rival->invincible = $rival->netInfo['invincible'];
+    }
+
+    /** Anti-cheat: ($x, $y) is a place where a Sonic may appear (start, places to appear, bases). */
+    private function nearSpawn(float $x, float $y): bool
+    {
+        foreach ([$this->start, ...$this->spawns] as [$sx, $sy]) {
+            if (abs($x - $sx) < 96 && abs($y - $sy) < 96) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Host, lag compensation: the collision rect of a Sonic for the contacts. A player of another machine is
+     * drawn DELAY late; for the contacts he is where he is on his screen now: his last state, moved by his
+     * speed for its age and the time it took to come (about the host's ping: half his way to the server,
+     * half the player's).
+     */
+    private function contactRect(Rival $rival): array
+    {
+        $rect = $rival->player->getCollisionRect();
+        if (!$rival->puppet || $rival->latest === null || !$this->isHost()) return $rect;
+        [$time, $x, $y, $vx, $vy] = $rival->latest;
+        $ahead = min(0.25, microtime(true) - $time + ($this->online?->pingMs ?? 0) / 1000);
+        $rect['x'] += $x + $vx * $ahead - $rival->player->getX();
+        $rect['y'] += $y + $vy * $ahead - $rival->player->getY();
+        return $rect;
     }
 
     /** A player left (host): a bot takes his Sonic over. */
@@ -416,14 +493,29 @@ trait VersusNetwork
                     if ($current === null || !GameObjectManager::isRingBlock($current)) continue;
                     $taken = ($current & 3) & ~((int)$value & 3);
                     if ($taken) $this->level->setTile((int)$x, (int)$y, $current & ~$taken);
+                    // anti-cheat: the rings a player took (and that were still there) may be counted for him
+                    if ($taken && $this->isHost() && !$host) $this->guard($from)['credit'] += ($taken & 1) + ($taken >> 1);
                 }
                 $this->applyingTiles = false;
                 if ($this->isHost() && !$host) $this->netEvent($event);
                 break;
-            case 'gone':
-                // monitors broken, badniks destroyed somewhere: gone here too; the host passes them on
+            case 'obj':
+                // monitors broken, badniks destroyed, platforms stood on, switches somewhere: here too; the host
+                // passes them on
                 $this->applyingTiles = true;
-                foreach ($event['o'] ?? [] as $id) $this->objects->removeObject((int)$id);
+                foreach ($event['o'] ?? [] as [$id, $what]) {
+                    // anti-cheat: what the monitor he broke gives (if it was still there)
+                    $item = $what === 'gone' && $this->isHost() && !$host ? $this->objects->monitorItem((int)$id) : null;
+                    $this->objects->applyObject((int)$id, (string)$what);
+                    $guard = &$this->guard($from);
+                    match ($item) {
+                        'ring' => $guard['credit'] += 10,
+                        'shield' => $guard['shield'] = true,
+                        'invincibility' => $guard['invincible'] = microtime(true) + 21,
+                        default => null,
+                    };
+                    unset($guard);
+                }
                 $this->applyingTiles = false;
                 if ($this->isHost() && !$host) $this->netEvent($event);
                 break;
@@ -459,8 +551,12 @@ trait VersusNetwork
                 $victim = $this->isHost() ? $this->rivalOfPeer($from) : null;
                 if ($victim !== null) {
                     $by = (int)($event['by'] ?? -1);
-                    $victim->rings = max(0, $victim->rings - (int)$event['n']);
-                    $this->giveAway($victim, (int)$event['n'], $by >= 0 ? ($this->rivals[$by] ?? null) : null);
+                    // anti-cheat: no more than he had
+                    $guard = &$this->guard($from);
+                    $n = max(0, min((int)$event['n'], $guard['dropped'] + $victim->rings));
+                    $guard['dropped'] = max(0, $guard['dropped'] - $n);
+                    $victim->rings = max(0, $victim->rings - $n);
+                    $this->giveAway($victim, $n, $by >= 0 ? ($this->rivals[$by] ?? null) : null);
                 }
                 break;
             case 'died':

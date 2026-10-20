@@ -776,7 +776,18 @@ class Player extends Entity
     /** Sheet of Sonic's frames drawn from the ROM art (RomSprites::SHEET, or its red-eyed copy). */
     public function getRomSheet(): string
     {
-        return $this->tilesetName === 'sonic-god' ? 'rom-god' : \SonicGame\Entities\Objects\RomSprites::SHEET;
+        return self::romSheetOf($this->tilesetName);
+    }
+
+    /**
+     * The ROM-art frames of the sheet $sheet: 'rom-god' (red eyes), 'rom-sonic-<colour>' (multiplayer,
+     * tools/soniccolors.py, loaded by Versus::loadTextures) or RomSprites::SHEET.
+     */
+    public static function romSheetOf(string $sheet): string
+    {
+        if ($sheet === 'sonic-god') return 'rom-god';
+        if (in_array($sheet, ['sonic-red', 'sonic-green', 'sonic-yellow', 'sonic-purple', 'sonic-orange'], true)) return 'rom-' . $sheet;
+        return \SonicGame\Entities\Objects\RomSprites::SHEET;
     }
 
     /** Online match: the sheet of his colour ('sonic', 'sonic-red'... loaded by Versus::loadTextures). */

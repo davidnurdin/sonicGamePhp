@@ -37,6 +37,8 @@ class Rival
     public ?array $netFrame = null;
     /** Online: received positions [time, x, y, frame], drawn with VersusNetwork::DELAY of delay (interpolated). */
     public array $track = [];
+    /** Online, host: the last state received [time, x, y, vx, vy] (lag compensation: VersusNetwork::contactRect). */
+    public ?array $latest = null;
     /** Online: a shield / the invincibility of the other machine, drawn here. */
     public bool $shield = false;
     public bool $invincible = false;

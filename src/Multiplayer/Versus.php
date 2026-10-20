@@ -148,6 +148,8 @@ class Versus extends EventEmitter
         foreach (self::COLOURS as [$sheet]) {
             if ($sheet !== 'sonic' && !$sdl->hasTexture($sheet)) {
                 $sdl->loadTexture($sheet, 'tileset/sprites/tileset-' . $sheet . '.png', ['r' => 0, 'g' => 72, 'b' => 0]);
+                // his frames of the ROM art (waiting, spring, slide) in the same colour
+                $sdl->loadTexture('rom-' . $sheet, 'tileset/sprites/tileset-rom-' . $sheet . '.png', ['r' => 170, 'g' => 0, 'b' => 170]);
             }
         }
     }
@@ -171,6 +173,11 @@ class Versus extends EventEmitter
     public function isOver(): bool { return $this->state === 'over'; }
     /** The human can't move (countdown, results). */
     public function isLocked(): bool { return $this->state !== 'play'; }
+    /**
+     * Online, countdown: the objects of the act (platforms, traps, badniks) wait for the GO, so that they move
+     * the same on every machine (each one loaded the act at its own time).
+     */
+    public function freezesObjects(): bool { return $this->online !== null && $this->state === 'countdown'; }
 
     /** The human blinks (hit / respawned by the match, not by GameObjectManager). */
     public function isHumanBlinking(): bool
@@ -791,8 +798,8 @@ class Versus extends EventEmitter
 
     private function overlap(Rival $a, Rival $b): bool
     {
-        $ra = $a->player->getCollisionRect();
-        $rb = $b->player->getCollisionRect();
+        $ra = $this->contactRect($a);
+        $rb = $this->contactRect($b);
         return $ra['x'] + 3 < $rb['x'] + $rb['width'] - 3 && $rb['x'] + 3 < $ra['x'] + $ra['width'] - 3
             && $ra['y'] + 4 < $rb['y'] + $rb['height'] && $rb['y'] + 4 < $ra['y'] + $ra['height'];
     }
@@ -1098,7 +1105,7 @@ class Versus extends EventEmitter
             $dst = new \SDL_Rect;
             [$dst->x, $dst->y, $dst->w, $dst->h] = [(int)round($rival->player->getX() - 4 - $cameraX), (int)round($rival->player->getY() - $cameraY), 32, 32];
             // a frame of the ROM art (spring, slide, waiting): 24px wide at the engine position, like Scene::drawPlayer
-            $texture = $rom ? RomSprites::SHEET : $rival->texture;
+            $texture = $rom ? Player::romSheetOf($rival->texture) : $rival->texture;
             if ($rom) [$dst->x, $dst->w] = [$dst->x + 4, 24];
             if ($rival->shield && (int)floor(fmod(microtime(true), 86400.0) * 60) % 2 === 0) {
                 // online: a shield, like Scene::drawPlayer (every other frame the ring instead of the Sonic)
@@ -1118,6 +1125,30 @@ class Versus extends EventEmitter
         if ($this->carrier !== null && $this->carrier->isVisible()) {
             $p = $this->carrier->player;
             $this->drawFlag((int)round($p->getX() + 12 - $cameraX), (int)round($p->getY() - 2 - $cameraY), 22);
+        }
+    }
+
+    /** Online: the chat line being typed during the match (Game: T or Enter), null when not typing. */
+    public ?string $chatDraft = null;
+    /** Online: seconds a chat line stays on the screen during the match. */
+    private const CHAT_SECONDS = 8.0;
+
+    /** Online: the chat lines of the last CHAT_SECONDS and the line being typed, bottom left. */
+    private function drawChat(TextRenderer $text, \SDL_Rect $dst, int $size): void
+    {
+        if ($this->online === null) return;
+        $lines = [];
+        foreach ($this->online->chat as [$peer, $name, $line, $time]) {
+            if (microtime(true) - $time > self::CHAT_SECONDS) continue;
+            $lines[] = $peer < 0 ? [$line, [200, 200, 200]] : [$name . ': ' . $line, $peer === $this->online->me ? [255, 255, 170] : [255, 255, 255]];
+        }
+        $lines = array_slice($lines, -4);
+        if ($this->chatDraft !== null) {
+            $lines[] = ['> ' . $this->chatDraft . ((int)(microtime(true) * 3) % 2 ? '_' : ''), [255, 255, 85]];
+        }
+        $y = $dst->y + $dst->h - $size * (2.8 + 1.3 * count($lines));
+        foreach ($lines as $i => [$label, $rgb]) {
+            $text->draw($label, (int)($dst->x + $size), (int)($y + $i * $size * 1.3), $size, $rgb);
         }
     }
 
@@ -1214,6 +1245,7 @@ class Versus extends EventEmitter
         }
 
         $this->drawScores($text, $dst, $size);
+        $this->drawChat($text, $dst, $size);
 
         if ($this->state === 'countdown') {
             $big = $size * 4;
@@ -1223,6 +1255,11 @@ class Versus extends EventEmitter
             $mode = self::MODES[$this->mode];
             $w = $text->width($mode, $size * 2);
             $text->draw($mode, (int)($dst->x + ($dst->w - $w) / 2), (int)($dst->y + $dst->h / 2 + $size), $size * 2, [255, 255, 255]);
+            if ($this->online !== null) {
+                $hint = 'T OU ENTREE : PARLER';
+                $w = $text->width($hint, $size);
+                $text->draw($hint, (int)($dst->x + ($dst->w - $w) / 2), (int)($dst->y + $dst->h / 2 + $size * 4), $size, [200, 200, 200]);
+            }
         } elseif ($this->state === 'play' && $this->clock < 1) {
             $big = $size * 4;
             $w = $text->width('GO', $big);

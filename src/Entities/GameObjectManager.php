@@ -436,6 +436,7 @@ class GameObjectManager extends EventEmitter
             if ($obj instanceof Platform) {
                 $obj->setPlayerSpeed($vel[0]);
                 $obj->setWave($this->wave);
+                $wasFalling = $obj->isFalling();
             }
 
             if ($obj instanceof Boss) {
@@ -448,6 +449,7 @@ class GameObjectManager extends EventEmitter
             }
 
             $obj->update($deltaTime);
+            if ($obj instanceof Platform && !$wasFalling && $obj->isFalling()) $this->tellObject($obj, 'fall');
 
             if ($obj instanceof Monitor) {
                 // _5deb: only a jumping or rolling Sonic breaks it (invincibility doesn't), walking he is stopped
@@ -638,6 +640,7 @@ class GameObjectManager extends EventEmitter
             $this->switchFlag = !$this->switchFlag;
             $this->switchFlags[$this->currentLevel] = $this->switchFlag;
             $this->sfx(SoundManager::SFX_SWITCH);
+            $this->tellObject($obj, $this->switchFlag ? 'on' : 'off');
         }
         if ($obj instanceof WarpZone && $obj->getTargetLevel() !== null && !$this->levelComplete
             && Mechanism::overlaps($obj->getBoundingBox(), $rect)) {
@@ -1302,7 +1305,11 @@ class GameObjectManager extends EventEmitter
 
     /** Multiplayer: the map is not loaded again when Sonic dies (the rings taken stay taken). */
     public bool $keepTilemap = false;
-    /** Online match: told of every monitor broken / badnik destroyed by Sonic, fn(int $id) (removeObject). */
+    /**
+     * Online match: told of what Sonic does to the objects, fn(int $id, string $what) (applyObject): 'gone' (a
+     * monitor broken, a badnik destroyed), 'fall' (a platform stood on starts falling / floating), 'on' / 'off'
+     * (a floor switch: the doors of the act).
+     */
     public ?\Closure $objectListener = null;
     /** Multiplayer: ids of the monitors and badniks gone, still gone after a respawn (like the rings). */
     private array $goneObjects = [];
@@ -1313,14 +1320,40 @@ class GameObjectManager extends EventEmitter
         $id = array_search($obj, $this->objects, true);
         if ($id === false) return;
         $this->goneObjects[$id] = true;
-        if ($this->objectListener !== null) ($this->objectListener)($id);
+        if ($this->objectListener !== null) ($this->objectListener)($id, 'gone');
     }
 
-    /** Online: a monitor broken / a badnik destroyed on another machine (nothing given here). */
-    public function removeObject(int $id): void
+    private function tellObject(GameObject $obj, string $what): void
+    {
+        if ($this->objectListener === null) return;
+        $id = array_search($obj, $this->objects, true);
+        if ($id !== false) ($this->objectListener)($id, $what);
+    }
+
+    /** Online, anti-cheat: what the monitor $id gives, if it is still there (null: not a monitor, or broken). */
+    public function monitorItem(int $id): ?string
     {
         $obj = $this->objects[$id] ?? null;
-        if (!($obj instanceof Monitor || $obj instanceof Badnik) || !$obj->isActive()) return;
+        return $obj instanceof Monitor && $obj->isActive() ? $obj->getItemType() : null;
+    }
+
+    /** Online: what a player did to the object $id on another machine (objectListener; nothing given here). */
+    public function applyObject(int $id, string $what): void
+    {
+        $obj = $this->objects[$id] ?? null;
+        if ($obj instanceof Platform && $what === 'fall') {
+            $obj->startFalling();
+            return;
+        }
+        if ($obj instanceof FloorSwitch && ($what === 'on' || $what === 'off')) {
+            if ($this->switchFlag !== ($what === 'on')) {
+                $this->switchFlag = $what === 'on';
+                $this->switchFlags[$this->currentLevel] = $this->switchFlag;
+                if ($this->isShootingObject($obj)) $this->sfx(SoundManager::SFX_SWITCH);
+            }
+            return;
+        }
+        if ($what !== 'gone' || !($obj instanceof Monitor || $obj instanceof Badnik) || !$obj->isActive()) return;
         $this->goneObjects[$id] = true;
         $obj instanceof Monitor ? $obj->breakMonitor() : $obj->destroy();
         $box = $obj->getBoundingBox();

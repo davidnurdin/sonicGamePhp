@@ -29,7 +29,7 @@ final class Online
      * Version of the messages of a match: in the meta of the rooms, a player with another version of the game
      * (an old page in the cache) can't join, and the public rooms only bring together the same versions.
      */
-    public const VERSION = 2;
+    public const VERSION = 3;
     private const META = ['game' => 'sonic', 'v' => self::VERSION];
     /** Chat: characters of a line (the game's font, the on-screen keyboard) and lines kept. */
     public const CHAT_LENGTH = 30;
@@ -56,7 +56,7 @@ final class Online
     public string $info = '';
     /** A public room (strangers come in through SALON PUBLIC). */
     public bool $public = false;
-    /** @var array<int, array{0: int, 1: string, 2: string}> chat lines [peer (-1: the game), name, text], oldest first */
+    /** @var array<int, array{0: int, 1: string, 2: string, 3: float}> chat lines [peer (-1: the game), name, text, time], oldest first */
     public array $chat = [];
     private float $lastChat = 0;
     /** START received (clients) or sent (host): Game launches the match with it. */
@@ -258,7 +258,7 @@ final class Online
 
     private function say(int $peer, string $name, string $text): void
     {
-        $this->chat[] = [$peer, $name, $text];
+        $this->chat[] = [$peer, $name, $text, microtime(true)];
         if (count($this->chat) > self::CHAT_LINES) array_shift($this->chat);
     }
 

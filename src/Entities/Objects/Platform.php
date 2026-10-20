@@ -252,6 +252,17 @@ class Platform extends GameObject
         return $this->kind === 'float';
     }
 
+    /** Stood on: a weight falls, a floating platform rises (online: stood on on another machine). */
+    public function isFalling(): bool
+    {
+        return $this->falling;
+    }
+
+    public function startFalling(): void
+    {
+        if ($this->kind === 'weight' || $this->kind === 'float') $this->falling = true;
+    }
+
     /** Back to the spawn point (the original does it when the platform leaves the screen). */
     public function resetPosition(): void
     {
