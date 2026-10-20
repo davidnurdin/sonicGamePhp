@@ -197,6 +197,10 @@ trait VersusNetwork
                 $this->peerLeft($from);
                 continue;
             }
+            if ($type === 'join') {
+                $this->peerJoined($from);
+                continue;
+            }
             if ($type === 'host') {
                 // the host left: the match can't go on without him
                 if ($this->isClient() || $from === $online->me) $this->netAbort('L HOTE EST PARTI');
@@ -382,6 +386,32 @@ trait VersusNetwork
         $rival->brain = new BotBrain($this->difficulty);
         $rival->name = 'CPU' . ($this->slotOf($rival) + 1);
         $this->showBanner('{name} REMPLACE PAR UN BOT', ['name' => $rival->name], [255, 255, 255], 2.0);
+    }
+
+    /**
+     * Host: a player came into the room during the match (from a room of the site...): he takes the Sonic of a
+     * bot, gets the match (START with his slot) and his place. No bot left: he waits for the next match.
+     */
+    private function peerJoined(int $peer): void
+    {
+        if (!$this->isHost() || $this->state === 'over' || $this->rivalOfPeer($peer) !== null) return;
+        foreach ($this->rivals as $i => $rival) {
+            if ($rival->human || $rival->peer !== null || $rival->brain === null) continue;
+            if ($rival === $this->carrier) $this->dropFlag();
+            $name = $this->online->names[$peer] ?? 'J' . ($peer + 1);
+            $rival->peer = $peer;
+            $rival->puppet = true;
+            $rival->brain = null;
+            $rival->netFrame = null;
+            $rival->track = [];
+            $rival->name = $name;
+            $this->netConfig['slots'][$i] = ['peer' => $peer, 'name' => $name];
+            $this->online->sendJson(Online::START, $this->netConfig, $peer);
+            $this->netEvent(['e' => 'place', 'x' => $rival->player->getX(), 'y' => $rival->player->getY()], $peer);
+            $this->netEvent(['e' => 'joined', 'slot' => $i, 'peer' => $peer, 'name' => $name]);
+            $this->showBanner('{name} REJOINT LA PARTIE', ['name' => $name], $rival->rgb, 2.0);
+            return;
+        }
     }
 
     private function netFinish(?int $flagTeam): void
@@ -577,6 +607,14 @@ trait VersusNetwork
                 break;
             case 'sfx':
                 if ($host) $this->sfx((int)$event['i']);
+                break;
+            case 'joined':
+                // a bot's Sonic is now a player's (peerJoined)
+                $rival = $host ? ($this->rivals[(int)($event['slot'] ?? -1)] ?? null) : null;
+                if ($rival !== null && $rival !== $this->me) {
+                    $rival->peer = (int)$event['peer'];
+                    $rival->name = Online::cleanName((string)($event['name'] ?? ''), $rival->peer);
+                }
                 break;
             case 'over':
                 if (!$host || $this->state === 'over') break;

@@ -240,8 +240,13 @@ final class Online
             case self::HELLO:
                 $json = json_decode($payload, true);
                 $this->names[$from] = self::cleanName((string)($json['name'] ?? ''), $from);
+                // the host: two players with the same name (the same account twice, a name kept by the browser)
+                // are told apart, everybody gets it with the roster
+                if ($this->isHost()) $this->names[$from] = $this->uniqueName($this->names[$from], $from);
                 $this->say(-1, '', '{name} EST ARRIVE', $this->names[$from]);
                 if ($this->isHost()) $this->sendRoster();
+                // during a match: the host gives him the Sonic of a bot (VersusNetwork::peerJoined)
+                if ($this->isHost() && $this->status === 'match') $this->inbox[] = ['join', $from];
                 break;
             case self::ROSTER:
                 if ($from !== $this->host) break;
@@ -387,6 +392,16 @@ final class Online
     {
         $this->error = $message;
         $this->status = 'error';
+    }
+
+    /** $name, or NAME2, NAME3... (8 characters at most) when another player of the room has it. */
+    private function uniqueName(string $name, int $peer): string
+    {
+        $taken = array_diff_key($this->names, [$peer => true]);
+        for ($n = 2, $unique = $name; in_array($unique, $taken, true); $n++) {
+            $unique = substr($name, 0, 8 - strlen((string)$n)) . $n;
+        }
+        return $unique;
     }
 
     /** A name the game's font can draw: A-Z 0-9 space, 8 characters. */

@@ -10,7 +10,7 @@ use PhpWasmNetwork\Network;
  * times a second. Nothing happens in the native game.
  *
  * Requests: {"t": "share", "url", "text"} (the phone's share sheet, else the clipboard), {"t": "back"} (back
- * to the site that opened the game, if any).
+ * to the site that opened the game, if any), {"t": "open", "url"} (a page of the site in a new tab).
  */
 final class Bridge
 {
@@ -25,6 +25,21 @@ final class Bridge
     {
         if (!self::available()) return false;
         return @file_put_contents(self::BRIDGE_FILE, json_encode($request) . "\n", FILE_APPEND) !== false;
+    }
+
+    /** The site of the game in the browser (a new tab), or in the native game the system's browser. */
+    public static function openSite(string $url): void
+    {
+        if (self::available()) {
+            self::send(['t' => 'open', 'url' => $url]);
+            return;
+        }
+        $command = match (PHP_OS_FAMILY) {
+            'Windows' => 'start "" ' . escapeshellarg($url),
+            'Darwin' => 'open ' . escapeshellarg($url) . ' >/dev/null 2>&1 &',
+            default => 'xdg-open ' . escapeshellarg($url) . ' >/dev/null 2>&1 &',
+        };
+        @exec($command);
     }
 
     /** The game was opened from a room of the site (SONIC_ROOM): it goes back there after the match. */

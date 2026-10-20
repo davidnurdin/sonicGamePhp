@@ -49,6 +49,8 @@ class Versus extends EventEmitter
     /** Flag mode: flags to bring back to win, seconds before a dropped flag can be taken, carrier speed. */
     private const FLAG_CAPTURES = 3;
     private const FLAG_DROP_DELAY = 1.0;
+    /** Flag mode: a dropped flag nobody takes goes back half-way after this. */
+    private const FLAG_RETURN_TIME = 15.0;
     private const CARRIER_SPEED = 0.75;
     /** Flag mode: top speed of the bots (Sonic: 500 px/s), slower than in a race. */
     private const BOT_FLAG_SPEED = 500 * 0.6;
@@ -99,6 +101,11 @@ class Versus extends EventEmitter
     /** Flag mode: the last carrier can't take it back at once, nobody can during FLAG_DROP_DELAY. */
     private ?Rival $lastCarrier = null;
     private float $flagDelay = 0;
+    /** Flag mode: how long the flag has been lying on the ground. */
+    private float $flagLying = 0;
+    /** Flag mode: where the carrier was on safe ground, sampled every 0.25 s (the last 2 s): [x, ground]. */
+    private array $flagSafe = [];
+    private float $flagSafeClock = 0;
     /** Flag mode: [x, y] of the foot of the base of each team, and the flags each team brought back. */
     private array $bases = [];
     private array $captures = [0, 0];
@@ -342,26 +349,54 @@ class Versus extends EventEmitter
         $this->flag = $best;
         $this->carrier = $this->lastCarrier = null;
         $this->flagDelay = 0;
+        $this->flagLying = 0;
         $this->sfx(SoundManager::SFX_SIGN_STOP);
     }
 
-    /** The carrier drops the flag where it is (on the ground below; in a pit: a new flag half-way). */
-    private function dropFlag(): void
+    /**
+     * The carrier drops the flag where it is (on the ground below; in a pit: a new flag half-way). $hazard: hurt
+     * by the level (spikes...), the flag would lie where nobody can take it: where he was a moment before.
+     */
+    private function dropFlag(bool $hazard = false): void
     {
         $carrier = $this->carrier;
         if ($carrier === null || $this->isClient()) return;
         $this->carrier = null;
         $this->lastCarrier = $carrier;
         $this->flagDelay = self::FLAG_DROP_DELAY;
+        $this->flagLying = 0;
         $this->restoreSpeed($carrier);
+        $safe = $hazard ? ($this->flagSafe[0] ?? null) : null;
+        $this->flagSafe = [];
+        if ($safe !== null) {
+            $this->flag = $safe;
+            $this->sfx(SoundManager::SFX_HURT);
+            return;
+        }
         $x = (int)round($carrier->player->getX() + 12);
         $ground = $this->level->findSurfaceY($x, (int)$carrier->player->getY() + 16, 240);
-        if ($ground === null) {
+        if ($ground === null || $hazard) {
             $this->placeFlag();
             return;
         }
         $this->flag = [$x, $ground];
         $this->sfx(SoundManager::SFX_HURT);
+    }
+
+    /** The carrier on the ground, not hurt: a place where the flag could fall back (see dropFlag). */
+    private function sampleSafeGround(Rival $carrier, float $deltaTime): void
+    {
+        $this->flagSafeClock += $deltaTime;
+        if ($this->flagSafeClock < 0.25) return;
+        $this->flagSafeClock = 0;
+        $p = $carrier->player;
+        $x = (int)round($p->getX() + 12);
+        $feet = (int)$p->getY() + 32;
+        $ground = $this->level->findSurfaceY($x, $feet - 4, 8);
+        if ($ground === null) return;
+        $this->flagSafe[] = [$x, $ground];
+        // the oldest one kept is 1.5 to 2 seconds old: before the spikes
+        if (count($this->flagSafe) > 8) array_shift($this->flagSafe);
     }
 
     /** Back to the normal top speed after carrying the flag. */
@@ -980,9 +1015,10 @@ class Versus extends EventEmitter
             // hurt or dead (spikes, pit...) without a hit from a Sonic: dropped as well
             if (!$this->canTouch($carrier) || $p->getState() === 'hurt'
                 || ($carrier->human && ($this->objects->isPlayerHurt() || $this->objects->isPlayerDead()))) {
-                $this->dropFlag();
+                $this->dropFlag(true);
                 return;
             }
+            $this->sampleSafeGround($carrier, $deltaTime);
             if ($carrier->human) $this->human->setTopSpeed(($this->objects->hasSpeedShoes() ? 1000 : 500) * self::CARRIER_SPEED);
             $this->flag = [$p->getX() + 12, $p->getY()];
             [$bx, $by] = $this->bases[$carrier->team];
@@ -993,6 +1029,12 @@ class Versus extends EventEmitter
             return;
         }
 
+        // lying where nobody takes it (out of reach...): back half-way
+        $this->flagLying += $deltaTime;
+        if ($this->flagLying >= self::FLAG_RETURN_TIME && !$this->isClient()) {
+            $this->placeFlag();
+            return;
+        }
         if ($this->flagDelay > 0) return;
         [$fx, $fy] = $this->flag;
         foreach ($this->rivals as $rival) {

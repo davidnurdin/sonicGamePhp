@@ -17,7 +17,7 @@ final class Lang
     private const EN = [
         // title, menus
         'DEMARRER' => 'START', 'OPTIONS' => 'OPTIONS', 'MULTIJOUEUR' => 'MULTIPLAYER', 'EN LIGNE' => 'ONLINE',
-        'MEILLEURS TEMPS' => 'BEST TIMES', 'RETOUR' => 'BACK', 'QUITTER' => 'QUIT', 'LANCER' => 'START',
+        'MEILLEURS TEMPS' => 'BEST TIMES', 'SITE WEB' => 'WEBSITE', 'RETOUR' => 'BACK', 'QUITTER' => 'QUIT', 'LANCER' => 'START',
         'MODE' => 'MODE', 'ZONE' => 'ZONE', 'SONICS' => 'SONICS', 'IA' => 'AI', 'NOM' => 'NAME', 'LANGUE' => 'LANGUAGE',
         'AUTO' => 'AUTO', 'FRANCAIS' => 'FRENCH', 'ANGLAIS' => 'ENGLISH',
         'FILTRE CRT' => 'CRT FILTER', 'VITESSE' => 'SPEED', 'JUKEBOX' => 'JUKEBOX', 'CHEATS' => 'CHEATS',
@@ -44,7 +44,7 @@ final class Lang
         'T OU ENTREE : PARLER' => 'T OR ENTER : CHAT', 'L HOTE EST PARTI' => 'THE HOST LEFT', 'ABANDON' => 'GAVE UP',
         '{name} GAGNE' => '{name} WINS', 'EGALITE {score}' => 'DRAW {score}', 'LES {team} GAGNENT {score}' => 'THE {team} WIN {score}',
         'POINT POUR LES {team}' => 'POINT FOR THE {team}', '{name} A LE DRAPEAU' => '{name} HAS THE FLAG',
-        '{name} REMPLACE PAR UN BOT' => '{name} REPLACED BY A BOT', 'BLEUS {a} - {b} ROUGES' => 'BLUES {a} - {b} REDS',
+        '{name} REMPLACE PAR UN BOT' => '{name} REPLACED BY A BOT', '{name} REJOINT LA PARTIE' => '{name} JOINS THE MATCH', 'BLEUS {a} - {b} ROUGES' => 'BLUES {a} - {b} REDS',
         '{n} ANNEAUX' => '{n} RINGS', '{n} KO' => '{n} KO', ' ARRIVE' => ' FINISHED', '{a} CONTRE {b}' => '{a} VS {b}',
         // online
         'SALON PUBLIC' => 'PUBLIC ROOM', 'SALON PRIVE' => 'PRIVATE ROOM', 'REJOINDRE' => 'JOIN', 'PARLER' => 'CHAT',

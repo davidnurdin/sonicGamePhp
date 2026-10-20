@@ -80,6 +80,8 @@ class Game extends EventEmitter
     private ?string $afterPlayerName = null;
     /** Opened from a room of the site (SONIC_ROOM, sonic.mimichat.fr/salon/CODE > JOUER): straight into that room. */
     private ?string $siteRoom = null;
+    /** The match of the site's room has been started (once: after it, back to the site). */
+    private bool $siteStarted = false;
     /** Best time waiting for the player's name: [act, index, time], and what to do once it is typed. */
     private ?array $pendingName = null;
     private ?\Closure $afterName = null;
@@ -277,6 +279,8 @@ class Game extends EventEmitter
         });
         $this->screens->on('mapDone', fn() => $this->playLevelMusic(true));
         $this->screens->on('versusStart', fn() => $this->startVersus());
+        $this->screens->on('openSite', fn() => Bridge::openSite(defined('SONIC_SITE_URL') && constant('SONIC_SITE_URL') !== ''
+            ? (string)constant('SONIC_SITE_URL') : Online::SITE_URL));
         $this->screens->setOnlineView(fn() => $this->online);
         $this->screens->on('online', fn(string $action) => $this->onlineAction($action));
         $this->screens->on('codeDone', function (string $code) {
@@ -473,6 +477,11 @@ class Game extends EventEmitter
     {
         if ($this->online === null) return;
         $this->online->poll();
+        // opened from a room of the site: no menu, the match starts at once (whoever comes next joins it)
+        if ($this->siteRoom !== null && !$this->siteStarted && $this->online->status === 'lobby' && $this->online->isHost()) {
+            $this->siteStarted = true;
+            $this->onlineAction('start');
+        }
         $start = $this->online->start;
         if ($start !== null && $start !== $this->versusConfig && $this->online->status === 'match') {
             $this->screens->close();

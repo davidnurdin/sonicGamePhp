@@ -274,6 +274,8 @@ class Screens extends EventEmitter
                     ['MULTIJOUEUR', null, fn() => $this->openPage('multi', 0), null],
                     ['OPTIONS', null, fn() => $this->openPage('options', 0), null],
                     ['MEILLEURS TEMPS', null, fn() => $this->openPage('scores', 0), null],
+                    // the site of the game (sonic.mimichat.fr) in the browser: rooms, statistics, account
+                    ['SITE WEB', null, fn() => $this->emit('openSite', []), null],
                 ];
         }
     }
@@ -1020,9 +1022,11 @@ class Screens extends EventEmitter
         $press = $this->text === null && ($this->frames % $title['press_period']) < $title['press_visible'];
         $this->blit($press ? 'title-press' : 'title', 0, 0, 256, 192, 0, 0);
         if ($this->text !== null) {
-            foreach ($this->menuItems() as $i => [$label]) {
-                // 4 lines between the logo and the copyright line of the picture
-                $this->menuLine($label, $i === $this->menuIndex, self::MENU_Y + 10 * $i);
+            // the lines between the logo and the copyright line of the picture (5: a little tighter)
+            $items = $this->menuItems();
+            $step = count($items) > 4 ? 9 : 10;
+            foreach ($items as $i => [$label]) {
+                $this->menuLine($label, $i === $this->menuIndex, self::MENU_Y - (count($items) > 4 ? 5 : 0) + $step * $i);
             }
         }
         // wagging finger: alternates every 8 frames 22 times, then rests on the first frame
