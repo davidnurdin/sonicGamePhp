@@ -225,8 +225,10 @@ final class Online
             if ($type === self::HELLO) {
                 $json = json_decode($payload, true);
                 $known = ($this->watchers[$from] ?? '') !== '';
-                $this->watchers[$from] = self::cleanName((string)($json['name'] ?? ''), $from);
-                if (!$known && empty($json['re'])) $this->say(-1, '', '{name} EST SUR LE SITE', $this->watchers[$from]);
+                // a visitor without an account: no name, he only gets the roster
+                $name = trim((string)($json['name'] ?? ''));
+                $this->watchers[$from] = $name !== '' ? self::cleanName($name, $from) : '';
+                if (!$known && $name !== '' && empty($json['re'])) $this->say(-1, '', '{name} EST SUR LE SITE', $this->watchers[$from]);
                 if ($this->isHost()) $this->sendRoster();
             } elseif ($type === self::CHAT) {
                 $text = self::cleanChat($payload);
