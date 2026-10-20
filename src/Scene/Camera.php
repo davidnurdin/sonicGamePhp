@@ -305,8 +305,9 @@ class Camera
 				$deltaX = ($targetCameraX - $cameraX);
             }
             else {
-				$deltaY = ($targetCameraY - $cameraY) * ($cameraLerpSpeedY * $delta);
-				$deltaX = ($targetCameraX - $cameraX) * ($cameraLerpSpeedX * $delta);
+				// at most the whole way: a long frame (> 1/10 s) would go past the target, and further each frame
+				$deltaY = ($targetCameraY - $cameraY) * min(1, $cameraLerpSpeedY * $delta);
+				$deltaX = ($targetCameraX - $cameraX) * min(1, $cameraLerpSpeedX * $delta);
 
 
 				if ($deltaX > 0)
