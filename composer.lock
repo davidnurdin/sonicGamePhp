@@ -12,12 +12,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/davidnurdin/php-wasm-network.git",
-                "reference": "93ba3ec9643a9621b9f75443ba5ceaaf9a484783"
+                "reference": "11da1688bf497aec1d7c4c611658cee5d2a371a3"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/davidnurdin/php-wasm-network/zipball/93ba3ec9643a9621b9f75443ba5ceaaf9a484783",
-                "reference": "93ba3ec9643a9621b9f75443ba5ceaaf9a484783",
+                "url": "https://api.github.com/repos/davidnurdin/php-wasm-network/zipball/11da1688bf497aec1d7c4c611658cee5d2a371a3",
+                "reference": "11da1688bf497aec1d7c4c611658cee5d2a371a3",
                 "shasum": ""
             },
             "require": {
@@ -49,7 +49,7 @@
                 "source": "https://github.com/davidnurdin/php-wasm-network/tree/main",
                 "issues": "https://github.com/davidnurdin/php-wasm-network/issues"
             },
-            "time": "2026-10-20T11:47:27+00:00"
+            "time": "2026-10-20T12:31:40+00:00"
         },
         {
             "name": "evenement/evenement",
