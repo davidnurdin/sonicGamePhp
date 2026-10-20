@@ -325,7 +325,7 @@ final class Online
     public function shareUrl(): string
     {
         $site = defined('SONIC_SITE_URL') && constant('SONIC_SITE_URL') !== '' ? (string)constant('SONIC_SITE_URL') : self::SITE_URL;
-        return rtrim($site, '/') . '/salon/' . $this->room;
+        return rtrim($site, '/') . '/salon/' . $this->room . '?lang=' . Lang::get();
     }
 
     /** A line of mine in the chat (one a second at most). */
