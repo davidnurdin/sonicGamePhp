@@ -46,6 +46,9 @@ final class Online
     /** Match messages for VersusNetwork: [type, from, payload], or ['leave', peer] / ['host', peer]. */
     public array $inbox = [];
     private float $lastPing = 0;
+    /** No answer from the server for this long: unreachable (a blocked address can stay "connecting"). */
+    private const CONNECT_TIMEOUT = 8.0;
+    private float $since;
 
     /**
      * @param string|null $join code of the room to join (null: create one)
@@ -56,6 +59,7 @@ final class Online
         private string $name,
         private ?string $join = null,
     ) {
+        $this->since = microtime(true);
         $this->net = Network::connect($url, ['transport' => $transport]);
     }
 
@@ -140,6 +144,10 @@ final class Online
                     $this->message($event->from, $event->data);
                     break;
             }
+        }
+        if ($this->status === 'connecting' && microtime(true) - $this->since > self::CONNECT_TIMEOUT) {
+            $this->net->close();
+            $this->fail('SERVEUR INJOIGNABLE');
         }
         if ($this->status !== 'error' && $this->status !== 'closed' && microtime(true) - $this->lastPing > 2) {
             $this->lastPing = microtime(true);

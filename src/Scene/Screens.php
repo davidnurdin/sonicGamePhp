@@ -1026,14 +1026,14 @@ class Screens extends EventEmitter
         $options = $this->options;
         $settings = Versus::MODES[$options->getVersusMode()] . '  ' . Versus::levelName($options->getVersusLevel());
         if ($online === null) {
-            $centre('JOUE CONTRE TES AMIS', 110, $grey);
-            $centre('CREE UN SALON ET DONNE SON CODE', 124, $grey);
-            $centre($settings, 146, [self::MENU_TOP, self::MENU_BOTTOM]);
-            $centre('REGLAGES DANS MULTIJOUEUR', 160, $grey);
+            $centre('JOUE CONTRE TES AMIS', 120, $grey);
+            $centre('CREE UN SALON ET DONNE SON CODE', 133, $grey);
+            $centre($settings, 152, [self::MENU_TOP, self::MENU_BOTTOM]);
+            $centre('REGLAGES DANS MULTIJOUEUR', 165, $grey);
             return;
         }
         if ($online->status === 'error' || $online->status === 'closed') {
-            $centre($online->error ?: 'DECONNECTE', 110, [[255, 170, 170], [200, 60, 60]]);
+            $centre($online->error ?: 'DECONNECTE', 124, [[255, 170, 170], [200, 60, 60]]);
             return;
         }
         if ($online->status === 'connecting' || $online->room === null) {
