@@ -1108,7 +1108,7 @@ class Screens extends EventEmitter
         foreach ($this->chatLines($online, max(1, intdiv(172 - $y, 10)), 236, $size) as $i => [$line, $colours]) {
             $this->styled($line, 10, $y + 10 * $i, $size, $colours);
         }
-        $status = $online->isHost() ? 'LANCE QUAND TOUT LE MONDE EST LA' : 'EN ATTENTE DE L HOTE';
+        $status = Lang::t($online->isHost() ? 'LANCE QUAND TOUT LE MONDE EST LA' : 'EN ATTENTE DE L HOTE');
         if ($online->pingMs !== null) $status .= '  ' . (int)round($online->pingMs) . ' MS';
         $centre($status, 180, $grey);
     }
