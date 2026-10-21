@@ -161,6 +161,7 @@ class GameObjectManager extends EventEmitter
         $this->finalGlow = null;
         $this->finalEmerald = null;
         $this->levelTime = 0;
+        $this->assisted = false;
         // cheat: every act (and every restart) with 50 rings
         $this->rings = $this->cheat('rings') ? 50 : 0;
         if (!$keepCheckpoint) {
@@ -1118,10 +1119,36 @@ class GameObjectManager extends EventEmitter
         if ($this->cheat('rings')) $this->rings = max(50, $this->rings);
     }
 
-    /** At least one cheat is on: the game does not count for the ghosts and the high scores. */
+    /** At least one cheat is on (or the autoplay played this act): the game does not count for the ghosts and the high scores. */
     public function hasCheats(): bool
     {
-        return in_array(true, $this->cheats, true);
+        return $this->assisted || in_array(true, $this->cheats, true);
+    }
+
+    /** Debug (F7): the autoplay played this act (until the act is loaded again). */
+    private bool $assisted = false;
+
+    public function setAssisted(): void
+    {
+        $this->assisted = true;
+    }
+
+    /**
+     * Where the autoplay takes Sonic in an act alone: [[x, y], chase?]: the arena of the boss, the boss once he is
+     * there (it jumps into him), then the button of the capsule, then the sign (beyond it: the end of the map).
+     */
+    public function autoplayTarget(Player $player, Level $level): array
+    {
+        $boss = $this->boss;
+        if ($boss !== null && !$boss->isDefeated() && !$boss->isGone()) {
+            $x = $boss->getPosX() + $boss->getWidth() / 2;
+            if (!$this->isBossFight()) return [[$x, $player->getY()], false];   // his arena, on Sonic's ground
+            return [[$x, $boss->getPosY() + $boss->getHeight() / 2], true];
+        }
+        if ($this->capsule && !$this->capsule->isOpened() && ($this->boss === null || $this->boss->isDefeated())) {
+            return [[$this->capsule->getPosX() + 16, $this->capsule->getTop() - 32], false];
+        }
+        return [[($this->endSignX ?? $level->getMapWidth() * 32) + 400, $player->getY()], false];
     }
 
     public function resetGame(): void

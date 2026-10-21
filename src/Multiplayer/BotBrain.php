@@ -15,7 +15,9 @@ use SonicGame\Level\Level;
  *    then waits a moment on the ground: it can be hit back;
  *  - an opponent jumping / rolling at it: it backs off, if it notices (two attacking Sonics only bounce);
  *  - it hesitates now and then;
- *  - stuck (no closer to the target for a while): a higher jump, then it asks to be put back on the way.
+ *  - stuck (no closer to the target for a while): a higher jump, then it asks to be put back on the way;
+ *  - thrown back while running (a spring the wrong way at the foot of a wall): it remembers where, and next time
+ *    it jumps before it, from further each time it fails.
  * The difficulty (0 easy, 1 medium, 2 hard) sets all of that.
  */
 class BotBrain
@@ -45,6 +47,10 @@ class BotBrain
     private array $seen = [0, 0];
     private bool $backOff = false;
     private bool $wantAttack = false;
+    /** Where it was thrown back, in 16 px columns => times; for one map (its object id). */
+    private array $bounces = [];
+    private int $bouncesOf = 0;
+    private float $lastVx = 0;
 
     /** @param int $difficulty 0 easy, 1 medium, 2 hard */
     public function __construct(int $difficulty)
@@ -83,6 +89,17 @@ class BotBrain
         $hurt = $p->getState() === 'hurt';
 
         $this->jumpCooldown = max(0, $this->jumpCooldown - $deltaTime);
+
+        // thrown back while running at the target (not hurt): remembered, it jumps before that place next time
+        if ($this->bouncesOf !== spl_object_id($level)) {
+            $this->bouncesOf = spl_object_id($level);
+            $this->bounces = [];
+        }
+        if ($this->dir !== 0 && !$hurt && $this->lastVx * $this->dir > 60 && $vx * $this->dir < -200) {
+            $column = (int)round($x / 16);
+            $this->bounces[$column] = ($this->bounces[$column] ?? 0) + 1;
+        }
+        $this->lastVx = $vx;
         $this->attackRest = max(0, $this->attackRest - $deltaTime);
 
         // a decision every REACT seconds (a little random), on what it saw then
@@ -128,14 +145,21 @@ class BotBrain
         $this->blocked = ($grounded && $this->dir !== 0 && abs($vx) < 15) ? $this->blocked + $deltaTime : 0;
         if ($grounded && !$hurt && $this->jumpCooldown <= 0 && $dir !== 0) {
             // a wall: solid ahead at the height of the head and of the chest (a slope going up is not:
-            // at 16 px it rises at most 16 px above the feet)
+            // at 16 px it rises at most 16 px above the feet); running fast it is a steep slope he runs up (a
+            // jump there goes through it), a real wall stops him and he jumps when blocked
             $aheadX = (int)round($x + $dir * 16);
-            $wall = $level->isSolidAt($aheadX, (int)$y + 4) && $level->isSolidAt($aheadX, (int)$y + 12);
+            $wall = abs($vx) < 400 && $level->isSolidAt($aheadX, (int)$y + 4) && $level->isSolidAt($aheadX, (int)$y + 12);
             // nothing under the feet a little ahead: a pit (only worth jumping when running)
             $pit = abs($vx) > 60 && !self::groundBelow($level, (int)round($x + $dir * 44), (int)$y + 31, 96);
             // the target is on a ledge above, not far
             $above = !$chase && !$this->backOff && $ty < $y - 48 && abs($dx) < 120;
-            if ($wall || $pit || $above || $this->blocked > 0.45) {
+            // a place where it was thrown back, just ahead: from 64 px the first time, 32 px further each time
+            $bounce = 0;
+            foreach ($this->bounces as $column => $times) {
+                $ahead = ($column * 16 - $x) * $dir;
+                if ($ahead > 0 && $ahead <= 32 + 32 * min($times, 5)) $bounce = max($bounce, $times);
+            }
+            if ($wall || $pit || $above || $bounce > 0 || $this->blocked > 0.45) {
                 $jump = true;
                 $this->blocked = 0;
             }
@@ -150,7 +174,7 @@ class BotBrain
                 $jump = true;
             }
         }
-        $super = $jump && $this->noProgress > 4;   // stuck: the higher jump of a spring
+        $super = $jump && ($this->noProgress > 4 || ($bounce ?? 0) >= 3);   // stuck: the higher jump of a spring
         if ($jump) $this->jumpCooldown = 0.4;
 
         $warp = $this->noProgress > 9;

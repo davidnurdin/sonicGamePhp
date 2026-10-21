@@ -12,6 +12,8 @@ use SonicGame\InputManager\InputManager;
 use SonicGame\InputManager\InputTouchpad;
 use SonicGame\Level\LevelManager;
 use SonicGame\Loop\GameLoop;
+use SonicGame\Multiplayer\BotBrain;
+use SonicGame\Multiplayer\BotRoute;
 use SonicGame\Multiplayer\Online;
 use SonicGame\Multiplayer\Versus;
 use SonicGame\Renderer\CrtFilter;
@@ -87,6 +89,13 @@ class Game extends EventEmitter
 
     /** F6: panel with Sonic's coordinates over the screen (to report bugs). */
     private bool $coordsPanel = false;
+    /** Debug (F7): the computer plays for Sonic, a BotBrain on his joypad, a BotRoute for the way; how long it still holds the jump. */
+    private ?BotBrain $autoplay = null;
+    private ?BotRoute $autoplayRoute = null;
+    /** Autoplay: where Sonic last stood, and for how long he has not (in the air, or inside the ground). */
+    private ?array $autoplaySafe = null;
+    private float $autoplayAir = 0;
+    private float $autoplayJump = 0;
     /** The level of the site whose name and author were shown at its start (LevelManager::getCustomVersion()). */
     private int $creditShown = 0;
     private int $creditSeen = 0;
@@ -1027,6 +1036,59 @@ class Game extends EventEmitter
         $this->demoPrevious = $pad;
     }
 
+    /**
+     * Joypad of the autoplay for this frame (F7): alone, the boss, then the capsule, then the end of the act; in a
+     * match, what a bot of his team would go after. The act counts as played with a cheat (no best time, no ghost).
+     */
+    private function playAutoplay(float $deltaTime): void
+    {
+        $this->objectManager->setAssisted();
+        if ($this->recorder->isRecording('solo')) $this->recorder->cancel();
+        if ($this->objectManager->isPlayerDead() || $this->objectManager->isLevelComplete()
+            || $this->objectManager->isCutscene() || ($this->versus?->isLocked() ?? false)) {
+            $this->autoplay->reset();
+            $this->autoplayRoute->reset();
+            return;
+        }
+        $level = $this->scene->getCurrentLevel();
+        // the collisions of a map are its surfaces: through one (a jump at full speed), Sonic falls inside the
+        // ground for ever; back where he last stood
+        if ($this->player->isGrounded()) {
+            $this->autoplaySafe = [$this->player->getX(), $this->player->getY(), spl_object_id($level)];
+            $this->autoplayAir = 0;
+        } elseif (($this->autoplayAir += $deltaTime) > 3 && $this->autoplaySafe !== null && $this->autoplaySafe[2] === spl_object_id($level)) {
+            $this->autoplayAir = 0;
+            $this->player->setXY($this->autoplaySafe[0], $this->autoplaySafe[1]);
+            $this->player->setVelocity(0, 0);
+            $this->autoplay->reset();   // not the route: stuck there, it puts him further on the way
+            return;
+        }
+        [$target, $chase, $attacking] = $this->versus?->autoplayTarget() ?? $this->objectManager->autoplayTarget($this->player, $level) + [2 => false];
+        // after an opponent or the boss: straight at him (he moves; the arena of a boss holds Sonic in anyway)
+        $way = $chase ? ['target' => $target, 'direct' => true, 'warp' => null]
+            : $this->autoplayRoute->next($level, $this->player->getX(), $this->player->getY(), $target, $deltaTime);
+        if ($way['warp'] !== null) {
+            // stuck for long on the way: further on it
+            $this->player->setXY($way['warp'][0], $way['warp'][1]);
+            $this->player->setVelocity(0, 0);
+            $this->autoplay->reset();
+            return;
+        }
+        $input = $this->autoplay->think($this->player, $level, $way['target'], $deltaTime, $chase && $way['direct'], $attacking);
+        if ($input['dir'] !== 0) $this->player->moveDirection($input['dir'] > 0 ? 'right' : 'left');
+        if ($input['down']) $this->player->roll();
+        if ($input['jump'] && $this->player->isGrounded()) {
+            $this->player->jump();
+            if ($input['super']) $this->player->setVelocity($this->player->getVelocity()[0], -620);
+            $this->autoplayJump = 0.4;
+        }
+        if ($this->autoplayJump > 0) {
+            $this->autoplayJump -= $deltaTime;
+            if ($this->autoplayJump <= 0) $this->player->jumpRelease();
+        }
+        $this->objectManager->setButtonHeld($this->autoplayJump > 0);
+    }
+
     /** Act completed: its time goes to the best times (not with cheats); the page will open on this act. */
     private function recordActTime(): void
     {
@@ -1125,6 +1187,18 @@ class Game extends EventEmitter
         foreach ($lines as $i => $text) {
             $this->text->draw($text, 8 + $size, 8 + (int)($size / 2) + $i * $line, $size, $i === 2 ? [255, 255, 0] : [255, 255, 255]);
         }
+    }
+
+    /** F7: AUTOPLAY at the bottom centre: the player sees that the computer is playing. */
+    private function drawAutoplay(int $windowHeight): void
+    {
+        $size = max(12, (int)round($windowHeight / 30));
+        $label = 'AUTOPLAY (F7)';
+        $width = $this->text->width($label, $size);
+        $x = intdiv($this->sdl->getWindow()->getWidth() - $width, 2);
+        $y = $windowHeight - $size * 3;
+        $this->text->panel($x - $size, $y - (int)($size / 2), $width + $size * 2, $size * 2);
+        $this->text->draw($label, $x, $y, $size, [255, 216, 0]);
     }
 
     /** Shows the map before the acts that have one (levels 1-18), the level starts when it ends. */
@@ -1373,6 +1447,9 @@ class Game extends EventEmitter
 				if ($this->coordsPanel && !$this->screens->isActive()) {
 					$this->drawCoordsPanel($height);
 				}
+				if ($this->autoplay && !$this->screens->isActive()) {
+					$this->drawAutoplay($height);
+				}
 				$this->sdl->getRenderer()->present();
 
 			// SDL_HINT_RENDER_SCALE_QUALITY ?
@@ -1433,6 +1510,10 @@ class Game extends EventEmitter
 				$this->buttonPressed = false;
 				$closureDisplay($deltaTime);
 				return;
+			}
+
+			if ($this->autoplay && !$this->demo && $this->replay === null && !$this->carryPlayer && $this->scene->getCurrentLevel()) {
+				$this->playAutoplay($deltaTime);
 			}
 
 			if ($this->replay !== null && $this->scene->getCurrentLevel()) {
@@ -1757,6 +1838,15 @@ class Game extends EventEmitter
         {
             // debug: Sonic's coordinates in a panel over the screen
             $this->coordsPanel = !$this->coordsPanel;
+        }
+
+        if ($keyboard->isKeyPressed(\SDLK_F7))
+        {
+            // debug: the computer plays for Sonic (alone, against the computer, online)
+            $this->autoplay = $this->autoplay ? null : new BotBrain(2);
+            $this->autoplayRoute = $this->autoplay ? new BotRoute() : null;
+            $this->autoplayJump = 0;
+            $this->player->jumpRelease();
         }
 
         if ($keyboard->isKeyPressed(\SDLK_F4))

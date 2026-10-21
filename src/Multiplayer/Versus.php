@@ -593,6 +593,15 @@ class Versus extends EventEmitter
         $this->hazard = [];
     }
 
+    /** Debug (F7 autoplay): where the human's Sonic goes, like a bot of his team: [[x, y], chase?, is the foe attacking?] */
+    public function autoplayTarget(): array
+    {
+        // arrived (race): he waits there, like the bots
+        if ($this->me->finishTime !== null) return [[$this->human->getX() + 12, $this->human->getY()], false, false];
+        [$target, $chase, $foe] = $this->targetOf($this->me) + [2 => null];
+        return [$target, $chase, $foe !== null && $this->isAttacking($foe)];
+    }
+
     /** Where a bot goes: [[x, y], chase an opponent?] */
     private function targetOf(Rival $rival): array
     {
