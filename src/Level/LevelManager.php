@@ -117,6 +117,7 @@ class LevelManager extends EventEmitter
                 if ($path === null) unset($this->spritesShown[$sheet]); else $this->spritesShown[$sheet] = $path;
             } catch (\RuntimeException $e) {
                 // a picture that does not load: the game's one
+                error_log('[sprites] ' . $sheet . ': ' . $e->getMessage());
                 if ($path !== null) {
                     $this->sdl->replaceTexture($sheet, $original, $key);
                     unset($this->spritesShown[$sheet]);
@@ -153,7 +154,10 @@ class LevelManager extends EventEmitter
             $picture = dirname($file) . '/sprite-' . $sheet . '.png';
             $size = is_file($picture) ? @getimagesize($picture) : false;
             $original = @getimagesize($this->assetManager->getAssetFolder() . '/tileset/sprites/tileset-' . $sheet . '.png');
-            if ($size === false || $original === false || $size[0] !== $original[0] || $size[1] !== $original[1]) continue;
+            if ($size === false || $original === false || $size[0] !== $original[0] || $size[1] !== $original[1]) {
+                error_log('[sprites] ' . $sheet . ': not the size of the game\'s sheet');
+                continue;
+            }
             $this->customSprites[$sheet] = self::relativePath($this->assetManager->getAssetFolder(), realpath($picture));
         }
         $this->spritesChanged = true;

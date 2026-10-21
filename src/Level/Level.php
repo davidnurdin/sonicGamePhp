@@ -172,8 +172,9 @@ class Level
         if (!is_array($rows) || count($rows) !== 32) return;
         $pixels = [];
         foreach (array_values($rows) as $y => $hex) {
-            $bits = is_string($hex) && preg_match('/^[0-9a-f]{8}$/i', $hex) ? hexdec($hex) : 0;
-            for ($x = 0; $x < 32; $x++) $pixels[$y][$x] = ($bits >> (31 - $x)) & 1;
+            $hex = is_string($hex) && preg_match('/^[0-9a-f]{8}$/i', $hex) ? $hex : '00000000';
+            // a hex digit at a time: ints are 32 bits in the browser (hexdec('ffffffff') is a float there)
+            for ($x = 0; $x < 32; $x++) $pixels[$y][$x] = (hexdec($hex[$x >> 2]) >> (3 - ($x & 3))) & 1;
         }
         $w = (int)($mask['w'] ?? 1);
         $this->tilesColision[$block] = $pixels;

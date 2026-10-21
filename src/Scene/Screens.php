@@ -368,11 +368,19 @@ class Screens extends EventEmitter
     }
 
     /** A name typed on the site in the game's font: capitals, digits and spaces, $length characters at most. */
+    private const ACCENTS = [
+        'à' => 'a', 'â' => 'a', 'ä' => 'a', 'á' => 'a', 'ã' => 'a', 'å' => 'a', 'ç' => 'c', 'é' => 'e', 'è' => 'e', 'ê' => 'e',
+        'ë' => 'e', 'î' => 'i', 'ï' => 'i', 'í' => 'i', 'ì' => 'i', 'ñ' => 'n', 'ô' => 'o', 'ö' => 'o', 'ó' => 'o', 'ò' => 'o',
+        'õ' => 'o', 'ù' => 'u', 'û' => 'u', 'ü' => 'u', 'ú' => 'u', 'ÿ' => 'y', 'ý' => 'y', 'œ' => 'oe', 'æ' => 'ae', 'ß' => 'ss',
+        'À' => 'A', 'Â' => 'A', 'Ä' => 'A', 'Á' => 'A', 'Ã' => 'A', 'Å' => 'A', 'Ç' => 'C', 'É' => 'E', 'È' => 'E', 'Ê' => 'E',
+        'Ë' => 'E', 'Î' => 'I', 'Ï' => 'I', 'Í' => 'I', 'Ì' => 'I', 'Ñ' => 'N', 'Ô' => 'O', 'Ö' => 'O', 'Ó' => 'O', 'Ò' => 'O',
+        'Õ' => 'O', 'Ù' => 'U', 'Û' => 'U', 'Ü' => 'U', 'Ú' => 'U', 'Ý' => 'Y', 'Œ' => 'OE', 'Æ' => 'AE',
+    ];
+
     private static function plain(mixed $text, int $length): string
     {
-        $text = (string)$text;
-        $ascii = function_exists('iconv') ? @iconv('UTF-8', 'ASCII//TRANSLIT', $text) : false;
-        $text = strtoupper(is_string($ascii) ? $ascii : $text);
+        // the accents by hand: the browser's PHP has no iconv
+        $text = strtoupper(strtr((string)$text, self::ACCENTS));
         $text = trim((string)preg_replace('/\s+/', ' ', (string)preg_replace('/[^A-Z0-9 ]/', ' ', $text)));
         return substr($text !== '' ? $text : '?', 0, $length);
     }
@@ -1133,7 +1141,8 @@ class Screens extends EventEmitter
     /** One centred line of the title menu at $y (SMS pixels); the selected one has the arrow and blinks. */
     private function menuLine(string $line, bool $selected, int $y): void
     {
-        $label = ($selected ? '> ' : '') . $line;
+        // translated before the arrow ("> DEMARRER" is not in the dictionary)
+        $label = ($selected ? '> ' : '') . Lang::t($line);
         $size = 8 * $this->scale;
         $width = $this->text->styledWidth($label, $size, $this->scale);
         $this->styled($label, (int)((256 * $this->scale - $width) / 2 / $this->scale), $y, $size, $this->lineColours($selected));
