@@ -20,7 +20,7 @@ class Options
     ];
 
     private array $values = ['ghost' => false, 'crt' => false, 'speed' => 'pal', 'cheats' => [], 'startLevel' => 1,
-        'versusMode' => 'race', 'versusSonics' => 3, 'versusTeam' => 2, 'versusLevel' => 1, 'versusAi' => 1, 'onlineName' => '',
+        'versusMode' => 'race', 'versusSonics' => 3, 'versusTeam' => 2, 'versusLevel' => 1, 'versusSite' => null, 'versusAi' => 1, 'onlineName' => '',
         'lang' => ''];
 
     public function __construct(private string $file)
@@ -170,6 +170,28 @@ class Options
     public function getVersusLevel(): int
     {
         return (int)$this->values['versusLevel'] ?: 1;
+    }
+
+    /** The level of the site chosen for the matches (ZONE = NIVEAU DU SITE): {id, lt (its key), name}, or null. */
+    public function getVersusSite(): ?array
+    {
+        $site = $this->values['versusSite'] ?? null;
+        return self::validSite($site);
+    }
+
+    public function setVersusSite(?array $site): void
+    {
+        $this->values['versusSite'] = self::validSite($site);
+        $this->save();
+    }
+
+    /** A level of the site as the matches pass it around (a room's settings, the START of a match), or null. */
+    public static function validSite(mixed $site): ?array
+    {
+        if (!is_array($site) || !is_int($site['id'] ?? null) || $site['id'] <= 0) return null;
+        $lt = (string)($site['lt'] ?? '');
+        if (!preg_match('/^[0-9a-f]{0,64}$/', $lt)) return null;
+        return ['id' => $site['id'], 'lt' => $lt, 'name' => substr((string)($site['name'] ?? ''), 0, 40)];
     }
 
     public function setVersus(string $mode, int $players, int $level): void

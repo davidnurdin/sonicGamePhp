@@ -41,6 +41,8 @@ class LevelManager extends EventEmitter
     private array $customSfx = [];
     /** Up by one each time the level CUSTOM is loaded (its files may have been written again). */
     private int $customVersion = 0;
+    /** The id on the site of the level CUSTOM loaded (null: none, or not from the site). */
+    private ?int $customId = null;
 
     public function __construct(private Sdl $sdl,private AssetManager $assetManager)
     {
@@ -113,6 +115,12 @@ class LevelManager extends EventEmitter
     public function getCustomSfx(): array
     {
         return $this->getCurrentLevel()->getLevel() === self::CUSTOM ? $this->customSfx : [];
+    }
+
+    /** The id on the site of the level of the site loaded (multiplayer: is it the one of the match?), or null. */
+    public function getCustomId(): ?int
+    {
+        return $this->customId;
     }
 
     /** Changes each time a level of the site is loaded: its music and sounds must be read again. */
@@ -193,6 +201,7 @@ class LevelManager extends EventEmitter
             if (is_int($index) && is_file($folder . '/sfx-' . $index . '.wav')) $this->customSfx[$index] = $folder . '/sfx-' . $index . '.wav';
         }
         $this->customVersion++;
+        $this->customId = is_int($data['id'] ?? null) ? $data['id'] : null;
         foreach ($this->levels as $index => $candidate) {
             if ($candidate->getLevel() === self::CUSTOM) {
                 $this->levels[$index] = $level;

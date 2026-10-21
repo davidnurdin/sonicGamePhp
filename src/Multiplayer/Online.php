@@ -6,6 +6,7 @@ use PhpWasmNetwork\Connection;
 use PhpWasmNetwork\Event;
 use PhpWasmNetwork\Network;
 use PhpWasmNetwork\Protocol;
+use SonicGame\Save\Options;
 use SonicGame\Utils\Lang;
 
 /**
@@ -36,7 +37,7 @@ final class Online
      * Version of the messages of a match: in the meta of the rooms, a player with another version of the game
      * (an old page in the cache) can't join, and the public rooms only bring together the same versions.
      */
-    public const VERSION = 4;
+    public const VERSION = 5;
     private const META = ['game' => 'sonic', 'v' => self::VERSION];
     /** Chat: characters of a line (the game's font, the on-screen keyboard) and lines kept. */
     public const CHAT_LENGTH = 30;
@@ -66,6 +67,8 @@ final class Online
     /** The match the host will start (Versus::MODES key, level): set by Game for the host, sent in the roster. */
     public string $mode = 'race';
     public int $level = 1;
+    /** The level of the site of the match (level Versus::SITE_LEVEL): {id, lt, name} (Options::validSite), or null. */
+    public ?array $site = null;
     /** What the relay shows of the room (setRoomInfo), sent again only when it changes. */
     private string $roomInfo = '';
     /** A public room (strangers come in through SALON PUBLIC). */
@@ -255,7 +258,8 @@ final class Online
                 foreach (($json['names'] ?? []) as $peer => $name) $names[(int)$peer] = self::cleanName((string)$name, (int)$peer);
                 if ($names) $this->names = $names;
                 if (isset(Versus::MODES[$json['mode'] ?? ''])) $this->mode = $json['mode'];
-                if (in_array((int)($json['level'] ?? 0), Versus::LEVELS, true)) $this->level = (int)$json['level'];
+                if (in_array((int)($json['level'] ?? 0), Versus::ZONE_CHOICES, true)) $this->level = (int)$json['level'];
+                $this->site = Options::validSite($json['site'] ?? null);
                 break;
             case self::CHAT:
                 $text = self::cleanChat($payload);
@@ -273,7 +277,7 @@ final class Online
 
     private function sendRoster(): void
     {
-        $this->sendJson(self::ROSTER, ['names' => (object)$this->names, 'mode' => $this->mode, 'level' => $this->level,
+        $this->sendJson(self::ROSTER, ['names' => (object)$this->names, 'mode' => $this->mode, 'level' => $this->level, 'site' => $this->site,
             'state' => $this->status === 'match' ? 'match' : 'lobby'], self::ALL);
         $this->publish();
     }
@@ -284,6 +288,8 @@ final class Online
         if (!$this->isHost()) return;
         $info = ['names' => array_values(array_map(fn(int $peer) => $this->names[$peer], $this->peers())),
             'sites' => array_values(array_filter($this->watchers)), 'mode' => $this->mode, 'level' => $this->level,
+            // a level of the site: its name (not its key: the list of rooms is public)
+            'site' => $this->level === Versus::SITE_LEVEL ? ($this->site['name'] ?? '') : null,
             'state' => $this->status === 'match' ? 'match' : 'lobby', 'v' => self::VERSION];
         $json = json_encode($info);
         if ($json === $this->roomInfo) return;
@@ -314,10 +320,11 @@ final class Online
     }
 
     /** The host changed the match (EN LIGNE > MODE / ZONE): the others see it in the room. */
-    public function setMatch(string $mode, int $level): void
+    public function setMatch(string $mode, int $level, ?array $site = null): void
     {
         $this->mode = $mode;
         $this->level = $level;
+        $this->site = $level === Versus::SITE_LEVEL ? Options::validSite($site) : null;
         if ($this->isHost()) $this->sendRoster();
     }
 

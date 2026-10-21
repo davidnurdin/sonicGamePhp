@@ -42,6 +42,10 @@ class Versus extends EventEmitter
     public const MODES = ['race' => 'COURSE', 'flag' => 'DRAPEAU', 'rings' => 'ANNEAUX', 'deathmatch' => 'DEATHMATCH'];
     /** Acts that can be played: 1 and 2 of each zone (the third one is the boss), and the 8 special stages. */
     public const LEVELS = [1, 2, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17, 28, 29, 30, 31, 32, 33, 34, 35];
+    /** A level of the site's editor (LevelManager::CUSTOM): the one chosen in ZONE, downloaded by each player. */
+    public const SITE_LEVEL = 36;
+    /** What ZONE goes through: the acts, then a level of the site. */
+    public const ZONE_CHOICES = [...self::LEVELS, self::SITE_LEVEL];
     private const ZONES = ['GREEN HILL', 'BRIDGE', 'JUNGLE', 'LABYRINTH', 'SCRAP BRAIN', 'SKY BASE'];
     public const TIME_LIMIT = 180;
     /** Rings mode: a fall this long after a hit / bump gives the rings to the one who pushed. */
@@ -164,9 +168,10 @@ class Versus extends EventEmitter
         }
     }
 
-    /** "GREEN HILL 1", "BONUS 3" (the special stages, levels 28-35) */
-    public static function levelName(int $level): string
+    /** "GREEN HILL 1", "BONUS 3" (the special stages, levels 28-35), a level of the site: its name ($site) */
+    public static function levelName(int $level, ?string $site = null): string
     {
+        if ($level === self::SITE_LEVEL) return $site !== null && $site !== '' ? $site : Lang::t('NIVEAU DU SITE');
         if ($level >= 28) return 'BONUS ' . ($level - 27);
         return self::ZONES[intdiv($level - 1, 3)] . ' ' . (($level - 1) % 3 + 1);
     }

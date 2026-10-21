@@ -64,6 +64,17 @@ class Game extends EventEmitter
     /** The levels of the site's editor (menu NIVEAUX DU SITE); $customFromMenu: the one played was chosen there. */
     private SiteLevels $siteLevels;
     private bool $customFromMenu = false;
+    /**
+     * What the level of the site being downloaded is for: 'play' (NIVEAUX DU SITE), 'pick' (chosen for the matches:
+     * $sitePickFor is the page to go back to), 'versus' (a match against the computer starts once it is there),
+     * 'online' (the START of an online match waits for it), 'prefetch' (the host's choice, downloaded ahead).
+     */
+    private string $sitePurpose = 'play';
+    private string $sitePickFor = 'multi';
+    /** The id of the level of the site being downloaded (multiplayer), null: none. */
+    private ?int $siteWanted = null;
+    /** The last level of the site that could not be downloaded for a match: not asked again for nothing. */
+    private ?int $siteFailed = null;
     /** The START of the online match being played (a new one from the host starts the next match). */
     private ?array $versusConfig = null;
     /** Options > FILTRE CRT (created on first use). */
@@ -302,12 +313,22 @@ class Game extends EventEmitter
             $this->startLevel();
         });
         $this->screens->on('mapDone', fn() => $this->playLevelMusic(true));
-        $this->screens->on('versusStart', fn() => $this->startVersus());
+        $this->screens->on('versusStart', fn() => $this->startVersusAgainstComputer());
         $this->screens->on('openSite', fn() => Bridge::openSite(defined('SONIC_SITE_URL') && constant('SONIC_SITE_URL') !== ''
             ? (string)constant('SONIC_SITE_URL') : Online::SITE_URL));
         $this->screens->setOnlineView(fn() => $this->online);
         $this->screens->on('siteLevels', fn(int $page) => $this->siteLevels->requestPage($page));
-        $this->screens->on('siteLevelPlay', fn(int $id, string $key) => $this->siteLevels->requestLevel($id, $key));
+        $this->screens->on('siteLevelPlay', function (int $id, string $key) {
+            $this->sitePurpose = 'play';
+            $this->siteLevels->requestLevel($id, $key);
+        });
+        // ZONE = NIVEAU DU SITE: the level of the matches, downloaded now
+        $this->screens->on('siteLevelPick', function (array $site, string $for) {
+            $this->options->setVersusSite($site);
+            $this->options->setVersus($this->options->getVersusMode(), $this->options->getVersusPlayers(), Versus::SITE_LEVEL);
+            $this->sitePickFor = $for;
+            $this->downloadSiteLevel($this->options->getVersusSite(), 'pick');
+        });
         $this->screens->on('online', fn(string $action) => $this->onlineAction($action));
         $this->screens->on('codeDone', function (string $code) {
             if (strlen($code) === 4) $this->connectOnline($code);
@@ -452,7 +473,7 @@ class Game extends EventEmitter
                 if ($this->online !== null) $this->screens->showChatEntry();
                 break;
             case 'settings':
-                $this->online?->setMatch($this->options->getVersusMode(), $this->options->getVersusLevel());
+                $this->online?->setMatch($this->options->getVersusMode(), $this->options->getVersusLevel(), $this->options->getVersusSite());
                 break;
             case 'share':
                 // the link of the room's page on the site: the phone's share sheet (or the clipboard) in the
@@ -477,9 +498,19 @@ class Game extends EventEmitter
             case 'start':
                 if ($this->online?->isHost() && $this->online->status === 'lobby') {
                     $mode = $this->options->getVersusMode();
-                    $this->online->startMatch(Versus::startConfig($this->online, $mode, $this->options->getVersusLevel(),
-                        $this->options->getVersusDifficulty(),
-                        $mode === 'flag' ? 2 * $this->options->getVersusTeamSize() : $this->options->getVersusPlayers()));
+                    $level = $this->options->getVersusLevel();
+                    $site = $this->options->getVersusSite();
+                    if ($level === Versus::SITE_LEVEL && $site === null) $level = 1;
+                    // a level of the site: the host has it (chosen in ZONE), the others download it (the START says which)
+                    if ($level === Versus::SITE_LEVEL && !$this->siteLevelReady($site)) {
+                        if ($this->siteWanted !== $site['id']) $this->online->note('CHARGEMENT DU NIVEAU...', '');
+                        $this->downloadSiteLevel($site, 'prefetch');
+                        break;
+                    }
+                    $config = Versus::startConfig($this->online, $mode, $level, $this->options->getVersusDifficulty(),
+                        $mode === 'flag' ? 2 * $this->options->getVersusTeamSize() : $this->options->getVersusPlayers());
+                    if ($level === Versus::SITE_LEVEL) $config['site'] = $site;
+                    $this->online->startMatch($config);
                 }
                 break;
         }
@@ -494,6 +525,7 @@ class Game extends EventEmitter
         // the match the host would start, for the room
         $this->online->mode = $this->options->getVersusMode();
         $this->online->level = $this->options->getVersusLevel();
+        $this->online->site = $this->online->level === Versus::SITE_LEVEL ? $this->options->getVersusSite() : null;
     }
 
     private function leaveOnline(): void
@@ -509,11 +541,25 @@ class Game extends EventEmitter
         $this->online->poll();
         // opened from a room of the site: no menu, the match starts at once (whoever comes next joins it)
         if ($this->siteRoom !== null && !$this->siteStarted && $this->online->status === 'lobby' && $this->online->isHost()) {
-            $this->siteStarted = true;
             $this->onlineAction('start');
+            // a level of the site still downloading: tried again next frame
+            $this->siteStarted = $this->online->status !== 'lobby';
+        }
+        // the host chose a level of the site: downloaded ahead, the match will start at once
+        if ($this->online->status === 'lobby' && $this->online->level === Versus::SITE_LEVEL && !$this->siteLevelReady($this->online->site)
+            && $this->siteWanted === null) {
+            $this->downloadSiteLevel($this->online->site, 'prefetch');
         }
         $start = $this->online->start;
         if ($start !== null && $start !== $this->versusConfig && $this->online->status === 'match') {
+            // a level of the site not here yet: the match starts once it is (the host's clock is followed)
+            if ((int)($start['level'] ?? 0) === Versus::SITE_LEVEL) {
+                $site = Options::validSite($start['site'] ?? null);
+                if (!$this->siteLevelReady($site)) {
+                    $this->downloadSiteLevel($site, 'online');
+                    return;
+                }
+            }
             $this->screens->close();
             $this->startVersus($start);
         }
@@ -641,12 +687,64 @@ class Game extends EventEmitter
         [$kind, $data] = $answer;
         if ($kind === 'list') {
             $this->screens->setSiteLevels($data);
-        } elseif (is_string($data) && $this->levelManager->loadCustom($data)) {
-            $this->customFromMenu = true;
-            $this->startCustom();
-        } else {
-            $this->screens->siteLevelFailed();
+            return;
         }
+        $purpose = $this->sitePurpose;
+        $loaded = is_string($data) && $this->levelManager->loadCustom($data);
+        $this->siteFailed = $loaded ? null : $this->siteWanted;
+        $this->siteWanted = null;
+        if ($purpose === 'play') {
+            if ($loaded) {
+                $this->customFromMenu = true;
+                $this->startCustom();
+            } else {
+                $this->screens->siteLevelFailed();
+            }
+        } elseif ($purpose === 'pick') {
+            if (!$loaded) {
+                $this->screens->siteLevelFailed();
+                return;
+            }
+            $this->screens->sitePicked();
+            if ($this->sitePickFor === 'online') $this->onlineAction('settings');
+        } elseif ($purpose === 'versus') {
+            if ($loaded) $this->startVersus(); else $this->screens->siteLevelFailed();
+        } elseif (!$loaded) {
+            // online: without the level, the match goes on without this player
+            $this->online?->note('NIVEAU INDISPONIBLE', '');
+        }
+    }
+
+    /** Downloads a level of the site for a match ($site: Options::validSite), unless it is already coming. */
+    private function downloadSiteLevel(?array $site, string $purpose): void
+    {
+        if ($site === null || $this->siteWanted === $site['id']) return;
+        // online, without a player asking: a level that failed is not downloaded again and again
+        if (($purpose === 'prefetch' || $purpose === 'online') && $this->siteFailed === $site['id']) return;
+        $this->sitePurpose = $purpose;
+        $this->siteWanted = $site['id'];
+        $this->siteLevels->requestLevel($site['id'], $site['lt']);
+    }
+
+    /** Is the level of the site of a match the one loaded? */
+    private function siteLevelReady(?array $site): bool
+    {
+        return $site !== null && $this->levelManager->getCustomId() === $site['id'];
+    }
+
+    /** MULTIJOUEUR > LANCER: a level of the site is downloaded first if it is not the one loaded. */
+    private function startVersusAgainstComputer(): void
+    {
+        if ($this->options->getVersusLevel() !== Versus::SITE_LEVEL) {
+            $this->startVersus();
+            return;
+        }
+        $site = $this->options->getVersusSite();
+        if ($site === null) {
+            $this->screens->showTitle('multi');
+            return;
+        }
+        if ($this->siteLevelReady($site)) $this->startVersus(); else $this->downloadSiteLevel($site, 'versus');
     }
 
     /**
@@ -1244,8 +1342,9 @@ class Game extends EventEmitter
 				$this->playDemo($deltaTime);
 			}
 
+			// a level of the site downloaded: also while the lobby of an online match waits (outside the menus)
+			if ($answer = $this->siteLevels->poll()) $this->siteLevelAnswer($answer);
 			if ($this->screens->isActive()) {
-				if ($answer = $this->siteLevels->poll()) $this->siteLevelAnswer($answer);
 				$this->screens->update($deltaTime, $this->buttonPressed);
 				$this->buttonPressed = false;
 				$closureDisplay($deltaTime);
@@ -1535,7 +1634,8 @@ class Game extends EventEmitter
                 $this->versusConfig = null;
                 if ($this->siteRoom !== null && Bridge::fromSite()) Bridge::send(['t' => 'back']);
             }
-            if ($this->levelManager->getCurrentLevel()->getLevel() === LevelManager::CUSTOM) {
+            // a level of the site played alone (a match on one: back to the title like the others)
+            if ($this->versus === null && $this->levelManager->getCurrentLevel()->getLevel() === LevelManager::CUSTOM) {
                 $this->endCustom();
                 return;
             }

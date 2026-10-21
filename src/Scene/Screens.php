@@ -117,6 +117,8 @@ class Screens extends EventEmitter
     private string $levelsError = '';
     /** The page shown: {page, pages, account (null: no account), levels: [{id, name, author, mine, public, lt}]}. */
     private array $levelsList = ['page' => 1, 'pages' => 1, 'account' => null, 'levels' => []];
+    /** The list chosen from for a match (ZONE = NIVEAU DU SITE): the page to go back to, 'multi' or 'online'; null: to play. */
+    private ?string $levelsFor = null;
 
     // fadeOut ($0A6E): 4 steps of 10 frames darken the palette, then [black frames]; _b50: 10 black frames and
     // 4 steps of 10 frames back to the palette. [event, args, frames, black frames]
@@ -178,7 +180,7 @@ class Screens extends EventEmitter
                 $mode = $options->getVersusMode();
                 $players = $options->getVersusPlayers();
                 $level = $options->getVersusLevel();
-                $levels = Versus::LEVELS;
+                $levels = Versus::ZONE_CHOICES;
                 $set = fn(string $m, int $p, int $l) => $this->changed(fn() => $options->setVersus($m, $p, $l));
                 $cycle = fn(array $list, $current, int $step) => $list[((int)array_search($current, $list, true) + $step + count($list)) % count($list)];
                 $nextMode = fn(int $step = 1) => $set($cycle($modes, $mode, $step), $players, $level);
@@ -192,7 +194,8 @@ class Screens extends EventEmitter
                 return [
                     ['MODE', Versus::MODES[$mode], $nextMode, $nextMode],
                     ['SONICS', $mode === 'flag' ? Lang::t('{a} CONTRE {b}', ['a' => $team, 'b' => $team]) : (string)$players, $nextPlayers, $nextPlayers],
-                    ['ZONE', Versus::levelName($level), $nextLevel, $nextLevel],
+                    // a level of the site: Enter chooses which (the list of NIVEAUX DU SITE)
+                    ['ZONE', $this->zoneName($level), $level === Versus::SITE_LEVEL ? fn() => $this->pickSiteLevel('multi') : $nextLevel, $nextLevel],
                     ['IA', BotBrain::DIFFICULTIES[$ai], $nextAi, $nextAi],
                     ['LANCER', null, fn() => $this->finish('versusStart'), null],
                     ['EN LIGNE', null, fn() => $this->openPage('online', 0), null],
@@ -227,9 +230,9 @@ class Screens extends EventEmitter
                         $act('settings')();
                     });
                     $nextMode = fn(int $step = 1) => $set($cycle(array_keys(Versus::MODES), $mode, $step), $level);
-                    $nextLevel = fn(int $step = 1) => $set($mode, $cycle(Versus::LEVELS, $level, $step));
+                    $nextLevel = fn(int $step = 1) => $set($mode, $cycle(Versus::ZONE_CHOICES, $level, $step));
                     array_unshift($items, ['LANCER', null, $act('start'), null], ['MODE', Lang::t(Versus::MODES[$mode]), $nextMode, $nextMode],
-                        ['ZONE', Versus::levelName($level), $nextLevel, $nextLevel]);
+                        ['ZONE', $this->zoneName($level), $level === Versus::SITE_LEVEL ? fn() => $this->pickSiteLevel('online') : $nextLevel, $nextLevel]);
                 }
                 return $items;
             case 'jukebox':
@@ -269,7 +272,8 @@ class Screens extends EventEmitter
             case 'levels':
                 // the levels of the site: the player's own first, then the public ones; PAGE turns the pages
                 $list = $this->levelsList;
-                $back = fn() => $this->openPage('menu', 4);
+                // chosen for a match: back to its page, on ZONE
+                $back = fn() => $this->levelsFor !== null ? $this->leavePick() : $this->openPage('menu', 4);
                 if ($this->levelsStatus !== 'ok') {
                     $items = $this->levelsStatus === 'error' ? [['REESSAYER', null, fn() => $this->loadSiteLevels($list['page']), null]] : [];
                     $items[] = ['RETOUR', null, $back, null];
@@ -302,6 +306,7 @@ class Screens extends EventEmitter
                     ['MEILLEURS TEMPS', null, fn() => $this->openPage('scores', 0), null],
                     // the levels made in the site's editor, downloaded when chosen
                     ['NIVEAUX DU SITE', null, function () {
+                        $this->levelsFor = null;
                         $this->openPage('levels', 0);
                         $this->loadSiteLevels(1);
                     }, null],
@@ -331,6 +336,7 @@ class Screens extends EventEmitter
     /** Back from a level chosen in NIVEAUX DU SITE: the same page of the list, read again. */
     public function showSiteLevels(): void
     {
+        $this->levelsFor = null;
         $this->showTitle('levels');
         $this->loadSiteLevels($this->levelsList['page']);
     }
@@ -340,7 +346,42 @@ class Screens extends EventEmitter
         $this->levelsStatus = 'download';
         $this->menuIndex = 0;
         $this->sound?->playSfx(SoundManager::SFX_SWITCH);
+        if ($this->levelsFor !== null) {
+            // for a match: Game downloads it, then sitePicked()
+            $this->emit('siteLevelPick', [['id' => (int)$level['id'], 'lt' => (string)($level['lt'] ?? ''),
+                'name' => self::plain($level['name'], 16)], $this->levelsFor]);
+            return;
+        }
         $this->emit('siteLevelPlay', [(int)$level['id'], (string)($level['lt'] ?? '')]);
+    }
+
+    /** ZONE: the act, or the level of the site chosen for the matches. */
+    private function zoneName(int $level): string
+    {
+        $site = $level === Versus::SITE_LEVEL ? $this->options->getVersusSite() : null;
+        return $level === Versus::SITE_LEVEL && $site === null ? 'NIVEAU DU SITE' : Versus::levelName($level, $site['name'] ?? null);
+    }
+
+    /** ZONE = NIVEAU DU SITE, Enter: the list of the levels of the site, to choose the one of the matches. */
+    private function pickSiteLevel(string $for): void
+    {
+        $this->levelsFor = $for;
+        $this->openPage('levels', 0);
+        $this->loadSiteLevels(1);
+    }
+
+    /** The level of the site chosen for the matches is there (Game): back to the page of the match. */
+    public function sitePicked(): void
+    {
+        if ($this->levelsFor !== null) $this->leavePick();
+    }
+
+    private function leavePick(): void
+    {
+        $page = $this->levelsFor;
+        $this->levelsFor = null;
+        // ZONE: the third entry of MULTIJOUEUR, of the host's room
+        $this->openPage($page, 2);
     }
 
     /** The page of the list (SiteLevels), or null when the site could not be reached. */
@@ -1176,7 +1217,7 @@ class Screens extends EventEmitter
             $this->styled($text, (256 * $this->scale - $width) / 2 / $this->scale, $y, $size, $colours);
         };
         $options = $this->options;
-        $settings = Lang::t(Versus::MODES[$options->getVersusMode()]) . '  ' . Versus::levelName($options->getVersusLevel());
+        $settings = Lang::t(Versus::MODES[$options->getVersusMode()]) . '  ' . Lang::t($this->zoneName($options->getVersusLevel()));
         if ($online === null) {
             $centre('PUBLIC  AVEC D AUTRES JOUEURS', 140, $grey);
             $centre('PRIVE  UN CODE POUR TES AMIS', 152, $grey);
@@ -1197,7 +1238,7 @@ class Screens extends EventEmitter
         $centre(Lang::t($online->public ? 'SALON PUBLIC {code}' : 'SALON {code}', ['code' => $online->room]), $y, [[255, 255, 255], [85, 170, 255]]);
         $y += 12;
         if (!$online->isHost()) {
-            $centre(Lang::t(Versus::MODES[$online->mode]) . '  ' . Versus::levelName($online->level), $y, [self::MENU_TOP, self::MENU_BOTTOM]);
+            $centre(Lang::t(Versus::MODES[$online->mode]) . '  ' . Versus::levelName($online->level, $online->site['name'] ?? null), $y, [self::MENU_TOP, self::MENU_BOTTOM]);
             $y += 12;
         }
         foreach ($online->peers() as $i => $peer) {
