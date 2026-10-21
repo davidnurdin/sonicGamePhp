@@ -330,7 +330,8 @@ class Game extends EventEmitter
         $this->screens->on('openSite', fn() => Bridge::openSite(defined('SONIC_SITE_URL') && constant('SONIC_SITE_URL') !== ''
             ? (string)constant('SONIC_SITE_URL') : Online::SITE_URL));
         $this->screens->setOnlineView(fn() => $this->online);
-        $this->screens->on('siteLevels', fn(int $page) => $this->siteLevels->requestPage($page));
+        $this->screens->on('siteLevels', fn(int $page, string $sort = 'top') => $this->siteLevels->requestPage($page, $sort));
+        $this->screens->on('siteLevelVote', fn(int $id, int $stars, bool $favourite) => $this->siteLevels->vote($id, $stars, $favourite));
         $this->screens->on('siteLevelPlay', function (int $id, string $key) {
             $this->sitePurpose = 'play';
             $this->siteLevels->requestLevel($id, $key);

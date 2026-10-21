@@ -6,9 +6,11 @@ namespace SonicGame\Utils;
  * The levels made in the site's editor, for the menu NIVEAUX DU SITE: a page of the list, then the level to play
  * (LevelManager::loadCustom). In the browser the page fetches them with the player's account (Bridge: {"t":
  * "levels", "page"}, {"t": "level", "id", "lt"}; his private levels too) and writes the answer in a file read
- * here; the native game asks the site itself, without an account (the public levels only).
+ * here; the native game asks the site itself, without an account (the public levels only) unless SONIC_STATS_TOKEN.
  *
- * List: {page, pages, account (null: no account), levels: [{id, name, author, mine, public, lt}]} or {error: true}.
+ * List: {page, pages, account (null: no account), levels: [{id, name, author, mine, public, lt, rating (the average of
+ * the stars, or null), votes, plays, favourites, stars (the player's), fav}]} or {error: true}; sort: top (the best
+ * rated), new, plays, fav (the most liked), mine, favourites (his). What the player thinks of one: vote().
  */
 final class SiteLevels
 {
@@ -23,16 +25,16 @@ final class SiteLevels
     {
     }
 
-    public function requestPage(int $page): void
+    public function requestPage(int $page, string $sort = 'top'): void
     {
         $this->waiting = 'list';
         $this->answer = null;
         if (Bridge::available()) {
             @unlink(self::LIST_ANSWER);
-            Bridge::send(['t' => 'levels', 'page' => $page]);
+            Bridge::send(['t' => 'levels', 'page' => $page, 'sort' => $sort]);
             return;
         }
-        $data = $this->http('/api/niveaux', json_encode(['page' => $page]));
+        $data = $this->http('/api/niveaux', json_encode(['st' => self::token(), 'page' => $page, 'sort' => $sort]));
         $this->answer = ['list', is_array($data) && isset($data['levels']) ? $data : ['error' => true]];
     }
 
@@ -78,6 +80,27 @@ final class SiteLevels
             }
         }
         $this->answer = ['level', $file];
+    }
+
+    /**
+     * The stars (1 to 5, 0: none) the player gives a level and whether it is in his favourites: sent by the page with
+     * his account (no answer awaited); the native game with SONIC_STATS_TOKEN only.
+     */
+    public function vote(int $id, int $stars, bool $favourite): void
+    {
+        $vote = ['id' => $id, 'fav' => $favourite];
+        if ($stars > 0) $vote['stars'] = min(5, $stars);
+        if (Bridge::available()) {
+            Bridge::send(['t' => 'vote'] + $vote);
+        } elseif (self::token() !== '') {
+            $this->http('/api/niveaux/note', json_encode(['st' => self::token()] + $vote));
+        }
+    }
+
+    /** The native game: the token of an account (SONIC_STATS_TOKEN, given by the site), or none. */
+    private static function token(): string
+    {
+        return defined('SONIC_STATS_TOKEN') ? (string)constant('SONIC_STATS_TOKEN') : '';
     }
 
     /** The answer once it is there: ['list', data] or ['level', the level's file or null]; null meanwhile. */

@@ -26,7 +26,8 @@ use SonicGame\Utils\Lang;
  * "CONTINUE", one icon per continue and a countdown from 9 (one a second, sfx $1A): the button continues.
  *
  * Events: titleDone, titleDemo, mapDone, actCompleteDone, creditsDone, gameOverDone [bool continued],
- * siteLevels [page] (NIVEAUX DU SITE: a page of the list, answered with setSiteLevels), siteLevelPlay [id, key].
+ * siteLevels [page, sort] (NIVEAUX DU SITE: a page of the list, answered with setSiteLevels), siteLevelPlay [id, key],
+ * siteLevelVote [id, stars 0-5, favourite] (TON AVIS, after a level of the list).
  */
 class Screens extends EventEmitter
 {
@@ -119,6 +120,14 @@ class Screens extends EventEmitter
     private array $levelsList = ['page' => 1, 'pages' => 1, 'account' => null, 'levels' => []];
     /** The list chosen from for a match (ZONE = NIVEAU DU SITE): the page to go back to, 'multi' or 'online'; null: to play. */
     private ?string $levelsFor = null;
+    /** NIVEAUX DU SITE: the order of the list (the site's catalogue), the entry of the page of the orders. */
+    private const LEVEL_SORTS = ['top' => 'MIEUX NOTES', 'new' => 'NOUVEAUTES', 'plays' => 'PLUS JOUES', 'fav' => 'COUPS DE COEUR',
+        'favourites' => 'MES FAVORIS', 'mine' => 'MES NIVEAUX'];
+    private string $levelsSort = 'top';
+    /** The level of the site played from the list, and what the player thinks of it (the page TON AVIS after it). */
+    private ?array $playedLevel = null;
+    private int $voteStars = 0;
+    private bool $voteFavourite = false;
 
     // fadeOut ($0A6E): 4 steps of 10 frames darken the palette, then [black frames]; _b50: 10 black frames and
     // 4 steps of 10 frames back to the palette. [event, args, frames, black frames]
@@ -147,7 +156,8 @@ class Screens extends EventEmitter
 
     /**
      * Entries of the current menu page: [label, value shown on the right or null, button, left / right (or null)].
-     * Pages: 'menu' (on the title picture), 'multi', 'options', 'jukebox', 'cheats', 'scores', 'levels'.
+     * Pages: 'menu' (on the title picture), 'multi', 'options', 'jukebox', 'cheats', 'scores', 'sitesorts' and 'levels'
+     * (NIVEAUX DU SITE: the order, then the list), 'rate' (TON AVIS, after one of them).
      */
     private function menuItems(): array
     {
@@ -273,7 +283,7 @@ class Screens extends EventEmitter
                 // the levels of the site: the player's own first, then the public ones; PAGE turns the pages
                 $list = $this->levelsList;
                 // chosen for a match: back to its page, on ZONE
-                $back = fn() => $this->levelsFor !== null ? $this->leavePick() : $this->openPage('menu', 4);
+                $back = fn() => $this->openPage('sitesorts', (int)array_search($this->levelsSort, array_keys(self::LEVEL_SORTS), true));
                 if ($this->levelsStatus !== 'ok') {
                     $items = $this->levelsStatus === 'error' ? [['REESSAYER', null, fn() => $this->loadSiteLevels($list['page']), null]] : [];
                     $items[] = ['RETOUR', null, $back, null];
@@ -282,6 +292,8 @@ class Screens extends EventEmitter
                 $items = [];
                 foreach ($list['levels'] as $level) {
                     $owner = $level['mine'] ? ($level['public'] ? 'A TOI' : 'PRIVE') : self::plain($level['author'], 8);
+                    // its stars (the average of the players' votes), before its author
+                    if (is_numeric($level['rating'] ?? null)) $owner = number_format((float)$level['rating'], 1, '.', '') . ' ' . $owner;
                     // the whole name: too long, it scrolls when selected (renderMenuPage)
                     $items[] = [self::plain($level['name'], 40), $owner, fn() => $this->playSiteLevel($level), null];
                 }
@@ -291,6 +303,33 @@ class Screens extends EventEmitter
                 }
                 $items[] = ['RETOUR', null, $back, null];
                 return $items;
+            case 'sitesorts':
+                // NIVEAUX DU SITE: the order of the list first (the best rated...), or the player's own lists
+                $items = [];
+                foreach (self::LEVEL_SORTS as $sort => $label) {
+                    $items[] = [$label, null, function () use ($sort) {
+                        $this->levelsSort = $sort;
+                        $this->openPage('levels', 0);
+                        $this->loadSiteLevels(1);
+                    }, null];
+                }
+                $items[] = ['RETOUR', null, fn() => $this->levelsFor !== null ? $this->leavePick() : $this->openPage('menu', 4), null];
+                return $items;
+            case 'rate':
+                // after a level of the site: its stars (left / right) and the favourites, sent to the site
+                $stars = fn(int $direction) => [$this->voteStars = ($this->voteStars + $direction + 6) % 6, $this->sound?->playSfx(SoundManager::SFX_RING)];
+                $favourite = fn() => [$this->voteFavourite = !$this->voteFavourite, $this->sound?->playSfx(SoundManager::SFX_RING)];
+                return [
+                    ['NOTE', $this->voteStars > 0 ? $this->voteStars . '/5' : '-', fn() => $stars(1), $stars],
+                    ['FAVORI', $this->voteFavourite ? 'ON' : 'OFF', $favourite, fn() => $favourite()],
+                    ['ENVOYER', null, function () {
+                        $level = $this->playedLevel;
+                        if ($level !== null) $this->emit('siteLevelVote', [(int)$level['id'], $this->voteStars, $this->voteFavourite]);
+                        $this->sound?->playSfx(SoundManager::SFX_SIGN_STOP);
+                        $this->leaveRating();
+                    }, null],
+                    ['PLUS TARD', null, fn() => $this->leaveRating(), null],
+                ];
             case 'scores':
                 // the act: left / right, or the button for the next one
                 $act = fn(int $direction) => [$this->timesAct = ($this->timesAct - 1 + $direction + 18) % 18 + 1,
@@ -308,8 +347,7 @@ class Screens extends EventEmitter
                     // the levels made in the site's editor, downloaded when chosen
                     ['NIVEAUX DU SITE', null, function () {
                         $this->levelsFor = null;
-                        $this->openPage('levels', 0);
-                        $this->loadSiteLevels(1);
+                        $this->openPage('sitesorts', 0);
                     }, null],
                     // the site of the game (sonic.mimichat.fr) in the browser: rooms, statistics, account
                     ['SITE WEB', null, fn() => $this->emit('openSite', []), null],
@@ -331,14 +369,30 @@ class Screens extends EventEmitter
         $this->levelsStatus = 'loading';
         $this->levelsList['page'] = $page;
         $this->menuIndex = 0;
-        $this->emit('siteLevels', [$page]);
+        $this->emit('siteLevels', [$page, $this->levelsSort]);
     }
 
     /** Back from a level chosen in NIVEAUX DU SITE: the same page of the list, read again. */
     public function showSiteLevels(): void
     {
         $this->levelsFor = null;
+        $level = $this->playedLevel;
+        // a public level of another player, not rated yet, with an account: what did he think of it?
+        if ($level !== null && $this->levelsList['account'] !== null && !empty($level['public']) && empty($level['mine']) && (int)($level['stars'] ?? 0) === 0) {
+            $this->voteStars = 0;
+            $this->voteFavourite = !empty($level['fav']);
+            $this->showTitle('rate');
+            return;
+        }
         $this->showTitle('levels');
+        $this->loadSiteLevels($this->levelsList['page']);
+    }
+
+    /** TON AVIS done (sent or not): back to the list, read again (its stars changed). */
+    private function leaveRating(): void
+    {
+        $this->playedLevel = null;
+        $this->openPage('levels', 0);
         $this->loadSiteLevels($this->levelsList['page']);
     }
 
@@ -353,6 +407,7 @@ class Screens extends EventEmitter
                 'name' => self::plain($level['name'], 40)], $this->levelsFor]);
             return;
         }
+        $this->playedLevel = $level;
         $this->emit('siteLevelPlay', [(int)$level['id'], (string)($level['lt'] ?? '')]);
     }
 
@@ -367,8 +422,7 @@ class Screens extends EventEmitter
     private function pickSiteLevel(string $for): void
     {
         $this->levelsFor = $for;
-        $this->openPage('levels', 0);
-        $this->loadSiteLevels(1);
+        $this->openPage('sitesorts', 0);
     }
 
     /** The level of the site chosen for the matches is there (Game): back to the page of the match. */
@@ -1336,7 +1390,7 @@ class Screens extends EventEmitter
         $scale = $this->scale;
         $title = match ($this->titlePage) {
             'cheats' => 'CHEATS', 'scores' => 'MEILLEURS TEMPS', 'jukebox' => 'JUKEBOX', 'multi' => 'MULTIJOUEUR', 'online' => 'EN LIGNE',
-            'levels' => 'NIVEAUX DU SITE', default => 'OPTIONS',
+            'levels', 'sitesorts' => 'NIVEAUX DU SITE', 'rate' => 'TON AVIS', default => 'OPTIONS',
         };
         $big = 12 * $scale;
         $width = $this->text->styledWidth($title, $big, $scale);
@@ -1384,12 +1438,21 @@ class Screens extends EventEmitter
                 'loading' => 'CHARGEMENT...',
                 'download' => 'CHARGEMENT DU NIVEAU...',
                 'error' => $this->levelsError,
-                default => $this->levelsList['levels'] === [] ? 'AUCUN NIVEAU POUR LE MOMENT'
-                    : ($this->levelsList['account'] !== null ? Lang::t('COMPTE {name}', ['name' => self::plain($this->levelsList['account'], 8)])
-                        : 'TES NIVEAUX PRIVES  VIA LE SITE'),
+                default => $this->levelsList['levels'] === []
+                    ? (in_array($this->levelsSort, ['mine', 'favourites'], true) && $this->levelsList['account'] === null ? 'CONNECTE TOI SUR LE SITE'
+                        : ($this->levelsSort === 'favourites' ? 'PAS ENCORE DE FAVORI' : 'AUCUN NIVEAU POUR LE MOMENT'))
+                    : Lang::t(self::LEVEL_SORTS[$this->levelsSort]) . ($this->levelsList['account'] !== null
+                        ? '  ' . Lang::t('COMPTE {name}', ['name' => self::plain($this->levelsList['account'], 8)]) : ''),
             };
             $width = $this->text->styledWidth($line, $size, $scale);
             $this->styled($line, (256 * $scale - $width) / 2 / $scale, 172, $size, [[255, 255, 255], [170, 170, 170]]);
+        }
+        if ($this->titlePage === 'rate' && $this->playedLevel !== null) {
+            // the level rated, and its author
+            foreach ([[self::plain($this->playedLevel['name'], 30), 150], [Lang::t('PAR {name}', ['name' => self::plain($this->playedLevel['author'] ?? '', 12)]), 164]] as [$line, $y]) {
+                $width = $this->text->styledWidth($line, $size, $scale);
+                $this->styled($line, (256 * $scale - $width) / 2 / $scale, $y, $size, [[255, 255, 255], [170, 170, 170]]);
+            }
         }
         if ($this->titlePage === 'multi') {
             // the rules of the mode chosen, under the entries
