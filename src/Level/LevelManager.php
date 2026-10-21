@@ -47,6 +47,8 @@ class LevelManager extends EventEmitter
     private ?int $customId = null;
     /** The level CUSTOM as the matches and the replays name it: {id, lt (its key), name}, or null. */
     private ?array $customSite = null;
+    /** Who made the level CUSTOM on the site (his name there), or null. */
+    private ?string $customAuthor = null;
 
     public function __construct(private Sdl $sdl,private AssetManager $assetManager)
     {
@@ -126,6 +128,11 @@ class LevelManager extends EventEmitter
     public function getCustomSite(): ?array
     {
         return $this->customSite;
+    }
+
+    public function getCustomAuthor(): ?string
+    {
+        return $this->customAuthor;
     }
 
     public function getCustomId(): ?int
@@ -212,6 +219,8 @@ class LevelManager extends EventEmitter
         }
         $this->customVersion++;
         $this->customId = is_int($data['id'] ?? null) ? $data['id'] : null;
+        $author = Screens::plain((string)($data['author'] ?? ''), 8);
+        $this->customAuthor = $author !== '' ? $author : null;
         $this->customSite = Options::validSite(['id' => $this->customId, 'lt' => (string)($data['lt'] ?? ''),
             'name' => Screens::plain($data['name'] ?? '', 20)]);
         foreach ($this->levels as $index => $candidate) {

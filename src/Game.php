@@ -32,6 +32,8 @@ use SonicGame\Utils\SiteLevels;
 
 class Game extends EventEmitter
 {
+    /** How long a level of the site shows its name and author at its start. */
+    private const CREDIT_SECONDS = 4;
 
     private int $debugMode = 0 ;
 
@@ -85,6 +87,8 @@ class Game extends EventEmitter
 
     /** F6: panel with Sonic's coordinates over the screen (to report bugs). */
     private bool $coordsPanel = false;
+    /** The level of the site whose name and author were shown at its start (LevelManager::getCustomVersion()). */
+    private int $creditShown = 0;
     private TextRenderer $text;
     /** Title menu options (var/options.json) and the ghost of the fastest run of each level (var/ghosts). */
     private Options $options;
@@ -633,6 +637,30 @@ class Game extends EventEmitter
         }
         $this->recorder->sample($deltaTime, [$this->objectManager->isPlayerDead() ? null
             : [$this->player->getX(), $this->player->getY(), $this->player->getDrawnFrame()]]);
+    }
+
+    /** The first seconds of a level of the site: its name, and who made it. */
+    private function drawSiteCredit(\SDL_Rect $dst, int $windowHeight): void
+    {
+        $author = $this->levelManager->getCustomAuthor();
+        $site = $this->levelManager->getCustomSite();
+        $version = $this->levelManager->getCustomVersion();
+        if ($author === null || $site === null || $this->creditShown === $version ||
+            $this->levelManager->getCurrentLevel()->getLevel() !== LevelManager::CUSTOM) return;
+        $time = $this->replay !== null ? $this->replay->time() : $this->objectManager->getLevelTime();
+        if ($time > self::CREDIT_SECONDS) {
+            $this->creditShown = $version;
+            return;
+        }
+        $size = max(12, (int)round($windowHeight / 34));
+        $lines = [[$site['name'], $size * 2, [255, 216, 0]], [Lang::t('PAR {name}', ['name' => $author]), $size, [255, 255, 255]]];
+        $y = (int)($dst->y + $dst->h * 0.62);
+        foreach ($lines as [$label, $px, $rgb]) {
+            $w = $this->text->width($label, $px);
+            if ($w > $dst->w - $size * 2) $w = $this->text->width($label, $px = $size);
+            $this->text->draw($label, (int)($dst->x + ($dst->w - $w) / 2), $y, $px, $rgb);
+            $y += (int)($px * 1.4);
+        }
     }
 
     /** An act completed alone: its replay, with the time. */
@@ -1307,6 +1335,9 @@ class Game extends EventEmitter
 				if ($this->replay && !$this->screens->isActive()) {
 					$camera = $this->scene->getCamera();
 					$this->replay->drawOverlay($this->sdl, $this->text, $dst, $scale, $height, $camera->getX(), $camera->getY());
+				}
+				if (!$this->screens->isActive()) {
+					$this->drawSiteCredit($dst, $height);
 				}
 				if ($this->options->isCrtEnabled() && !defined('SONIC_OBJECT_ICONS')) {
 					$this->crt ??= new CrtFilter($this->sdl->getRenderer());

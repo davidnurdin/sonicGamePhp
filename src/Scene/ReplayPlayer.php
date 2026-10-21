@@ -54,6 +54,12 @@ final class ReplayPlayer
         return Options::validSite($this->data['site'] ?? null);
     }
 
+    /** Seconds played since its start. */
+    public function time(): float
+    {
+        return $this->clock;
+    }
+
     public function mode(): string
     {
         return (string)($this->data['mode'] ?? 'race');
