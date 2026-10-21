@@ -130,6 +130,22 @@ class LevelManager extends EventEmitter
         return $this->customSite;
     }
 
+    private ?string $customContentVersion = null;
+    /** @var array{name: string, time: float, ghost: ?string}|null the best time of the level of the site loaded */
+    private ?array $customRecord = null;
+
+    /** What the best times and the ghosts of the level of the site loaded are set on (the site's Level::getContentVersion). */
+    public function getCustomContentVersion(): ?string
+    {
+        return $this->customContentVersion;
+    }
+
+    /** @return array{name: string, time: float, ghost: ?string}|null its record: who, the time, its replay file (or null) */
+    public function getCustomRecord(): ?array
+    {
+        return $this->customRecord;
+    }
+
     public function getCustomAuthor(): ?string
     {
         return $this->customAuthor;
@@ -181,19 +197,54 @@ class LevelManager extends EventEmitter
     /** The textures of the level CUSTOM now registered (after its name). */
     private array $customVariants = [];
 
-    /** Registers the pictures of the zone of level $zone as $name (its plain, colour cycling and front layers). */
+    /**
+     * Registers the pictures of the zone of level $zone as $name: the plain one, its colour cycling, the lightning
+     * (Sky Base), the flash (bonus), under water (Labyrinth), each with its front layer.
+     */
     private function registerZoneTextures(string $name, int $zone, string $group): void
     {
         $file = 'tileset/levels/tileset' . $this->convertLevelToTileSet($zone);
-        $variants = ['', '-flash'];
-        for ($k = 0; file_exists($this->assetManager->getAssetFolder() . '/' . $file . '-cycle' . $k . '.png'); $k++) $variants[] = '-cycle' . $k;
+        $folder = $this->assetManager->getAssetFolder() . '/' . $file;
+        // [the file's suffix, the texture's] (under water the front layer is "-fg-water", its file "-water-fg")
+        $layers = [];
+        foreach (array_merge(['', '-flash'], self::suffixes($folder, '-cycle'), self::suffixes($folder, '-light1-cycle'),
+            self::suffixes($folder, '-light2-cycle')) as $variant) {
+            $layers[] = [$variant, $variant];
+            $layers[] = [$variant . '-fg', $variant . '-fg'];
+        }
+        $layers[] = ['-water', '-water'];
+        $layers[] = ['-water-fg', '-fg-water'];
         $this->customVariants = [];
+        foreach ($layers as [$fileSuffix, $textureSuffix]) {
+            if (!file_exists($folder . $fileSuffix . '.png')) continue;
+            $this->sdl->registerTexture($name . $textureSuffix, $file . $fileSuffix . '.png', $group);
+            $this->customVariants[] = $textureSuffix;
+        }
+    }
+
+    /** "-cycle0", "-cycle1"... while "<$folder><$prefix><k>.png" exists. */
+    private static function suffixes(string $folder, string $prefix): array
+    {
+        $out = [];
+        for ($k = 0; file_exists($folder . $prefix . $k . '.png'); $k++) $out[] = $prefix . $k;
+        return $out;
+    }
+
+    /**
+     * The other pictures of a level of the site made by the site from its own (TileVariants.php of the site):
+     * tiles<variant>.png next to it, each with its front layer (the same picture).
+     */
+    private function registerCustomVariants(string $name, string $folder, array $variants, string $group): void
+    {
         foreach ($variants as $variant) {
-            foreach ([$variant, $variant . '-fg'] as $layer) {
-                if (!file_exists($this->assetManager->getAssetFolder() . '/' . $file . $layer . '.png')) continue;
-                $this->sdl->registerTexture($name . $layer, $file . $layer . '.png', $group);
-                $this->customVariants[] = $layer;
-            }
+            if (!is_string($variant) || !preg_match('/^-(cycle\d{1,2}|light[12]-cycle\d{1,2}|water|flash)$/', $variant)) continue;
+            $png = $folder . '/tiles' . $variant . '.png';
+            if (!is_file($png)) continue;
+            $path = self::relativePath($this->assetManager->getAssetFolder(), realpath($png));
+            $this->sdl->registerTexture($name . $variant, $path, $group);
+            $front = $variant === '-water' ? '-fg-water' : $variant . '-fg';
+            $this->sdl->registerTexture($name . $front, $path, $group);
+            array_push($this->customVariants, $variant, $front);
         }
     }
 
@@ -221,10 +272,16 @@ class LevelManager extends EventEmitter
             $this->sdl->registerTexture($name, $path, $group);
             // the blocks in front of Sonic: the same picture (its transparent pixels stay transparent)
             $this->sdl->registerTexture($name . '-fg', $path, $group);
+            $this->registerCustomVariants($name, dirname($file), is_array($data['tile_variants'] ?? null) ? $data['tile_variants'] : [], $group);
         }
         $level = new Level(new TileSet($this->sdl), self::CUSTOM, $this->sdl, $this->assetManager);
         $level->loadCustom($data);
-        if ($zone !== null) $level->useColourCycling($this->levels[$zone - 1]->getMeta('CC'), $this->levels[$zone - 1]->getMeta('CS'));
+        if ($zone !== null) {
+            $act = $this->levels[$zone - 1];
+            $level->useColourCycling($act->getMeta('CC'), $act->getMeta('CS'), ($act->getMeta('TL') & 0x02) !== 0);
+        } elseif (is_array($data['cycle'] ?? null)) {
+            $level->useColourCycling((int)($data['cycle']['count'] ?? 0), (int)($data['cycle']['speed'] ?? 0), !empty($data['cycle']['lightning']));
+        }
         // its own sprites (sprite-<sheet>.png next to it, the size of the game's sheet), used from its start
         $this->customSprites = [];
         foreach (is_array($data['sprites'] ?? null) ? $data['sprites'] : [] as $sheet) {
@@ -252,6 +309,11 @@ class LevelManager extends EventEmitter
         $this->customAuthor = $author !== '' ? $author : null;
         $this->customSite = Options::validSite(['id' => $this->customId, 'lt' => (string)($data['lt'] ?? ''),
             'name' => Screens::plain($data['name'] ?? '', 20)]);
+        // what its best times are set on, its best time (the first record) and its replay (record.json.gz next to it: its ghost)
+        $this->customContentVersion = is_string($data['version'] ?? null) && preg_match('/^[0-9a-f]{16}$/', $data['version']) ? $data['version'] : null;
+        $first = is_array($data['records'][0] ?? null) ? $data['records'][0] : null;
+        $this->customRecord = $first !== null && is_numeric($first['time'] ?? null) ? ['name' => Screens::plain($first['name'] ?? '', 8),
+            'time' => (float)$first['time'], 'ghost' => !empty($data['record_ghost']) && is_file($folder . '/record.json.gz') ? $folder . '/record.json.gz' : null] : null;
         foreach ($this->levels as $index => $candidate) {
             if ($candidate->getLevel() === self::CUSTOM) {
                 $this->levels[$index] = $level;

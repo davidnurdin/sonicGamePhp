@@ -74,6 +74,20 @@ final class SiteLevels
             }
             $data['custom_sfx'] = $sfx;
             unset($data['music_wav'], $data['sfx_wav']);
+            // the other pictures of its tiles (colour cycling, under water...): tiles<variant>.png, and their names
+            $variants = [];
+            foreach (is_array($data['tile_variants'] ?? null) ? $data['tile_variants'] : [] as $variant => $png) {
+                $png = is_string($png) ? base64_decode($png, true) : false;
+                if (is_string($variant) && preg_match('/^-[a-z0-9-]{1,20}$/', $variant) && $png
+                    && @file_put_contents($this->folder . '/tiles' . $variant . '.png', $png) !== false) {
+                    $variants[] = $variant;
+                }
+            }
+            $data['tile_variants'] = $variants;
+            // the replay of its record: its ghost (record.json.gz)
+            $replay = $data['records'][0]['replay'] ?? null;
+            $ghost = is_int($replay) ? $this->raw('/api/replay/' . $replay) : null;
+            $data['record_ghost'] = $ghost !== null && @file_put_contents($this->folder . '/record.json.gz', $ghost) !== false;
             if (@file_put_contents($this->folder . '/tiles.png', $tiles) !== false
                 && @file_put_contents($this->folder . '/level.json', json_encode($data)) !== false) {
                 $file = $this->folder . '/level.json';
@@ -120,6 +134,14 @@ final class SiteLevels
         $this->waiting = null;
         $this->answer = null;
         return $answer;
+    }
+
+    /** The native game: a file of the site (a replay...), or null. */
+    private function raw(string $path): ?string
+    {
+        $context = stream_context_create(['http' => ['header' => "User-Agent: SonicPHP\r\n", 'timeout' => 8]]);
+        $data = @file_get_contents(rtrim($this->site, '/') . $path, false, $context);
+        return is_string($data) && $data !== '' && strlen($data) < 8 * 1024 * 1024 ? $data : null;
     }
 
     /** The native game: a request to the site (POST when there is a body), its JSON answer or null. */

@@ -89,6 +89,7 @@ class Game extends EventEmitter
     private bool $coordsPanel = false;
     /** The level of the site whose name and author were shown at its start (LevelManager::getCustomVersion()). */
     private int $creditShown = 0;
+    private int $creditSeen = 0;
     private TextRenderer $text;
     /** Title menu options (var/options.json) and the ghost of the fastest run of each level (var/ghosts). */
     private Options $options;
@@ -250,11 +251,10 @@ class Game extends EventEmitter
         $this->objectManager->on('playerRespawned', fn() => $this->recorder->isRecording('solo') ? $this->recorder->cancel() : null);
         $this->objectManager->on('teleportEnd', fn() => $this->recordActTime());
         $this->objectManager->on('levelComplete', fn() => $this->objectManager->hasCheats() ? null : $this->ghost->finish(
-            $this->levelManager->getCurrentLevel()->getLevel(), $this->objectManager->getLevelTime()));
+            $this->ghostKey(), $this->objectManager->getLevelTime()));
         $this->objectManager->on('teleportEnd', fn() => $this->objectManager->hasCheats() ? null : $this->ghost->finish(
-            $this->levelManager->getCurrentLevel()->getLevel(), $this->objectManager->getLevelTime()));
-        $this->objectManager->on('playerRespawned', fn() => $this->ghost->begin(
-            $this->levelManager->getCurrentLevel()->getLevel(), !$this->objectManager->hasCheckpoint()));
+            $this->ghostKey(), $this->objectManager->getLevelTime()));
+        $this->objectManager->on('playerRespawned', fn() => $this->ghost->begin($this->ghostKey(), !$this->objectManager->hasCheckpoint()));
         $this->objectManager->on('playerRespawned', function () {
             if (!$this->screens->isActive()) $this->playLevelMusic(true);   // not after a game over (title)
             $this->versus?->humanRespawned();
@@ -633,6 +633,8 @@ class Game extends EventEmitter
         // a level of the site: kept with what downloads it again (not one tried from a file)
         $site = $number === LevelManager::CUSTOM ? $this->levelManager->getCustomSite() : null;
         if ($number === LevelManager::CUSTOM && $site === null) return;
+        // the version of the level its time is set on (a best time on the site)
+        if ($site !== null && $this->levelManager->getCustomContentVersion() !== null) $site['version'] = $this->levelManager->getCustomContentVersion();
         if (!$this->recorder->isRecording('solo', $number)) {
             $this->recorder->begin('solo', $number, 'solo', [[$this->options->getOnlineName() ?: 'SONIC', $this->player->getSheet(), [80, 140, 255]]], 0, null, $site);
         }
@@ -650,11 +652,17 @@ class Game extends EventEmitter
             $this->levelManager->getCurrentLevel()->getLevel() !== LevelManager::CUSTOM) return;
         $time = $this->replay !== null ? $this->replay->time() : $this->objectManager->getLevelTime();
         if ($time > self::CREDIT_SECONDS) {
-            $this->creditShown = $version;
+            // over once it has been seen: the first frames may still have the timer of the level before
+            if ($this->creditSeen === $version) $this->creditShown = $version;
             return;
         }
+        $this->creditSeen = $version;
         $size = max(12, (int)round($windowHeight / 34));
         $lines = [[$site['name'], $size * 2, [255, 216, 0]], [Lang::t('PAR {name}', ['name' => $author]), $size, [255, 255, 255]]];
+        // its best time on the site (its ghost runs with the option)
+        $record = $this->levelManager->getCustomRecord();
+        if ($record !== null) $lines[] = [Lang::t('RECORD {time} {name}', ['time' => sprintf('%d:%05.2f', intdiv((int)$record['time'], 60),
+            fmod($record['time'], 60)), 'name' => $record['name']]), $size, [170, 255, 170]];
         $y = (int)($dst->y + $dst->h * 0.62);
         foreach ($lines as [$label, $px, $rgb]) {
             $w = $this->text->width($label, $px);
@@ -670,7 +678,7 @@ class Game extends EventEmitter
         if ($this->demo || $this->versus !== null || !$this->recorder->isRecording('solo')) return;
         $time = $this->objectManager->getLevelTime();
         $this->sendReplay($this->recorder->finish([[$this->options->getOnlineName() ?: 'SONIC',
-            sprintf('%d:%05.2f', (int)($time / 60), fmod($time, 60))]]));
+            sprintf('%d:%05.2f', (int)($time / 60), fmod($time, 60))]], ['time' => round($time, 2)]));
     }
 
     /** The page sends it to the site (if the player came from his account there). */
@@ -1062,13 +1070,31 @@ class Game extends EventEmitter
     private function updateGhost(): void
     {
         $level = $this->levelManager->getCurrentLevel()->getLevel();
+        $key = $this->ghostKey();
         $time = $this->objectManager->getLevelTime();
-        $played = !$this->demo && !$this->versus && $level < 28 && $this->scene->getCurrentLevel() === $this->levelManager->getCurrentLevel();
+        $played = !$this->demo && !$this->versus && ($level < 28 || $key !== $level) && $this->scene->getCurrentLevel() === $this->levelManager->getCurrentLevel();
         // runs with cheats are not recorded
         if ($played && !$this->objectManager->hasCheats() && !$this->objectManager->isPlayerDead() && !$this->objectManager->isLevelComplete()) {
-            $this->ghost->record($level, $time, $this->player->getX(), $this->player->getY(), $this->player->getFrameSnapshot());
+            $this->ghost->record($key, $time, $this->player->getX(), $this->player->getY(), $this->player->getFrameSnapshot());
         }
-        $this->scene->setGhostFrame($played && $this->options->isGhostEnabled() ? $this->ghost->frameAt($level, $time) : null);
+        $this->scene->setGhostFrame($played && $this->options->isGhostEnabled() ? $this->ghost->frameAt($key, $time) : null);
+    }
+
+    /**
+     * Whose ghost: the act's number, or a level of the site as it is now ("site<id>-<version>": once it changes, its
+     * ghosts start again); its record on the site runs too (GhostRecorder::setRecord).
+     */
+    private function ghostKey(): int|string
+    {
+        $level = $this->levelManager->getCurrentLevel()->getLevel();
+        if ($level !== LevelManager::CUSTOM) return $level;
+        $id = $this->levelManager->getCustomId();
+        $version = $this->levelManager->getCustomContentVersion();
+        if ($id === null || $version === null) return $level;
+        $key = 'site' . $id . '-' . $version;
+        $record = $this->levelManager->getCustomRecord();
+        if ($record !== null && $record['ghost'] !== null) $this->ghost->setRecord($key, $record['ghost'], $record['time']);
+        return $key;
     }
 
     /** F6 panel, in window pixels: level, Sonic's position (pixels and blocks), speed, camera, state, time. */
@@ -1081,7 +1107,7 @@ class Game extends EventEmitter
         $camera = $this->scene->getCamera();
         $time = $this->objectManager->getLevelTime();
         $level = $this->levelManager->getCurrentLevel()->getLevel();
-        $best = $this->ghost->bestTime($level);
+        $best = $this->ghost->bestTime($this->ghostKey());
         $lines = [
             'FPS ' . $this->fpsShown,
             'NIVEAU ' . $level,

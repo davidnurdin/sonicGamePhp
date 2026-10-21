@@ -187,11 +187,15 @@ class Level
         return $frames[intdiv($frame, $ticks) % count($frames)];
     }
 
-    /** A level of the site made with a zone of the game as it is: the zone's colour cycling (water, waterfalls...). */
-    public function useColourCycling(int $count, int $speed): void
+    /**
+     * A level of the site: the colour cycling of its zone (water, waterfalls...: $count steps, each $speed frames)
+     * and the lightning of Sky Base (TL bit 1).
+     */
+    public function useColourCycling(int $count, int $speed, bool $lightning = false): void
     {
-        $this->meta['CC'] = $count;
-        $this->meta['CS'] = $speed;
+        $this->meta['CC'] = max(0, min(16, $count));
+        $this->meta['CS'] = max(1, min(60, $speed));
+        if ($lightning) $this->meta['TL'] = ($this->meta['TL'] ?? 0) | 0x02;
     }
 
     /**

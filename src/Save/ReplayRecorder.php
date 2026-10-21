@@ -11,7 +11,8 @@ namespace SonicGame\Save;
  * Format (JSON, gzip): {v, kind: solo|versus|online, level, mode, match (online: the same id for every player of
  * the match), date, follow (the Sonic of this player), fps, entities: [{name, tex, rgb}], frames: [[per entity:
  * [x, y, sx, sy, sw, sh, flags (1 flipped, 2 ROM sheet)] or 0]], tiles: [[frame, x, y, value]], result: [[name, score]],
- * site (level LevelManager::CUSTOM: the level of the site, {id, lt, name}, downloaded again to watch it)}.
+ * site (level LevelManager::CUSTOM: the level of the site, {id, lt, name, version}, downloaded again to watch it;
+ * version: what its best times are set on), time (solo: the level's timer at the end, the best time on the site)}.
  */
 final class ReplayRecorder
 {
@@ -84,13 +85,14 @@ final class ReplayRecorder
      * Over: written for the page, which sends it to the site. $result: [[name, score text]] by rank.
      * Returns the file, or null (nothing recorded).
      */
-    public function finish(array $result = []): ?string
+    /** @param array $extra more of the meta: time (the level's timer when it was completed: a best time on the site) */
+    public function finish(array $result = [], array $extra = []): ?string
     {
         if ($this->meta === null || count($this->frames) < self::FPS) {
             $this->cancel();
             return null;
         }
-        $data = $this->meta + ['frames' => $this->frames, 'tiles' => $this->tiles, 'result' => $result,
+        $data = $this->meta + $extra + ['frames' => $this->frames, 'tiles' => $this->tiles, 'result' => $result,
             'duration' => round(count($this->frames) / self::FPS, 1)];
         $this->cancel();
         @mkdir(dirname($this->file), 0777, true);
