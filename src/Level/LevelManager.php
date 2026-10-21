@@ -12,8 +12,29 @@ class LevelManager extends EventEmitter
     /** The number of a level made in the site's editor (after the 35 of the game). */
     public const CUSTOM = 36;
 
+    /**
+     * The sheets of sprites a level of the site may draw again (Game::run loads them; tileset/sprites/tileset-<name>.png),
+     * with their colour key. The level's own ones replace them while it is played.
+     */
+    public const SPRITE_SHEETS = [
+        'sonic' => ['r' => 0, 'g' => 72, 'b' => 0],
+        'enemies' => ['r' => 170, 'g' => 0, 'b' => 170],
+        'objects' => ['r' => 170, 'g' => 0, 'b' => 170],
+        'rom' => ['r' => 170, 'g' => 0, 'b' => 170],
+        'eggman' => ['r' => 0, 'g' => 170, 'b' => 255],
+        'boss' => ['r' => 170, 'g' => 0, 'b' => 170],
+    ];
+    /** The underwater and boss-hit variants of the sheets (files next to them): the level's sprites stand for them too. */
+    private const SPRITE_VARIANTS = ['-water', '-flash'];
+
     private array $levels = [];
     private int $currentLevelIndex = 0;
+    /** @var array<string, string> sheet => its picture for the level CUSTOM (path from the assets folder) */
+    private array $customSprites = [];
+    /** @var array<string, string> sheet => the level's picture drawn now instead of the game's */
+    private array $spritesShown = [];
+    /** The level's pictures were written again (another level of the site): load them again. */
+    private bool $spritesChanged = false;
 
     public function __construct(private Sdl $sdl,private AssetManager $assetManager)
     {
@@ -73,11 +94,42 @@ class LevelManager extends EventEmitter
         $group = 'tileset' . $this->convertLevelToTileSet($this->getCurrentLevel()->getLevel());
         $this->sdl->releaseGroupsExcept($group);
         $this->sdl->loadGroup($group);
+        $this->useCurrentSprites();
+    }
+
+    /** The level CUSTOM's own sprites while it is played, the game's ones otherwise. */
+    private function useCurrentSprites(): void
+    {
+        $wanted = $this->getCurrentLevel()->getLevel() === self::CUSTOM ? $this->customSprites : [];
+        foreach (self::SPRITE_SHEETS as $sheet => $key) {
+            $path = $wanted[$sheet] ?? null;
+            $shown = $this->spritesShown[$sheet] ?? null;
+            if ($path === $shown && ($path === null || !$this->spritesChanged)) continue;
+            $original = 'tileset/sprites/tileset-' . $sheet . '.png';
+            try {
+                $this->sdl->replaceTexture($sheet, $path ?? $original, $key);
+                foreach (self::SPRITE_VARIANTS as $variant) {
+                    $file = substr($original, 0, -4) . $variant . '.png';
+                    if (!is_file($this->assetManager->getAssetFolder() . '/' . $file)) continue;
+                    // the level's picture stands for the variant (no underwater palette of its own)
+                    $this->sdl->replaceTexture($sheet . $variant, $path ?? $file, $key);
+                }
+                if ($path === null) unset($this->spritesShown[$sheet]); else $this->spritesShown[$sheet] = $path;
+            } catch (\RuntimeException $e) {
+                // a picture that does not load: the game's one
+                if ($path !== null) {
+                    $this->sdl->replaceTexture($sheet, $original, $key);
+                    unset($this->spritesShown[$sheet]);
+                }
+            }
+        }
+        $this->spritesChanged = false;
     }
 
     /**
      * A level of the site's editor: $file (JSON, see Level::loadCustom) and its tiles next to it (tiles.png: 32px
-     * blocks, 16 a row). It becomes level CUSTOM, played like the others. False if the files are not right.
+     * blocks, 16 a row), and its own sprites if it has some ("sprites": the sheets whose sprite-<sheet>.png is there).
+     * It becomes level CUSTOM, played like the others. False if the files are not right.
      */
     public function loadCustom(string $file): bool
     {
@@ -94,9 +146,22 @@ class LevelManager extends EventEmitter
         $this->sdl->registerTexture($name . '-fg', $path, $group);
         $level = new Level(new TileSet($this->sdl), self::CUSTOM, $this->sdl, $this->assetManager);
         $level->loadCustom($data);
+        // its own sprites (sprite-<sheet>.png next to it, the size of the game's sheet), used from its start
+        $this->customSprites = [];
+        foreach (is_array($data['sprites'] ?? null) ? $data['sprites'] : [] as $sheet) {
+            if (!is_string($sheet) || !isset(self::SPRITE_SHEETS[$sheet])) continue;
+            $picture = dirname($file) . '/sprite-' . $sheet . '.png';
+            $size = is_file($picture) ? @getimagesize($picture) : false;
+            $original = @getimagesize($this->assetManager->getAssetFolder() . '/tileset/sprites/tileset-' . $sheet . '.png');
+            if ($size === false || $original === false || $size[0] !== $original[0] || $size[1] !== $original[1]) continue;
+            $this->customSprites[$sheet] = self::relativePath($this->assetManager->getAssetFolder(), realpath($picture));
+        }
+        $this->spritesChanged = true;
         foreach ($this->levels as $index => $candidate) {
             if ($candidate->getLevel() === self::CUSTOM) {
                 $this->levels[$index] = $level;
+                // played again (a level of the site after another one): no level change will load them
+                if ($index === $this->currentLevelIndex) $this->useCurrentSprites();
                 return true;
             }
         }

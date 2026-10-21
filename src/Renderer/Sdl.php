@@ -114,6 +114,23 @@ class Sdl
         $this->textures[$name] = $texture;
     }
 
+    /** Loads $name again from another file (a level's own sprites), freeing the texture it had. */
+    public function replaceTexture(string $name, string $path, $transparentColor = null): void
+    {
+        if (isset($this->lazy[$name])) return;
+        foreach ($this->textures[$name] ?? [] as $texture) \SDL_DestroyTexture($texture['texture']);
+        unset($this->textures[$name]);
+        $this->loadTexture($name, $path, $transparentColor);
+    }
+
+    /** Forgets a texture loaded by loadTexture() (a variant a level's own sprites do not have). */
+    public function removeTexture(string $name): void
+    {
+        if (isset($this->lazy[$name])) return;
+        foreach ($this->textures[$name] ?? [] as $texture) \SDL_DestroyTexture($texture['texture']);
+        unset($this->textures[$name]);
+    }
+
     public function hasTexture(string $name): bool
     {
         return isset($this->textures[$name]) || isset($this->lazy[$name]);

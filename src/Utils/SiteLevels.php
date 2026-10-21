@@ -50,6 +50,16 @@ final class SiteLevels
         $tiles = is_array($data) ? base64_decode((string)($data['tiles'] ?? ''), true) : false;
         if ($tiles !== false && $tiles !== '' && (is_dir($this->folder) || @mkdir($this->folder, 0775, true))) {
             unset($data['tiles']);
+            // its own sprites: {sheet: PNG in base64} -> sprite-<sheet>.png, and their names in the level
+            $sprites = [];
+            foreach (is_array($data['sprites'] ?? null) ? $data['sprites'] : [] as $sheet => $png) {
+                $png = is_string($png) ? base64_decode($png, true) : false;
+                if (is_string($sheet) && preg_match('/^[a-z]{1,20}$/', $sheet) && $png
+                    && @file_put_contents($this->folder . '/sprite-' . $sheet . '.png', $png) !== false) {
+                    $sprites[] = $sheet;
+                }
+            }
+            $data['sprites'] = $sprites;
             if (@file_put_contents($this->folder . '/tiles.png', $tiles) !== false
                 && @file_put_contents($this->folder . '/level.json', json_encode($data)) !== false) {
                 $file = $this->folder . '/level.json';
