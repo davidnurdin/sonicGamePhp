@@ -1077,6 +1077,8 @@ class Game extends EventEmitter
         $input = $this->autoplay->think($this->player, $level, $way['target'], $deltaTime, $chase && $way['direct'], $attacking);
         if ($input['dir'] !== 0) $this->player->moveDirection($input['dir'] > 0 ? 'right' : 'left');
         if ($input['down']) $this->player->roll();
+        // a badnik or spikes just ahead: a jump (on a badnik it destroys it)
+        if (!$input['jump'] && $this->objectManager->autoplayDanger($this->player, $level, $input['dir'])) $input['jump'] = true;
         if ($input['jump'] && $this->player->isGrounded()) {
             $this->player->jump();
             if ($input['super']) $this->player->setVelocity($this->player->getVelocity()[0], -620);

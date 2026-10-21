@@ -1134,6 +1134,30 @@ class GameObjectManager extends EventEmitter
     }
 
     /**
+     * Autoplay: a badnik a jump destroys, close ahead of Sonic ($dir: where he runs, 0: on either side), or spikes
+     * under his way: time to jump.
+     */
+    public function autoplayDanger(Player $player, Level $level, int $dir): bool
+    {
+        $x = $player->getX() + 12;
+        $y = $player->getY() + 16;
+        foreach ($this->objects as $obj) {
+            if (!($obj instanceof Badnik) || !$obj->isActive() || !$obj->isVisible() || $obj->isInvulnerable()) continue;
+            if ($obj->getObjectType() === 0x2D) continue;   // Yadrin: its back hurts a jumping Sonic too
+            $dx = $obj->getPosX() + $obj->getWidth() / 2 - $x;
+            $dy = $obj->getPosY() + $obj->getHeight() / 2 - $y;
+            if (abs($dy) < 48 && ($dir === 0 ? abs($dx) < 72 : $dx * $dir > -16 && $dx * $dir < 96)) return true;
+        }
+        // spikes (block behaviour 1) where his feet will be
+        $behaviours = $level->getBlockBehaviours();
+        foreach ([24, 48] as $ahead) {
+            $tile = $level->getTile(intdiv((int)($x + ($dir ?: 1) * $ahead), 32), intdiv((int)$y + 16, 32));
+            if ($dir !== 0 && $tile !== null && ($behaviours[$tile] ?? 0) === 1) return true;
+        }
+        return false;
+    }
+
+    /**
      * Where the autoplay takes Sonic in an act alone: [[x, y], chase?]: the arena of the boss, the boss once he is
      * there (it jumps into him), then the button of the capsule, then the sign (beyond it: the end of the map).
      */
