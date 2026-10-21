@@ -5,6 +5,8 @@ namespace SonicGame\Level;
 use Evenement\EventEmitter;
 use SonicGame\AssetManager\AssetManager;
 use SonicGame\Renderer\Sdl;
+use SonicGame\Save\Options;
+use SonicGame\Scene\Screens;
 use SonicGame\Scene\TileSet;
 
 class LevelManager extends EventEmitter
@@ -43,6 +45,8 @@ class LevelManager extends EventEmitter
     private int $customVersion = 0;
     /** The id on the site of the level CUSTOM loaded (null: none, or not from the site). */
     private ?int $customId = null;
+    /** The level CUSTOM as the matches and the replays name it: {id, lt (its key), name}, or null. */
+    private ?array $customSite = null;
 
     public function __construct(private Sdl $sdl,private AssetManager $assetManager)
     {
@@ -118,6 +122,12 @@ class LevelManager extends EventEmitter
     }
 
     /** The id on the site of the level of the site loaded (multiplayer: is it the one of the match?), or null. */
+    /** The level CUSTOM loaded, from the site: {id, lt, name} (Options::validSite), or null. */
+    public function getCustomSite(): ?array
+    {
+        return $this->customSite;
+    }
+
     public function getCustomId(): ?int
     {
         return $this->customId;
@@ -202,6 +212,8 @@ class LevelManager extends EventEmitter
         }
         $this->customVersion++;
         $this->customId = is_int($data['id'] ?? null) ? $data['id'] : null;
+        $this->customSite = Options::validSite(['id' => $this->customId, 'lt' => (string)($data['lt'] ?? ''),
+            'name' => Screens::plain($data['name'] ?? '', 20)]);
         foreach ($this->levels as $index => $candidate) {
             if ($candidate->getLevel() === self::CUSTOM) {
                 $this->levels[$index] = $level;

@@ -395,7 +395,10 @@ trait VersusNetwork
     private function peerJoined(int $peer): void
     {
         if (!$this->isHost() || $this->state === 'over' || $this->rivalOfPeer($peer) !== null) return;
-        foreach ($this->rivals as $i => $rival) {
+        // a race: the bot furthest behind (the one in front would make him win at once)
+        $rivals = $this->rivals;
+        if ($this->mode === 'race') uasort($rivals, fn(Rival $a, Rival $b) => $a->player->getX() <=> $b->player->getX());
+        foreach ($rivals as $i => $rival) {
             if ($rival->human || $rival->peer !== null || $rival->brain === null) continue;
             if ($rival === $this->carrier) $this->dropFlag();
             $name = $this->online->names[$peer] ?? 'J' . ($peer + 1);

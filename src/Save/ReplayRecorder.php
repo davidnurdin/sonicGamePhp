@@ -10,7 +10,8 @@ namespace SonicGame\Save;
  *
  * Format (JSON, gzip): {v, kind: solo|versus|online, level, mode, match (online: the same id for every player of
  * the match), date, follow (the Sonic of this player), fps, entities: [{name, tex, rgb}], frames: [[per entity:
- * [x, y, sx, sy, sw, sh, flags (1 flipped, 2 ROM sheet)] or 0]], tiles: [[frame, x, y, value]], result: [[name, score]]}.
+ * [x, y, sx, sy, sw, sh, flags (1 flipped, 2 ROM sheet)] or 0]], tiles: [[frame, x, y, value]], result: [[name, score]],
+ * site (level LevelManager::CUSTOM: the level of the site, {id, lt, name}, downloaded again to watch it)}.
  */
 final class ReplayRecorder
 {
@@ -29,9 +30,9 @@ final class ReplayRecorder
     }
 
     /** @param list<array{0: string, 1: string, 2: array}> $entities [name, texture, rgb] */
-    public function begin(string $kind, int $level, string $mode, array $entities, int $follow, ?string $match = null): void
+    public function begin(string $kind, int $level, string $mode, array $entities, int $follow, ?string $match = null, ?array $site = null): void
     {
-        $this->meta = ['v' => self::VERSION, 'kind' => $kind, 'level' => $level, 'mode' => $mode, 'match' => $match,
+        $this->meta = ['v' => self::VERSION, 'kind' => $kind, 'level' => $level, 'mode' => $mode, 'match' => $match, 'site' => $site,
             'date' => time(), 'follow' => $follow, 'fps' => self::FPS,
             'entities' => array_map(fn(array $e) => ['name' => $e[0], 'tex' => $e[1], 'rgb' => array_values($e[2])], $entities)];
         $this->frames = [];

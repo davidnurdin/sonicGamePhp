@@ -75,6 +75,8 @@ class Game extends EventEmitter
     private ?int $siteWanted = null;
     /** The last level of the site that could not be downloaded for a match: not asked again for nothing. */
     private ?int $siteFailed = null;
+    /** "Revoir" on a level of the site: the replay waiting for its level. */
+    private ?ReplayPlayer $siteReplay = null;
     /** The START of the online match being played (a new one from the host starts the next match). */
     private ?array $versusConfig = null;
     /** Options > FILTRE CRT (created on first use). */
@@ -132,7 +134,14 @@ class Game extends EventEmitter
             $this->siteRoom = (string)constant('SONIC_ROOM');
             $mode = defined('SONIC_MODE') ? (string)constant('SONIC_MODE') : '';
             $level = defined('SONIC_LEVEL') ? (int)constant('SONIC_LEVEL') : 0;
-            if (isset(Versus::MODES[$mode]) && in_array($level, Versus::LEVELS, true)) {
+            // a level of the site's editor chosen in the room (SONIC_SITE_LEVEL: {id, lt, name} in JSON)
+            $site = $level === Versus::SITE_LEVEL && defined('SONIC_SITE_LEVEL')
+                ? Options::validSite(json_decode((string)constant('SONIC_SITE_LEVEL'), true)) : null;
+            if ($site !== null) {
+                $site['name'] = Screens::plain($site['name'], 20);
+                $this->options->setVersusSite($site);
+            }
+            if (isset(Versus::MODES[$mode]) && (in_array($level, Versus::LEVELS, true) || $site !== null)) {
                 $this->options->setVersus($mode, $this->options->getVersusPlayers(), $level);
             }
         }
@@ -602,8 +611,10 @@ class Game extends EventEmitter
             if ($this->versusRecorded || !$this->versus->hasBegun()) return;
             $kind = $this->versusConfig !== null ? 'online' : 'versus';
             if (!$this->recorder->isRecording($kind)) {
-                $this->recorder->begin($kind, $this->levelManager->getCurrentLevel()->getLevel(), $this->versus->mode,
-                    $this->versus->replayEntities(), $this->versus->replayFollow(), $this->versus->matchId());
+                $level = $this->levelManager->getCurrentLevel()->getLevel();
+                $this->recorder->begin($kind, $level, $this->versus->mode,
+                    $this->versus->replayEntities(), $this->versus->replayFollow(), $this->versus->matchId(),
+                    $level === LevelManager::CUSTOM ? $this->levelManager->getCustomSite() : null);
             }
             $this->recorder->sample($deltaTime, $this->versus->replayStates());
             if ($this->versus->isOver()) {
@@ -614,9 +625,11 @@ class Game extends EventEmitter
         }
         if ($this->objectManager->hasCheats() || $this->objectManager->isLevelComplete()) return;
         $number = $this->levelManager->getCurrentLevel()->getLevel();
-        if ($number === LevelManager::CUSTOM) return;   // not kept yet: the replay would need the level of the site
+        // a level of the site: kept with what downloads it again (not one tried from a file)
+        $site = $number === LevelManager::CUSTOM ? $this->levelManager->getCustomSite() : null;
+        if ($number === LevelManager::CUSTOM && $site === null) return;
         if (!$this->recorder->isRecording('solo', $number)) {
-            $this->recorder->begin('solo', $number, 'solo', [[$this->options->getOnlineName() ?: 'SONIC', $this->player->getSheet(), [80, 140, 255]]], 0);
+            $this->recorder->begin('solo', $number, 'solo', [[$this->options->getOnlineName() ?: 'SONIC', $this->player->getSheet(), [80, 140, 255]]], 0, null, $site);
         }
         $this->recorder->sample($deltaTime, [$this->objectManager->isPlayerDead() ? null
             : [$this->player->getX(), $this->player->getY(), $this->player->getDrawnFrame()]]);
@@ -707,6 +720,13 @@ class Game extends EventEmitter
             }
             $this->screens->sitePicked();
             if ($this->sitePickFor === 'online') $this->onlineAction('settings');
+        } elseif ($purpose === 'replay') {
+            $replay = $this->siteReplay;
+            $this->siteReplay = null;
+            if ($loaded && $replay !== null) {
+                $this->screens->close();
+                $this->startReplay($replay);
+            }
         } elseif ($purpose === 'versus') {
             if ($loaded) $this->startVersus(); else $this->screens->siteLevelFailed();
         } elseif (!$loaded) {
@@ -1143,6 +1163,12 @@ class Game extends EventEmitter
         if ($custom) {
             // JOUER on a level of the site's editor: that level, straight away
             $this->startCustom();
+        } elseif ($replay !== null && $replay->level() === LevelManager::CUSTOM) {
+            // the replay of a level of the site: that level first (the title meanwhile)
+            $this->screens->showTitle();
+            $this->siteReplay = $replay;
+            $this->downloadSiteLevel($replay->site(), 'replay');
+            if ($replay->site() === null) $this->siteReplay = null;
         } elseif ($replay !== null) {
             // "Revoir" on the site: the replay, straight away
             $this->startReplay($replay);

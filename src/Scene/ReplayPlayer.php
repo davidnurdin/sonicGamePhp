@@ -6,6 +6,7 @@ use SonicGame\Entities\Player;
 use SonicGame\Level\Level;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Renderer\TextRenderer;
+use SonicGame\Save\Options;
 use SonicGame\Save\ReplayRecorder;
 use SonicGame\Utils\Lang;
 
@@ -18,6 +19,8 @@ final class ReplayPlayer
 {
     /** Seconds the results stay on screen at the end. */
     private const END_TIME = 6.0;
+    /** Farther than this between two recorded frames (1/30 s): a jump, not interpolated. */
+    private const MAX_STEP = 96;
 
     private float $clock = 0;
     private int $tileIndex = 0;
@@ -45,6 +48,12 @@ final class ReplayPlayer
         return (int)$this->data['level'];
     }
 
+    /** The level of the site it was played on (LevelManager::CUSTOM): {id, lt, name}, or null. */
+    public function site(): ?array
+    {
+        return Options::validSite($this->data['site'] ?? null);
+    }
+
     public function mode(): string
     {
         return (string)($this->data['mode'] ?? 'race');
@@ -58,6 +67,28 @@ final class ReplayPlayer
     private function index(): int
     {
         return min(count($this->data['frames']) - 1, (int)floor($this->clock * ($this->data['fps'] ?? ReplayRecorder::FPS)));
+    }
+
+    /**
+     * Where entity $i is now: between the recorded frame and the next one (30 a second, drawn at 60), so that it
+     * moves smoothly. Not across a jump (a respawn, a teleport) nor to a Sonic not drawn. Null: not drawn.
+     *
+     * @return array{0: float, 1: float, 2: array}|null [x, y, the recorded state]
+     */
+    private function position(int $i): ?array
+    {
+        $index = $this->index();
+        $state = $this->data['frames'][$index][$i] ?? 0;
+        if (!is_array($state)) return null;
+        [$x, $y] = $state;
+        $next = $this->data['frames'][$index + 1][$i] ?? 0;
+        if (is_array($next) && abs($next[0] - $x) < self::MAX_STEP && abs($next[1] - $y) < self::MAX_STEP) {
+            $fps = $this->data['fps'] ?? ReplayRecorder::FPS;
+            $t = max(0.0, min(1.0, $this->clock * $fps - $index));
+            $x += ($next[0] - $x) * $t;
+            $y += ($next[1] - $y) * $t;
+        }
+        return [$x, $y, $state];
     }
 
     public function isOver(): bool
@@ -82,9 +113,9 @@ final class ReplayPlayer
             [, $x, $y, $value] = $tiles[$this->tileIndex++];
             $level->setTile((int)$x, (int)$y, (int)$value);
         }
-        $state = $this->data['frames'][$index][$this->follow] ?? 0;
-        if (is_array($state)) {
-            $camera->setXY($state[0], $state[1]);
+        $position = $this->position($this->follow);
+        if ($position !== null) {
+            $camera->setXY($position[0], $position[1]);
             $camera->setVelocity(0, 0);
         }
     }
@@ -100,9 +131,10 @@ final class ReplayPlayer
     public function drawWorld(Sdl $sdl, float $cameraX, float $cameraY): void
     {
         $renderer = $sdl->getRenderer()->getRenderer();
-        foreach ($this->data['frames'][$this->index()] ?? [] as $i => $state) {
-            if (!is_array($state)) continue;
-            [$x, $y, $sx, $sy, $sw, $sh, $flags] = $state;
+        foreach (array_keys($this->data['frames'][$this->index()] ?? []) as $i) {
+            $position = $this->position($i);
+            if ($position === null) continue;
+            [$x, $y, [, , $sx, $sy, $sw, $sh, $flags]] = $position;
             $texture = (string)($this->data['entities'][$i]['tex'] ?? 'sonic');
             $rom = ($flags & 2) !== 0;
             if ($rom) $texture = Player::romSheetOf($texture);
@@ -123,10 +155,11 @@ final class ReplayPlayer
     {
         $size = max(12, (int)round($windowHeight / 34));
         $entities = $this->data['entities'];
-        foreach ($this->data['frames'][$this->index()] ?? [] as $i => $state) {
-            if (!is_array($state) || count($entities) < 2) continue;
-            $wx = $dst->x + ($state[0] + 12 - $cameraX) * $scale;
-            $wy = $dst->y + ($state[1] - $cameraY) * $scale;
+        foreach (array_keys($this->data['frames'][$this->index()] ?? []) as $i) {
+            $position = count($entities) < 2 ? null : $this->position($i);
+            if ($position === null) continue;
+            $wx = $dst->x + ($position[0] + 12 - $cameraX) * $scale;
+            $wy = $dst->y + ($position[1] - $cameraY) * $scale;
             $label = (string)$entities[$i]['name'];
             $text->draw($label, (int)($wx - $text->width($label, $size) / 2), (int)($wy - $size * 1.3), $size, $entities[$i]['rgb'] ?? [255, 255, 255]);
         }

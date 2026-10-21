@@ -282,7 +282,7 @@ class Screens extends EventEmitter
                 $items = [];
                 foreach ($list['levels'] as $level) {
                     $owner = $level['mine'] ? ($level['public'] ? 'A TOI' : 'PRIVE') : self::plain($level['author'], 8);
-                    $items[] = [self::plain($level['name'], 16), $owner, fn() => $this->playSiteLevel($level), null];
+                    $items[] = [self::plain($level['name'], 18), $owner, fn() => $this->playSiteLevel($level), null];
                 }
                 if ($list['pages'] > 1) {
                     $turn = fn(int $direction) => $this->loadSiteLevels(($list['page'] - 1 + $direction + $list['pages']) % $list['pages'] + 1);
@@ -349,7 +349,7 @@ class Screens extends EventEmitter
         if ($this->levelsFor !== null) {
             // for a match: Game downloads it, then sitePicked()
             $this->emit('siteLevelPick', [['id' => (int)$level['id'], 'lt' => (string)($level['lt'] ?? ''),
-                'name' => self::plain($level['name'], 16)], $this->levelsFor]);
+                'name' => self::plain($level['name'], 20)], $this->levelsFor]);
             return;
         }
         $this->emit('siteLevelPlay', [(int)$level['id'], (string)($level['lt'] ?? '')]);
@@ -418,7 +418,7 @@ class Screens extends EventEmitter
         'Õ' => 'O', 'Ù' => 'U', 'Û' => 'U', 'Ü' => 'U', 'Ú' => 'U', 'Ý' => 'Y', 'Œ' => 'OE', 'Æ' => 'AE',
     ];
 
-    private static function plain(mixed $text, int $length): string
+    public static function plain(mixed $text, int $length): string
     {
         // the accents by hand: the browser's PHP has no iconv
         $text = strtoupper(strtr((string)$text, self::ACCENTS));
