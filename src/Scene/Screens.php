@@ -282,7 +282,8 @@ class Screens extends EventEmitter
                 $items = [];
                 foreach ($list['levels'] as $level) {
                     $owner = $level['mine'] ? ($level['public'] ? 'A TOI' : 'PRIVE') : self::plain($level['author'], 8);
-                    $items[] = [self::plain($level['name'], 18), $owner, fn() => $this->playSiteLevel($level), null];
+                    // the whole name: too long, it scrolls when selected (renderMenuPage)
+                    $items[] = [self::plain($level['name'], 40), $owner, fn() => $this->playSiteLevel($level), null];
                 }
                 if ($list['pages'] > 1) {
                     $turn = fn(int $direction) => $this->loadSiteLevels(($list['page'] - 1 + $direction + $list['pages']) % $list['pages'] + 1);
@@ -349,7 +350,7 @@ class Screens extends EventEmitter
         if ($this->levelsFor !== null) {
             // for a match: Game downloads it, then sitePicked()
             $this->emit('siteLevelPick', [['id' => (int)$level['id'], 'lt' => (string)($level['lt'] ?? ''),
-                'name' => self::plain($level['name'], 20)], $this->levelsFor]);
+                'name' => self::plain($level['name'], 40)], $this->levelsFor]);
             return;
         }
         $this->emit('siteLevelPlay', [(int)$level['id'], (string)($level['lt'] ?? '')]);
@@ -1199,6 +1200,45 @@ class Screens extends EventEmitter
             $size, $colours[0], $colours[1], $this->scale, $overBlack);
     }
 
+    /** fit(): one step of the scrolling text every this many frames (6 characters a second), its pause at each end in steps. */
+    private const SCROLL_FRAMES = 10;
+    private const SCROLL_PAUSE = 8;
+    /** @var array<string, string> what fit() found, by text, size, width and start */
+    private array $fits = [];
+
+    /**
+     * $text (translated) in at most $width SMS pixels: as it is if it fits; too long, its start and "...", or with
+     * $scroll a window that goes along it and back to the start (a pause at each end), a character at a time.
+     */
+    private function fit(string $text, int $size, int $width, bool $scroll): string
+    {
+        $text = Lang::t($text);
+        $wide = fn(string $part) => $this->text->styledWidth($part, $size, $this->scale) / $this->scale > $width;
+        if (!$wide($text)) return $text;
+        $from = 0;
+        if ($scroll) {
+            // the last start: the end of the text in view
+            $key = "last|$size|$width|$text";
+            if (!isset($this->fits[$key])) {
+                $last = strlen($text) - 1;
+                while ($last > 0 && !$wide(substr($text, $last - 1))) $last--;
+                $this->fits[$key] = (string)$last;
+            }
+            $last = (int)$this->fits[$key];
+            $tick = intdiv($this->frames, self::SCROLL_FRAMES) % ($last + 2 * self::SCROLL_PAUSE);
+            $from = max(0, min($last, $tick - self::SCROLL_PAUSE));
+        }
+        $key = ($scroll ? "s$from" : "cut") . "|$size|$width|$text";
+        if (!isset($this->fits[$key])) {
+            if (count($this->fits) > 512) $this->fits = [];
+            $end = $scroll ? '' : '...';
+            $part = '';
+            for ($i = $from, $n = strlen($text); $i < $n && !$wide($part . $text[$i] . $end); $i++) $part .= $text[$i];
+            $this->fits[$key] = $scroll ? $part : rtrim($part) . $end;
+        }
+        return $this->fits[$key];
+    }
+
     private function lineColours(bool $selected): array
     {
         return $selected && ($this->frames % 40) < 24
@@ -1213,6 +1253,8 @@ class Screens extends EventEmitter
         $online = $this->onlineView ? ($this->onlineView)() : null;
         $grey = [[200, 200, 200], [120, 120, 120]];
         $centre = function (string $text, int $y, array $colours) use ($size): void {
+            // a long line (the name of a level of the site) scrolls
+            $text = $this->fit($text, $size, 240, true);
             $width = $this->text->styledWidth($text, $size, $this->scale);
             $this->styled($text, (256 * $this->scale - $width) / 2 / $this->scale, $y, $size, $colours);
         };
@@ -1314,7 +1356,16 @@ class Screens extends EventEmitter
             $y = 40 + $step * $i;
             $selected = $i === $this->menuIndex;
             if ($selected) $this->styled('>', 18, $y, $size, $this->lineColours(true));
-            $this->styled($label, 32, $y, $size, $this->lineColours($selected));
+            // the label and the value share the line (x 32 to 236): a long one (a level of the site) is cut, and
+            // scrolls on the selected line; the value keeps its room first unless it is the long one
+            $labelWidth = $this->text->styledWidth($label, $size, $scale) / $scale;
+            if ($value !== null) {
+                $valueRoom = $labelWidth + 8 + $this->text->styledWidth($value, $size, $scale) / $scale > 204
+                    ? max(48, 204 - 8 - min($labelWidth, 120)) : 204;
+                $value = $this->fit($value, $size, (int)$valueRoom, $selected);
+                $labelRoom = 204 - 8 - (int)ceil($this->text->styledWidth($value, $size, $scale) / $scale);
+            }
+            $this->styled($this->fit($label, $size, $value !== null ? $labelRoom : 204, $selected), 32, $y, $size, $this->lineColours($selected));
             if ($value !== null) {
                 // ON in green, OFF in grey, other values in the menu colours; right-aligned
                 $colours = match ($value) {
