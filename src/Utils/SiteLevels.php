@@ -60,6 +60,18 @@ final class SiteLevels
                 }
             }
             $data['sprites'] = $sprites;
+            // its own music and sound effects (WAV in base64) -> music.wav, sfx-<index>.wav
+            $music = is_string($data['music_wav'] ?? null) ? base64_decode($data['music_wav'], true) : false;
+            $data['custom_music'] = $music && @file_put_contents($this->folder . '/music.wav', $music) !== false;
+            $sfx = [];
+            foreach (is_array($data['sfx_wav'] ?? null) ? $data['sfx_wav'] : [] as $index => $wav) {
+                $wav = is_string($wav) ? base64_decode($wav, true) : false;
+                if (is_numeric($index) && $wav && @file_put_contents($this->folder . '/sfx-' . (int)$index . '.wav', $wav) !== false) {
+                    $sfx[] = (int)$index;
+                }
+            }
+            $data['custom_sfx'] = $sfx;
+            unset($data['music_wav'], $data['sfx_wav']);
             if (@file_put_contents($this->folder . '/tiles.png', $tiles) !== false
                 && @file_put_contents($this->folder . '/level.json', json_encode($data)) !== false) {
                 $file = $this->folder . '/level.json';

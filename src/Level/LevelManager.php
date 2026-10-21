@@ -35,6 +35,12 @@ class LevelManager extends EventEmitter
     private array $spritesShown = [];
     /** The level's pictures were written again (another level of the site): load them again. */
     private bool $spritesChanged = false;
+    /** The level CUSTOM's own music (music.wav), and its sound effects: the game's SFX index => its WAV. */
+    private ?string $customMusic = null;
+    /** @var array<int, string> */
+    private array $customSfx = [];
+    /** Up by one each time the level CUSTOM is loaded (its files may have been written again). */
+    private int $customVersion = 0;
 
     public function __construct(private Sdl $sdl,private AssetManager $assetManager)
     {
@@ -95,6 +101,24 @@ class LevelManager extends EventEmitter
         $this->sdl->releaseGroupsExcept($group);
         $this->sdl->loadGroup($group);
         $this->useCurrentSprites();
+    }
+
+    /** The music of the level played, if it is a level of the site with its own (music.wav), or null. */
+    public function getCustomMusic(): ?string
+    {
+        return $this->getCurrentLevel()->getLevel() === self::CUSTOM ? $this->customMusic : null;
+    }
+
+    /** @return array<int, string> the sound effects of the level played instead of the game's (a level of the site) */
+    public function getCustomSfx(): array
+    {
+        return $this->getCurrentLevel()->getLevel() === self::CUSTOM ? $this->customSfx : [];
+    }
+
+    /** Changes each time a level of the site is loaded: its music and sounds must be read again. */
+    public function getCustomVersion(): int
+    {
+        return $this->customVersion;
     }
 
     /** The level CUSTOM's own sprites while it is played, the game's ones otherwise. */
@@ -161,6 +185,14 @@ class LevelManager extends EventEmitter
             $this->customSprites[$sheet] = self::relativePath($this->assetManager->getAssetFolder(), realpath($picture));
         }
         $this->spritesChanged = true;
+        // its own music and sound effects (music.wav, sfx-<index>.wav next to it)
+        $folder = dirname($file);
+        $this->customMusic = !empty($data['custom_music']) && is_file($folder . '/music.wav') ? $folder . '/music.wav' : null;
+        $this->customSfx = [];
+        foreach (is_array($data['custom_sfx'] ?? null) ? $data['custom_sfx'] : [] as $index) {
+            if (is_int($index) && is_file($folder . '/sfx-' . $index . '.wav')) $this->customSfx[$index] = $folder . '/sfx-' . $index . '.wav';
+        }
+        $this->customVersion++;
         foreach ($this->levels as $index => $candidate) {
             if ($candidate->getLevel() === self::CUSTOM) {
                 $this->levels[$index] = $level;

@@ -976,6 +976,12 @@ class Game extends EventEmitter
         } elseif ($this->objectManager->isBossFight()) {
             $this->soundManager->playMusic('boss', true, $restart);
         } else {
+            // a level of the site with its own music (sound editor)
+            $custom = $this->levelManager->getCustomMusic();
+            if ($custom !== null) {
+                $this->soundManager->playCustomMusic($custom, 'custom:' . $this->levelManager->getCustomVersion(), $restart);
+                return;
+            }
             $index = $this->levelManager->getCurrentLevel()->getMeta('MU', 0);
             if ($index === 0xFF) return;
             $name = SoundManager::MUSIC_BY_INDEX[$index] ?? null;
@@ -985,6 +991,9 @@ class Game extends EventEmitter
 
     private function levelReload(int $level)
     {
+        // a level of the site may play its own sound effects instead of the game's
+        $sfx = $this->levelManager->getCustomSfx();
+        $this->soundManager->useCustomSfx($sfx, $sfx ? 'custom:' . $this->levelManager->getCustomVersion() : '');
         $this->scene->resetLevel();
         $this->objectManager->resetForNewLevel();
         dump('Loaded level : ' . $level);

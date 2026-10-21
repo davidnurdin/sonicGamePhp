@@ -63,6 +63,11 @@ class SoundManager
     private string $part = 'loop';
     private float $partStart = 0;
     private array $sfxChannels = [];
+    /** A level's own music (a WAV of the site's sound editor) while it plays, and its key ("custom:<version>"). */
+    private $customMusic = null;
+    /** @var array<int, \Mix_Chunk> the game's sound effects a level replaced, to put them back */
+    private array $originalChunks = [];
+    private string $customSfxKey = '';
 
     public function __construct()
     {
@@ -113,6 +118,49 @@ class SoundManager
         if (!$this->ready || ($name === $this->currentMusic && !$restart)) return;
         $this->currentMusic = $name;
         $this->startFile($this->fileFor($name), $loop, 'intro', 0.0);
+    }
+
+    /**
+     * A level's own music, looped: $file (a WAV), $key telling one version of it from another (the same file is
+     * written again for another level). Like playMusic: no restart if it is already playing.
+     */
+    public function playCustomMusic(string $file, string $key, bool $restart = false): void
+    {
+        if (!$this->ready || ($key === $this->currentMusic && !$restart)) return;
+        $this->pendingLoop = null;
+        $this->playingFile = null;   // no "-fast" version: the speed shoes leave it as it is
+        \Mix_HaltMusic();
+        if ($this->currentMusic !== $key && $this->customMusic) {
+            \Mix_FreeMusic($this->customMusic);
+            $this->customMusic = null;
+        }
+        $this->customMusic ??= \Mix_LoadMUS($file) ?: null;
+        $this->currentMusic = $key;
+        if ($this->customMusic) \Mix_PlayMusic($this->customMusic, -1);
+    }
+
+    /**
+     * The sound effects of a level instead of the game's ([SFX index => WAV file]; [] puts the game's back). $key
+     * tells one set from another.
+     */
+    public function useCustomSfx(array $files, string $key): void
+    {
+        if (!$this->ready || $key === $this->customSfxKey) return;
+        $this->customSfxKey = $key;
+        // the game's back (null: the game had no such sound)
+        foreach ($this->originalChunks as $index => $chunk) {
+            $this->stopSfx($index);
+            if (isset($this->chunks[$index])) \Mix_FreeChunk($this->chunks[$index]);
+            if ($chunk === null) unset($this->chunks[$index]); else $this->chunks[$index] = $chunk;
+        }
+        $this->originalChunks = [];
+        foreach ($files as $index => $file) {
+            $chunk = \Mix_LoadWAV($file);
+            if (!$chunk) continue;
+            $this->stopSfx($index);
+            $this->originalChunks[$index] = $this->chunks[$index] ?? null;
+            $this->chunks[$index] = $chunk;
+        }
     }
 
     /** The speed shoes start / stop: the song goes on at the same place, faster or back to normal. */
