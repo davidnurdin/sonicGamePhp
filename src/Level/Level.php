@@ -132,7 +132,7 @@ class Level
     /**
      * A level made in the site's editor (LevelManager::loadCustom): {width, height, blocks (base64, one byte a
      * block), start [x, y], objects [[type, x, y]], solidity [byte a block], behaviour [byte a block], music,
-     * sp (the zone its tiles come from, 0-6)}.
+     * sp (the zone its tiles come from, 0-6), masks {block: collision drawn in the editor, see applyMask}}.
      */
     public function loadCustom(array $data): void
     {
@@ -155,8 +155,31 @@ class Level
         $this->tilemap = $this->originalTilemap = $tilemap;
         $this->version++;
         $this->applySolidity(implode('', array_map(fn($v) => chr((int)$v & 0xFF), $data['solidity'] ?? [])));
+        foreach ($data['masks'] ?? [] as $block => $mask) {
+            if (is_array($mask)) $this->applyMask((int)$block, $mask);
+        }
         $this->objects = array_map(fn(array $o) => ['type' => (int)$o[0], 'typeName' => '', 'x' => (int)$o[1], 'y' => (int)$o[2]],
             $data['objects'] ?? []);
+    }
+
+    /**
+     * A collision drawn in the site's tile editor, instead of the block's shape: r = 32 rows of 8 hex digits (bit 31 =
+     * the left pixel), w = 1 Sonic stands on it, 2 its sides are walls, 4 it stops Sonic from below (a ceiling).
+     */
+    private function applyMask(int $block, array $mask): void
+    {
+        $rows = $mask['r'] ?? null;
+        if (!is_array($rows) || count($rows) !== 32) return;
+        $pixels = [];
+        foreach (array_values($rows) as $y => $hex) {
+            $bits = is_string($hex) && preg_match('/^[0-9a-f]{8}$/i', $hex) ? hexdec($hex) : 0;
+            for ($x = 0; $x < 32; $x++) $pixels[$y][$x] = ($bits >> (31 - $x)) & 1;
+        }
+        $w = (int)($mask['w'] ?? 1);
+        $this->tilesColision[$block] = $pixels;
+        $this->tilesColisionWay[$block] = ['bottom' => ($w & 1) !== 0, 'floor' => ($w & 1) !== 0,
+            'left' => ($w & 2) !== 0, 'right' => ($w & 2) !== 0, 'top' => ($w & 4) !== 0];
+        unset($this->tileTops[$block]);
     }
 
     /** null: the ROM table of the zone (blockBehaviour.data.php, by SP); a level of the site: its own. */

@@ -10,7 +10,8 @@ use PhpWasmNetwork\Network;
  * times a second. Nothing happens in the native game.
  *
  * Requests: {"t": "share", "url", "text"} (the phone's share sheet, else the clipboard), {"t": "back"} (back
- * to the site that opened the game, if any), {"t": "open", "url"} (a page of the site in a new tab).
+ * to the site that opened the game, if any), {"t": "open", "url"} (a page of the site in a new tab), {"t": "levels",
+ * "page"} and {"t": "level", "id", "lt"} (the levels of the site's editor, see SiteLevels).
  */
 final class Bridge
 {

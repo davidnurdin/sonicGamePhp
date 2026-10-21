@@ -25,7 +25,8 @@ use SonicGame\Utils\Lang;
  * Game over (_1401): "GAME OVER" for 120 frames then 180 more (or the button); with continues left ($D284),
  * "CONTINUE", one icon per continue and a countdown from 9 (one a second, sfx $1A): the button continues.
  *
- * Events: titleDone, titleDemo, mapDone, actCompleteDone, creditsDone, gameOverDone [bool continued].
+ * Events: titleDone, titleDemo, mapDone, actCompleteDone, creditsDone, gameOverDone [bool continued],
+ * siteLevels [page] (NIVEAUX DU SITE: a page of the list, answered with setSiteLevels), siteLevelPlay [id, key].
  */
 class Screens extends EventEmitter
 {
@@ -111,6 +112,11 @@ class Screens extends EventEmitter
     private const SFX_COUNT = 0x23;
     private int $song = 0;
     private int $sfx = 0;
+    // NIVEAUX DU SITE (the levels of the site's editor): 'loading', 'ok', 'error', 'download' (the level chosen)
+    private string $levelsStatus = 'loading';
+    private string $levelsError = '';
+    /** The page shown: {page, pages, account (null: no account), levels: [{id, name, author, mine, public, lt}]}. */
+    private array $levelsList = ['page' => 1, 'pages' => 1, 'account' => null, 'levels' => []];
 
     // fadeOut ($0A6E): 4 steps of 10 frames darken the palette, then [black frames]; _b50: 10 black frames and
     // 4 steps of 10 frames back to the palette. [event, args, frames, black frames]
@@ -139,7 +145,7 @@ class Screens extends EventEmitter
 
     /**
      * Entries of the current menu page: [label, value shown on the right or null, button, left / right (or null)].
-     * Pages: 'menu' (on the title picture), 'multi', 'options', 'jukebox', 'cheats', 'scores'.
+     * Pages: 'menu' (on the title picture), 'multi', 'options', 'jukebox', 'cheats', 'scores', 'levels'.
      */
     private function menuItems(): array
     {
@@ -260,6 +266,26 @@ class Screens extends EventEmitter
                     fn(int $direction) => $this->changed(fn() => $options->setStartLevel(($start - 1 + $direction + 18) % 18 + 1))];
                 $items[] = ['RETOUR', null, fn() => $this->openPage('options', 6), null];
                 return $items;
+            case 'levels':
+                // the levels of the site: the player's own first, then the public ones; PAGE turns the pages
+                $list = $this->levelsList;
+                $back = fn() => $this->openPage('menu', 4);
+                if ($this->levelsStatus !== 'ok') {
+                    $items = $this->levelsStatus === 'error' ? [['REESSAYER', null, fn() => $this->loadSiteLevels($list['page']), null]] : [];
+                    $items[] = ['RETOUR', null, $back, null];
+                    return $items;
+                }
+                $items = [];
+                foreach ($list['levels'] as $level) {
+                    $owner = $level['mine'] ? ($level['public'] ? 'A TOI' : 'PRIVE') : self::plain($level['author'], 8);
+                    $items[] = [self::plain($level['name'], 16), $owner, fn() => $this->playSiteLevel($level), null];
+                }
+                if ($list['pages'] > 1) {
+                    $turn = fn(int $direction) => $this->loadSiteLevels(($list['page'] - 1 + $direction + $list['pages']) % $list['pages'] + 1);
+                    $items[] = ['PAGE', $list['page'] . '/' . $list['pages'], fn() => $turn(1), $turn];
+                }
+                $items[] = ['RETOUR', null, $back, null];
+                return $items;
             case 'scores':
                 // the act: left / right, or the button for the next one
                 $act = fn(int $direction) => [$this->timesAct = ($this->timesAct - 1 + $direction + 18) % 18 + 1,
@@ -274,6 +300,11 @@ class Screens extends EventEmitter
                     ['MULTIJOUEUR', null, fn() => $this->openPage('multi', 0), null],
                     ['OPTIONS', null, fn() => $this->openPage('options', 0), null],
                     ['MEILLEURS TEMPS', null, fn() => $this->openPage('scores', 0), null],
+                    // the levels made in the site's editor, downloaded when chosen
+                    ['NIVEAUX DU SITE', null, function () {
+                        $this->openPage('levels', 0);
+                        $this->loadSiteLevels(1);
+                    }, null],
                     // the site of the game (sonic.mimichat.fr) in the browser: rooms, statistics, account
                     ['SITE WEB', null, fn() => $this->emit('openSite', []), null],
                 ];
@@ -286,6 +317,64 @@ class Screens extends EventEmitter
         $this->menuIndex = $index;
         $this->eraseState = '';
         $this->sound?->playSfx(SoundManager::SFX_SWITCH);
+    }
+
+    /** NIVEAUX DU SITE: asks Game for a page of the list (event siteLevels, answered with setSiteLevels). */
+    private function loadSiteLevels(int $page): void
+    {
+        $this->levelsStatus = 'loading';
+        $this->levelsList['page'] = $page;
+        $this->menuIndex = 0;
+        $this->emit('siteLevels', [$page]);
+    }
+
+    /** Back from a level chosen in NIVEAUX DU SITE: the same page of the list, read again. */
+    public function showSiteLevels(): void
+    {
+        $this->showTitle('levels');
+        $this->loadSiteLevels($this->levelsList['page']);
+    }
+
+    private function playSiteLevel(array $level): void
+    {
+        $this->levelsStatus = 'download';
+        $this->menuIndex = 0;
+        $this->sound?->playSfx(SoundManager::SFX_SWITCH);
+        $this->emit('siteLevelPlay', [(int)$level['id'], (string)($level['lt'] ?? '')]);
+    }
+
+    /** The page of the list (SiteLevels), or null when the site could not be reached. */
+    public function setSiteLevels(?array $list): void
+    {
+        if ($list === null || !empty($list['error']) || !is_array($list['levels'] ?? null)) {
+            $this->levelsStatus = 'error';
+            $this->levelsError = 'PAS DE CONNEXION AU SITE';
+        } else {
+            $this->levelsStatus = 'ok';
+            $this->levelsList = ['page' => max(1, (int)($list['page'] ?? 1)), 'pages' => max(1, (int)($list['pages'] ?? 1)),
+                'account' => is_string($list['account'] ?? null) ? $list['account'] : null,
+                'levels' => array_values(array_filter($list['levels'], fn($l) => is_array($l) && isset($l['id'], $l['name'])))];
+        }
+        $this->menuIndex = min($this->menuIndex, count($this->menuItems()) - 1);
+    }
+
+    /** The level chosen could not be downloaded. */
+    public function siteLevelFailed(): void
+    {
+        $this->levelsStatus = 'error';
+        $this->levelsError = 'NIVEAU INDISPONIBLE';
+        $this->menuIndex = 0;
+        $this->sound?->playSfx(SoundManager::SFX_EXPLOSION);
+    }
+
+    /** A name typed on the site in the game's font: capitals, digits and spaces, $length characters at most. */
+    private static function plain(mixed $text, int $length): string
+    {
+        $text = (string)$text;
+        $ascii = function_exists('iconv') ? @iconv('UTF-8', 'ASCII//TRANSLIT', $text) : false;
+        $text = strtoupper(is_string($ascii) ? $ascii : $text);
+        $text = trim((string)preg_replace('/\s+/', ' ', (string)preg_replace('/[^A-Z0-9 ]/', ' ', $text)));
+        return substr($text !== '' ? $text : '?', 0, $length);
     }
 
     private function changed(\Closure $change): void
@@ -1154,7 +1243,8 @@ class Screens extends EventEmitter
     {
         $scale = $this->scale;
         $title = match ($this->titlePage) {
-            'cheats' => 'CHEATS', 'scores' => 'MEILLEURS TEMPS', 'jukebox' => 'JUKEBOX', 'multi' => 'MULTIJOUEUR', 'online' => 'EN LIGNE', default => 'OPTIONS',
+            'cheats' => 'CHEATS', 'scores' => 'MEILLEURS TEMPS', 'jukebox' => 'JUKEBOX', 'multi' => 'MULTIJOUEUR', 'online' => 'EN LIGNE',
+            'levels' => 'NIVEAUX DU SITE', default => 'OPTIONS',
         };
         $big = 12 * $scale;
         $width = $this->text->styledWidth($title, $big, $scale);
@@ -1187,6 +1277,19 @@ class Screens extends EventEmitter
             }
         }
         if ($this->titlePage === 'online') $this->renderOnline($size, 40 + $step * count($items));
+        if ($this->titlePage === 'levels') {
+            // under the entries: what is going on, or whose account the private levels come from
+            $line = match ($this->levelsStatus) {
+                'loading' => 'CHARGEMENT...',
+                'download' => 'CHARGEMENT DU NIVEAU...',
+                'error' => $this->levelsError,
+                default => $this->levelsList['levels'] === [] ? 'AUCUN NIVEAU POUR LE MOMENT'
+                    : ($this->levelsList['account'] !== null ? Lang::t('COMPTE {name}', ['name' => self::plain($this->levelsList['account'], 8)])
+                        : 'TES NIVEAUX PRIVES  VIA LE SITE'),
+            };
+            $width = $this->text->styledWidth($line, $size, $scale);
+            $this->styled($line, (256 * $scale - $width) / 2 / $scale, 172, $size, [[255, 255, 255], [170, 170, 170]]);
+        }
         if ($this->titlePage === 'multi') {
             // the rules of the mode chosen, under the entries
             $rules = [

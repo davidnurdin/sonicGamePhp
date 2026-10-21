@@ -28,6 +28,7 @@ use SonicGame\Scene\Screens;
 use SonicGame\SoundManager\SoundManager;
 use SonicGame\Utils\Bridge;
 use SonicGame\Utils\Lang;
+use SonicGame\Utils\SiteLevels;
 
 class Game extends EventEmitter
 {
@@ -60,6 +61,9 @@ class Game extends EventEmitter
     private ?Versus $versus = null;
     /** Online session (menu MULTIJOUEUR > EN LIGNE), kept from the room to the matches and back. */
     private ?Online $online = null;
+    /** The levels of the site's editor (menu NIVEAUX DU SITE); $customFromMenu: the one played was chosen there. */
+    private SiteLevels $siteLevels;
+    private bool $customFromMenu = false;
     /** The START of the online match being played (a new one from the host starts the next match). */
     private ?array $versusConfig = null;
     /** Options > FILTRE CRT (created on first use). */
@@ -124,6 +128,8 @@ class Game extends EventEmitter
         $this->ghost = new GhostRecorder($root . '/var/ghosts');
         $this->recorder = new ReplayRecorder($root . '/var/replays/last.json.gz');
         $this->bestTimes = new BestTimes($root . '/var/besttimes.json');
+        $this->siteLevels = new SiteLevels(defined('SONIC_SITE_URL') && constant('SONIC_SITE_URL') !== ''
+            ? (string)constant('SONIC_SITE_URL') : Online::SITE_URL, $root . '/var/custom');
         $this->screens->setMenu($this->text, $this->options, $this->ghost, $this->bestTimes);
     }
 
@@ -300,6 +306,8 @@ class Game extends EventEmitter
         $this->screens->on('openSite', fn() => Bridge::openSite(defined('SONIC_SITE_URL') && constant('SONIC_SITE_URL') !== ''
             ? (string)constant('SONIC_SITE_URL') : Online::SITE_URL));
         $this->screens->setOnlineView(fn() => $this->online);
+        $this->screens->on('siteLevels', fn(int $page) => $this->siteLevels->requestPage($page));
+        $this->screens->on('siteLevelPlay', fn(int $id, string $key) => $this->siteLevels->requestLevel($id, $key));
         $this->screens->on('online', fn(string $action) => $this->onlineAction($action));
         $this->screens->on('codeDone', function (string $code) {
             if (strlen($code) === 4) $this->connectOnline($code);
@@ -601,9 +609,58 @@ class Game extends EventEmitter
         $this->startLevel();
     }
 
-    /** The level of the site is over (tally, game over, escape): back to its page, or to the menu. */
+    /**
+     * A tool for the site's level editor (sonicGameSite/tools/object-icons.py): instead of the level, every object
+     * of the level in a grid of cells on magenta (the order of the level's objects), and in $file the cells (view
+     * pixels): {width, height, cell, cells: [[type, x, y, box x, box bottom]]} (the box: level pixels). A
+     * screenshot of the window gives a picture of each.
+     */
+    private function renderObjectIcons(string $file): void
+    {
+        $cell = 80;
+        $width = $this->sdl->getWindow()->getWidth();
+        $height = $this->sdl->getWindow()->getHeight();
+        $columns = max(1, intdiv($width, $cell));
+        $cells = [];
+        if ($this->objectManager->getObjects() === []) $this->objectManager->loadLevel($this->levelManager->getCurrentLevel());
+        \SDL_SetRenderDrawColor($this->sdl->getRenderer()->getRenderer(), 255, 0, 255, 255);
+        \SDL_RenderClear($this->sdl->getRenderer()->getRenderer());
+        foreach ($this->objectManager->getObjects() as $i => $obj) {
+            $x = ($i % $columns) * $cell;
+            $y = intdiv($i, $columns) * $cell;
+            // the object's box at the bottom middle of its cell
+            $obj->render($obj->getPosX() + $obj->getWidth() / 2 - $x - $cell / 2, $obj->getPosY() + $obj->getHeight() - $y - $cell + 4);
+            $cells[] = [$obj->getObjectType(), $x, $y, (int)round($obj->getPosX() + $obj->getWidth() / 2), (int)round($obj->getPosY() + $obj->getHeight())];
+        }
+        if ($cells !== [] && !is_file($file)) @file_put_contents($file, json_encode(['width' => $width, 'height' => $height, 'cell' => $cell, 'cells' => $cells]));
+    }
+
+    /** The answer of the site to the menu NIVEAUX DU SITE: a page of the list, or the level chosen (played now). */
+    private function siteLevelAnswer(array $answer): void
+    {
+        [$kind, $data] = $answer;
+        if ($kind === 'list') {
+            $this->screens->setSiteLevels($data);
+        } elseif (is_string($data) && $this->levelManager->loadCustom($data)) {
+            $this->customFromMenu = true;
+            $this->startCustom();
+        } else {
+            $this->screens->siteLevelFailed();
+        }
+    }
+
+    /**
+     * The level of the site is over (tally, game over, escape): back to the list of NIVEAUX DU SITE when it was
+     * chosen there, else to its page on the site, or to the menu.
+     */
     private function endCustom(): void
     {
+        if ($this->customFromMenu) {
+            $this->customFromMenu = false;
+            $this->backToTitle();
+            $this->screens->showSiteLevels();
+            return;
+        }
         if (Bridge::fromSite()) {
             $this->soundManager->stopMusic();
             Bridge::send(['t' => 'back']);
@@ -1068,12 +1125,16 @@ class Game extends EventEmitter
             // Rendu de la scène
             $this->scene->setDebugMode($this->debugMode);
 			$this->sdl->getRenderer()->clear(); // 1
-            $this->sdl->getRenderer()->createScene(
-                $this->scene,
-                $this->player,
-                $this->sdl->getFont('sonic'),
-                $this->levelManager->getCurrentLevel()
-            );
+            if (defined('SONIC_OBJECT_ICONS')) {
+                $this->renderObjectIcons((string)constant('SONIC_OBJECT_ICONS'));
+            } else {
+                $this->sdl->getRenderer()->createScene(
+                    $this->scene,
+                    $this->player,
+                    $this->sdl->getFont('sonic'),
+                    $this->levelManager->getCurrentLevel()
+                );
+            }
             // level fade: fade.png, black at 1/3, 2/3, 3/3
             if (($step = $this->levelFadeStep()) > 0) {
                 $src = new \SDL_Rect;
@@ -1114,7 +1175,7 @@ class Game extends EventEmitter
 					$camera = $this->scene->getCamera();
 					$this->replay->drawOverlay($this->sdl, $this->text, $dst, $scale, $height, $camera->getX(), $camera->getY());
 				}
-				if ($this->options->isCrtEnabled()) {
+				if ($this->options->isCrtEnabled() && !defined('SONIC_OBJECT_ICONS')) {
 					$this->crt ??= new CrtFilter($this->sdl->getRenderer());
 					$this->crt->draw($dst, $this->sdl->getWindow()->getHeight());
 				}
@@ -1175,6 +1236,7 @@ class Game extends EventEmitter
 			}
 
 			if ($this->screens->isActive()) {
+				if ($answer = $this->siteLevels->poll()) $this->siteLevelAnswer($answer);
 				$this->screens->update($deltaTime, $this->buttonPressed);
 				$this->buttonPressed = false;
 				$closureDisplay($deltaTime);
@@ -1585,7 +1647,7 @@ class Game extends EventEmitter
         $this->text->onWindow = true;
         $this->screens->render($width, $height);
         $this->text->onWindow = false;
-        if ($this->options->isCrtEnabled()) {
+        if ($this->options->isCrtEnabled() && !defined('SONIC_OBJECT_ICONS')) {
             $dst = new \SDL_Rect;
             [$dst->x, $dst->y, $dst->w, $dst->h] = [0, 0, $width, $height];
             $this->crt ??= new CrtFilter($this->sdl->getRenderer());

@@ -1718,6 +1718,12 @@ class GameObjectManager extends EventEmitter
     public function getCurrentLevelNumber(): int { return $this->currentLevel; }
 
     /** @return GameObject[] */
+    /** @return GameObject[] the objects of the level, in its order */
+    public function getObjects(): array
+    {
+        return $this->objects;
+    }
+
     public function getVisibleObjects(float $cameraX, float $cameraY, int $viewWidth, int $viewHeight): array
     {
         $margin = 96;
