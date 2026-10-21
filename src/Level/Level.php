@@ -160,6 +160,38 @@ class Level
         }
         $this->objects = array_map(fn(array $o) => ['type' => (int)$o[0], 'typeName' => '', 'x' => (int)$o[1], 'y' => (int)$o[2]],
             $data['objects'] ?? []);
+        // blocks drawn in turn from other blocks (site's tile editor): {block: {f: [blocks], t: frames each}}
+        $this->animations = [];
+        foreach (is_array($data['animations'] ?? null) ? $data['animations'] : [] as $block => $animation) {
+            $frames = is_array($animation['f'] ?? null) ? array_values(array_map('intval', $animation['f'])) : [];
+            $frames = array_values(array_filter($frames, fn(int $f) => $f >= 0 && $f < 256));
+            if (count($frames) < 2 || (int)$block < 0 || (int)$block > 255 || GameObjectManager::isRingBlock((int)$block)) continue;
+            $this->animations[(int)$block] = [$frames, max(1, min(240, (int)($animation['t'] ?? 8)))];
+        }
+    }
+
+    /** @var array<int, array{0: list<int>, 1: int}> block => [the blocks drawn in turn, frames (60Hz) each] */
+    private array $animations = [];
+
+    public function isAnimatedBlock(int $block): bool
+    {
+        return isset($this->animations[$block]);
+    }
+
+    /** The block drawn instead of $block at frame $frame (60Hz): itself when it is not animated. */
+    public function animatedBlock(int $block, int $frame): int
+    {
+        if (!isset($this->animations[$block])) return $block;
+        [$frames, $ticks] = $this->animations[$block];
+
+        return $frames[intdiv($frame, $ticks) % count($frames)];
+    }
+
+    /** A level of the site made with a zone of the game as it is: the zone's colour cycling (water, waterfalls...). */
+    public function useColourCycling(int $count, int $speed): void
+    {
+        $this->meta['CC'] = $count;
+        $this->meta['CS'] = $speed;
     }
 
     /**

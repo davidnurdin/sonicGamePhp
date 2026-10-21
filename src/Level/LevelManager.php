@@ -176,6 +176,27 @@ class LevelManager extends EventEmitter
         $this->spritesChanged = false;
     }
 
+    /** The zones of the site's editor (the "zone" of a level made with one as it is) => their first level. */
+    private const ZONES = ['green-hill' => 1, 'bridge' => 4, 'jungle' => 7, 'labyrinth' => 10, 'scrap-brain' => 13, 'sky-base' => 16, 'bonus' => 28];
+    /** The textures of the level CUSTOM now registered (after its name). */
+    private array $customVariants = [];
+
+    /** Registers the pictures of the zone of level $zone as $name (its plain, colour cycling and front layers). */
+    private function registerZoneTextures(string $name, int $zone, string $group): void
+    {
+        $file = 'tileset/levels/tileset' . $this->convertLevelToTileSet($zone);
+        $variants = ['', '-flash'];
+        for ($k = 0; file_exists($this->assetManager->getAssetFolder() . '/' . $file . '-cycle' . $k . '.png'); $k++) $variants[] = '-cycle' . $k;
+        $this->customVariants = [];
+        foreach ($variants as $variant) {
+            foreach ([$variant, $variant . '-fg'] as $layer) {
+                if (!file_exists($this->assetManager->getAssetFolder() . '/' . $file . $layer . '.png')) continue;
+                $this->sdl->registerTexture($name . $layer, $file . $layer . '.png', $group);
+                $this->customVariants[] = $layer;
+            }
+        }
+    }
+
     /**
      * A level of the site's editor: $file (JSON, see Level::loadCustom) and its tiles next to it (tiles.png: 32px
      * blocks, 16 a row), and its own sprites if it has some ("sprites": the sheets whose sprite-<sheet>.png is there).
@@ -190,12 +211,20 @@ class LevelManager extends EventEmitter
         $path = self::relativePath($this->assetManager->getAssetFolder(), realpath($png));
         $group = 'tileset' . $this->convertLevelToTileSet(self::CUSTOM);
         $name = 'tileset' . self::CUSTOM;
-        $this->sdl->releaseTexture($name);
-        $this->sdl->registerTexture($name, $path, $group);
-        // the blocks in front of Sonic: the same picture (its transparent pixels stay transparent)
-        $this->sdl->registerTexture($name . '-fg', $path, $group);
+        $zone = self::ZONES[$data['zone'] ?? ''] ?? null;
+        foreach ($this->customVariants as $variant) $this->sdl->releaseTexture($name . $variant);
+        $this->customVariants = ['', '-fg'];
+        if ($zone !== null) {
+            // a zone of the game as it is: its own pictures, colour cycling (water, waterfalls...) and front layers
+            $this->registerZoneTextures($name, $zone, $group);
+        } else {
+            $this->sdl->registerTexture($name, $path, $group);
+            // the blocks in front of Sonic: the same picture (its transparent pixels stay transparent)
+            $this->sdl->registerTexture($name . '-fg', $path, $group);
+        }
         $level = new Level(new TileSet($this->sdl), self::CUSTOM, $this->sdl, $this->assetManager);
         $level->loadCustom($data);
+        if ($zone !== null) $level->useColourCycling($this->levels[$zone - 1]->getMeta('CC'), $this->levels[$zone - 1]->getMeta('CS'));
         // its own sprites (sprite-<sheet>.png next to it, the size of the game's sheet), used from its start
         $this->customSprites = [];
         foreach (is_array($data['sprites'] ?? null) ? $data['sprites'] : [] as $sheet) {

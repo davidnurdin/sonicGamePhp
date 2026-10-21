@@ -66,14 +66,16 @@ class Sdl
         }
     }
 
-    /** Forgets a lazy texture and frees its file, with the other names of that file (registered again later). */
+    /** Forgets a lazy texture, and frees its file when no other name uses it. */
     public function releaseTexture(string $name): void
     {
         if (!isset($this->lazy[$name])) return;
         [$path, $key] = $this->lazy[$name];
         $pathKey = self::pathKey($path, $key);
-        foreach ($this->lazy as $other => [$otherPath, $otherKey]) {
-            if (self::pathKey($otherPath, $otherKey) === $pathKey) unset($this->textures[$other], $this->lazy[$other]);
+        unset($this->textures[$name], $this->lazy[$name]);
+        // the file stays loaded while another name uses it (a zone's pictures are the custom level's too)
+        foreach ($this->lazy as [$otherPath, $otherKey]) {
+            if (self::pathKey($otherPath, $otherKey) === $pathKey) return;
         }
         foreach ($this->byPath[$pathKey] ?? [] as $texture) \SDL_DestroyTexture($texture['texture']);
         unset($this->byPath[$pathKey]);

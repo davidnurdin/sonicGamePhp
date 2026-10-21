@@ -374,7 +374,7 @@ class Scene extends EventEmitter
     private const TILE_CACHES = 8;
     /**
      * Render targets holding the blocks around the view, one per tileset texture (palette cycling step,
-     * underwater...): [texture, w, h, level, version, col, row, cols, rows, rings, foreground]. Drawing ~400
+     * underwater...): [texture, w, h, level, version, col, row, cols, rows, rings, foreground, animated]. Drawing ~400
      * blocks costs ~5 ms of PHP per frame in the browser: they are drawn again only when the view leaves the
      * cached area or a block changes, the frame copies one texture.
      */
@@ -434,6 +434,32 @@ class Scene extends EventEmitter
             $this->foregroundBlocks[] = [$x * $tileSize - $cameraX, $y * $tileSize - $cameraY, $block];
         }
         $this->drawRingOverlays($ringOverlays);
+
+        // animated blocks (levels of the site): left out of the cache, the block of the moment drawn each frame
+        if ($cache[11]) {
+            $tileSet = $level->getTileSet();
+            $textures = $this->sdl->getTextures($name);
+            $frame = self::frame();
+            foreach ($cache[11] as [$x, $y, $block]) {
+                if ($x < $col0 || $x >= $col0 + $viewCols || $y < $row0 || $y >= $row0 + $viewRows) continue;
+                $shown = $level->animatedBlock($block, $frame);
+                $src = $tileSet->getTile($shown);
+                $texture = $textures[$tileSet->getTextureIndex($shown)]['texture'] ?? null;
+                if (!$src || !$texture) continue;
+                $dst = new \SDL_Rect;
+                $dst->x = (int)floor($x * $tileSize - $cameraX);
+                $dst->y = (int)floor($y * $tileSize - $cameraY);
+                $dst->w = $tileSize;
+                $dst->h = $tileSize;
+                \SDL_RenderCopy($renderer, $texture, $src, $dst);
+            }
+        }
+    }
+
+    /** The frame of the moment (60Hz), the same for every player. */
+    private static function frame(): int
+    {
+        return (int)floor(fmod(microtime(true), 86400.0) * 60);
     }
 
     /** Draws the blocks from ($col, $row) into the cache $key (made, or remade at a new size). */
@@ -465,6 +491,7 @@ class Scene extends EventEmitter
         $textures = $this->sdl->getTextures($name);
         $rings = [];
         $foreground = [];
+        $animated = [];
         $dst = new \SDL_Rect;
         $dst->w = $tileSize;
         $dst->h = $tileSize;
@@ -479,6 +506,10 @@ class Scene extends EventEmitter
                 } elseif ($level->isForegroundBlock($tileValue)) {
                     $foreground[] = [$x, $y, $tileValue];
                 }
+                if ($level->isAnimatedBlock($drawn)) {
+                    $animated[] = [$x, $y, $drawn];
+                    continue;
+                }
                 $tileRect = $tileSet->getTile($drawn);
                 if (!$tileRect) continue;
                 $dst->x = ($x - $col) * $tileSize;
@@ -489,7 +520,7 @@ class Scene extends EventEmitter
 
         // back to the target being drawn (the frame, or the underwater pass)
         \SDL_SetRenderTarget($renderer, $this->underwaterPass ? $this->waterTexture : $this->sdl->getRenderer()->getRenderTexture());
-        return $this->tileCaches[$key] = [$texture, $w, $h, $level, $level->getVersion(), $col, $row, $cols, $rows, $rings, $foreground];
+        return $this->tileCaches[$key] = [$texture, $w, $h, $level, $level->getVersion(), $col, $row, $cols, $rows, $rings, $foreground, $animated];
     }
 
     // Ring rotation frames (tileset-objects.png), 16x16 cells centred on each frame; the original shows each for 10 frames at 60Hz.
@@ -534,7 +565,9 @@ class Scene extends EventEmitter
         $textures = $this->sdl->getTextures($name);
         $tileSet = $level->getTileSet();
         $renderer = $this->sdl->getRenderer()->getRenderer();
+        $frame = self::frame();
         foreach ($this->foregroundBlocks as [$sx, $sy, $block]) {
+            $block = $level->animatedBlock($block, $frame);
             $src = $tileSet->getTile($block);
             $texture = $textures[$tileSet->getTextureIndex($block)]['texture'] ?? null;
             if (!$src || !$texture) continue;
