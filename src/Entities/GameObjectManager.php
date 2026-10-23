@@ -322,9 +322,11 @@ class GameObjectManager extends EventEmitter
             $feet = $rect['y'] + $rect['height'];
             $centerX = $rect['x'] + $rect['width'] / 2;
             $top = $c->getTopAt($centerX);
-            if ($top !== null && $feet >= $top - 4 && $feet <= $top + 10 && ($best === null || $top < $best['top'])) {
+            // a replay: the recorded Sonic is sampled 30 times a second, a few pixels off the button at worst
+            $margin = $this->replayPuppet ? 12 : 0;
+            if ($top !== null && $feet >= $top - 4 - $margin && $feet <= $top + 10 + $margin && ($best === null || $top < $best['top'])) {
                 $best = ['top' => $top, 'dx' => 0, 'object' => $c];
-                $this->onCapsule = $c->isButtonAt($centerX);
+                $this->onCapsule = $c->isButtonAt($centerX) || $this->replayPuppet;
             }
         }
 
@@ -357,6 +359,7 @@ class GameObjectManager extends EventEmitter
 
     public function update(float $deltaTime, Player $player, Level $level): void
     {
+        $this->lastPlayer = $player;
         if ($this->level !== $level || $this->currentLevel !== $level->getLevel()) {
             $this->loadLevel($level);
         }
@@ -793,6 +796,7 @@ class GameObjectManager extends EventEmitter
             if ($bossDone && !$capsule->isOpened()) {
                 $capsule->open();
                 $this->sfx(SoundManager::SFX_SWITCH);
+                $this->tellObject($capsule, 'open');
             }
         } elseif (!$capsule->isOpened()) {
             $capsule->release();
@@ -1360,6 +1364,20 @@ class GameObjectManager extends EventEmitter
      * (a floor switch: the doors of the act).
      */
     public ?\Closure $objectListener = null;
+    /** The replay being recorded: told of the same, and of what the other players do (applyObject). */
+    public ?\Closure $objectRecorder = null;
+    /**
+     * A replay is shown: the Sonic is a puppet put where the recorded one was, the objects react to him as they
+     * did; he can't die (a hit only throws the ring away), else the act would start again.
+     */
+    public bool $replayPuppet = false;
+    /**
+     * A replay: the puppet is hurt by what touches him (older replays), or only when the recorded Sonic was
+     * (applyObject(-1, 'hurt'): the objects of the replay can't make it differ from the game).
+     */
+    public bool $replayContactHurts = true;
+    private bool $replayHurtNow = false;
+    private ?Player $lastPlayer = null;
     /** Multiplayer: ids of the monitors and badniks gone, still gone after a respawn (like the rings). */
     private array $goneObjects = [];
 
@@ -1370,13 +1388,16 @@ class GameObjectManager extends EventEmitter
         if ($id === false) return;
         $this->goneObjects[$id] = true;
         if ($this->objectListener !== null) ($this->objectListener)($id, 'gone');
+        if ($this->objectRecorder !== null) ($this->objectRecorder)($id, 'gone');
     }
 
     private function tellObject(GameObject $obj, string $what): void
     {
-        if ($this->objectListener === null) return;
+        if ($this->objectListener === null && $this->objectRecorder === null) return;
         $id = array_search($obj, $this->objects, true);
-        if ($id !== false) ($this->objectListener)($id, $what);
+        if ($id === false) return;
+        if ($this->objectListener !== null) ($this->objectListener)($id, $what);
+        if ($this->objectRecorder !== null) ($this->objectRecorder)($id, $what);
     }
 
     /** Online, anti-cheat: what the monitor $id gives, if it is still there (null: not a monitor, or broken). */
@@ -1389,9 +1410,28 @@ class GameObjectManager extends EventEmitter
     /** Online: what a player did to the object $id on another machine (objectListener; nothing given here). */
     public function applyObject(int $id, string $what): void
     {
+        // a replay: the recorded Sonic was hurt now (thrown back, his ring flies away)
+        if ($id === -1) {
+            if ($what === 'hurt' && $this->replayPuppet && $this->lastPlayer !== null) {
+                $this->replayHurtNow = true;
+                $this->hurtPlayer($this->lastPlayer);
+                $this->replayHurtNow = false;
+            }
+            return;
+        }
+        if ($this->objectRecorder !== null) ($this->objectRecorder)($id, $what);
         $obj = $this->objects[$id] ?? null;
         if ($obj instanceof Platform && $what === 'fall') {
             $obj->startFalling();
+            return;
+        }
+        // a replay: the capsule opened when it did
+        if ($obj instanceof Capsule && $what === 'open') {
+            if (!$obj->isOpened()) {
+                $obj->press();
+                $obj->open();
+                $this->sfx(SoundManager::SFX_SWITCH);
+            }
             return;
         }
         if ($obj instanceof FloorSwitch && ($what === 'on' || $what === 'off')) {
@@ -1611,6 +1651,10 @@ class GameObjectManager extends EventEmitter
     /** $canDie false (multiplayer, rings mode): without rings Sonic is only thrown back. */
     public function hurtPlayer(Player $player, bool $canDie = true): void
     {
+        if ($this->replayPuppet) {
+            $canDie = false;
+            if (!$this->replayContactHurts && !$this->replayHurtNow) return;
+        }
         if ($this->godMode || $this->dead || $this->hurt || $this->invincibleTimer > 0 || $this->levelComplete) return;
 
         $this->hurt = true;
@@ -1636,11 +1680,21 @@ class GameObjectManager extends EventEmitter
         $player->setAcceleration(0, 0);
         $player->setVelocity($dir * 120, -4 * 80);
         $player->setState('hurt');   // thrown back, can't attack until landing
+        // the replay being recorded: hurt then
+        if (!$this->replayPuppet && $this->objectRecorder !== null) ($this->objectRecorder)(-1, 'hurt');
+    }
+
+    /** A replay: the rings, the score and the lives of the HUD as they were. */
+    public function replayCounters(int $rings, int $score, int $lives): void
+    {
+        $this->rings = $rings;
+        $this->score = $score;
+        $this->lives = $lives;
     }
 
     public function killPlayer(Player $player, bool $drowned = false): void
     {
-        if ($this->dead || $this->godMode) return;
+        if ($this->dead || $this->godMode || $this->replayPuppet) return;
         $this->dead = true;
         $this->deadTimer = 0;
         $this->deadFrames = 0;

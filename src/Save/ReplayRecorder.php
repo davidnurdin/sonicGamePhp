@@ -10,20 +10,33 @@ namespace SonicGame\Save;
  *
  * Format (JSON, gzip): {v, kind: solo|versus|online, level, mode, match (online: the same id for every player of
  * the match), date, follow (the Sonic of this player), fps, entities: [{name, tex, rgb}], frames: [[per entity:
- * [x, y, sx, sy, sw, sh, flags (1 flipped, 2 ROM sheet)] or 0]], tiles: [[frame, x, y, value]], result: [[name, score]],
- * site (level LevelManager::CUSTOM: the level of the site, {id, lt, name, version}, downloaded again to watch it;
- * version: what its best times are set on), time (solo: the level's timer at the end, the best time on the site)}.
+ * [x, y, sx, sy, sw, sh, flags (1 flipped, 2 ROM sheet, BALL, SHIELD, INVINCIBLE, GROUNDED)] or 0]], tiles:
+ * [[frame, x, y, value]], result: [[name, score]], site (level LevelManager::CUSTOM: the level of the site, {id, lt,
+ * name, version}, downloaded again to watch it; version: what its best times are set on), time (solo: the level's
+ * timer at the end, the best time on the site)}.
+ * Since state 1 (older replays have none of these): the flags BALL... above; objects: [[frame, id, what]] (what
+ * was done to the objects of the act, GameObjectManager::applyObject: monitors broken, badniks destroyed, by this
+ * player or another one online); a match: world {goal (race: x of the finish line), bases (flag mode)} and hud:
+ * [[frame, {score: [[text, rgb]], banner, countdown, go, flag, carrier}]] each time it changes.
  */
 final class ReplayRecorder
 {
     public const VERSION = 1;
     public const FPS = 30;
+    /** Flags of a Sonic in a frame, besides 1 (flipped) and 2 (ROM sheet). */
+    public const BALL = 4;
+    public const SHIELD = 8;
+    public const INVINCIBLE = 16;
+    public const GROUNDED = 32;
     /** At most 15 minutes (a long act): then it is not kept. */
     private const MAX_FRAMES = 15 * 60 * self::FPS;
 
     private ?array $meta = null;
     private array $frames = [];
     private array $tiles = [];
+    private array $objects = [];
+    private array $hud = [];
+    private ?string $lastHud = null;
     private float $clock = 0;
 
     public function __construct(private string $file)
@@ -33,12 +46,21 @@ final class ReplayRecorder
     /** @param list<array{0: string, 1: string, 2: array}> $entities [name, texture, rgb] */
     public function begin(string $kind, int $level, string $mode, array $entities, int $follow, ?string $match = null, ?array $site = null): void
     {
-        $this->meta = ['v' => self::VERSION, 'kind' => $kind, 'level' => $level, 'mode' => $mode, 'match' => $match, 'site' => $site,
-            'date' => time(), 'follow' => $follow, 'fps' => self::FPS,
+        $this->meta = ['v' => self::VERSION, 'state' => 1, 'kind' => $kind, 'level' => $level, 'mode' => $mode, 'match' => $match,
+            'site' => $site, 'date' => time(), 'follow' => $follow, 'fps' => self::FPS,
             'entities' => array_map(fn(array $e) => ['name' => $e[0], 'tex' => $e[1], 'rgb' => array_values($e[2])], $entities)];
         $this->frames = [];
         $this->tiles = [];
+        $this->objects = [];
+        $this->hud = [];
+        $this->lastHud = null;
         $this->clock = 0;
+    }
+
+    /** A match: its finish line, its bases (they don't move). */
+    public function world(array $world): void
+    {
+        if ($this->meta !== null) $this->meta['world'] = $world;
     }
 
     public function isRecording(?string $kind = null, ?int $level = null): bool
@@ -48,7 +70,8 @@ final class ReplayRecorder
     }
 
     /**
-     * $deltaTime of play went by; $states: per entity [x, y, [sx, sy, sw, sh, flip, rom]] or null (not drawn).
+     * $deltaTime of play went by; $states: per entity [x, y, [sx, sy, sw, sh, flip, rom], flags (BALL...)] or null
+     * (not drawn).
      * A frame is kept every 1/30 s.
      */
     public function sample(float $deltaTime, array $states): void
@@ -69,10 +92,26 @@ final class ReplayRecorder
             }
             [$x, $y, $f] = $state;
             $frame[] = [(int)round($x), (int)round($y), (int)$f[0], (int)$f[1], (int)$f[2], (int)$f[3],
-                (!empty($f[4]) ? 1 : 0) | (!empty($f[5]) ? 2 : 0)];
+                (!empty($f[4]) ? 1 : 0) | (!empty($f[5]) ? 2 : 0) | ((int)($state[3] ?? 0) & ~3)];
         }
         // a missed frame (slow machine): the same again
         while (count($this->frames) < $due) $this->frames[] = $frame;
+    }
+
+    /** Something was done to the object $id of the act (GameObjectManager::applyObject). */
+    public function object(int $id, string $what): void
+    {
+        if ($this->meta !== null) $this->objects[] = [count($this->frames), $id, $what];
+    }
+
+    /** A match: what its screen shows (scores, banner, flag...), kept when it changes. */
+    public function hud(array $hud): void
+    {
+        if ($this->meta === null) return;
+        $json = json_encode($hud);
+        if ($json === $this->lastHud) return;
+        $this->lastHud = $json;
+        $this->hud[] = [max(0, count($this->frames) - 1), $hud];
     }
 
     /** A block of the level changed (rings taken...). */
@@ -92,7 +131,8 @@ final class ReplayRecorder
             $this->cancel();
             return null;
         }
-        $data = $this->meta + $extra + ['frames' => $this->frames, 'tiles' => $this->tiles, 'result' => $result,
+        $data = $this->meta + $extra + ['frames' => $this->frames, 'tiles' => $this->tiles, 'objects' => $this->objects,
+            'hud' => $this->hud, 'result' => $result,
             'duration' => round(count($this->frames) / self::FPS, 1)];
         $this->cancel();
         @mkdir(dirname($this->file), 0777, true);
@@ -104,5 +144,8 @@ final class ReplayRecorder
         $this->meta = null;
         $this->frames = [];
         $this->tiles = [];
+        $this->objects = [];
+        $this->hud = [];
+        $this->lastHud = null;
     }
 }

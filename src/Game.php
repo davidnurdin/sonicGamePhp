@@ -161,6 +161,8 @@ class Game extends EventEmitter
         }
         $this->ghost = new GhostRecorder($root . '/var/ghosts');
         $this->recorder = new ReplayRecorder($root . '/var/replays/last.json.gz');
+        // what is done to the objects of the act goes in the replay being recorded
+        $this->objectManager->objectRecorder = fn(int $id, string $what) => $this->recorder->object($id, $what);
         $this->bestTimes = new BestTimes($root . '/var/besttimes.json');
         $this->siteLevels = new SiteLevels(defined('SONIC_SITE_URL') && constant('SONIC_SITE_URL') !== ''
             ? (string)constant('SONIC_SITE_URL') : Online::SITE_URL, $root . '/var/custom');
@@ -223,14 +225,15 @@ class Game extends EventEmitter
         $this->collisionSystem->on('playerFell', fn($entity) => $entity === $this->player
             ? $this->objectManager->playerFellInPit($this->player) : $this->versus?->entityFell($entity));
         // multiplayer race: passing the sign ends the race for Sonic, no tally
-        $this->objectManager->on('levelComplete', fn() => $this->versus ? $this->versus->humanFinished() : $this->screens->showActComplete(
+        // (not in a replay: it ends on its own results, the next act doesn't start)
+        $this->objectManager->on('levelComplete', fn() => $this->replay ? null : ($this->versus ? $this->versus->humanFinished() : $this->screens->showActComplete(
             $this->levelManager->getCurrentLevel()->getLevel(),
             $this->objectManager->getScore(),
             $this->objectManager->getRingCount(),
             $this->objectManager->getLevelTime(),
             $this->objectManager->getLives(),
             $this->objectManager->getEmeralds()
-        ));
+        )));
         // Sound: every part of the engine emits 'sfx' / 'music' events
         // the multiplayer Sonics' springs, bumpers... are silent (Versus plays its own sounds)
         $playSfx = fn(int $index, bool $loop = false) => $this->versus?->isSimulating() ? null : $this->soundManager->playSfx($index, $loop);
@@ -300,7 +303,7 @@ class Game extends EventEmitter
         });
 
         // end of the game (level 19): island, final tally and credits; then back to the title, new game
-        $this->objectManager->on('gameEnd', fn() => $this->screens->showEnding(
+        $this->objectManager->on('gameEnd', fn() => $this->replay ? null : $this->screens->showEnding(
             $this->objectManager->getScore(),
             $this->objectManager->getLives(),
             $this->objectManager->getEmeralds(),
@@ -432,7 +435,7 @@ class Game extends EventEmitter
     private function registerLevelEvents(): void
     {
         // Sky Base 3 teleporter ($FF): fade out, then the next level (the end) without tally
-        $this->objectManager->on('teleportEnd', fn() => $this->fadeLevelOut(0, fn() => $this->askNameThen(function () {
+        $this->objectManager->on('teleportEnd', fn() => $this->replay ? null : $this->fadeLevelOut(0, fn() => $this->askNameThen(function () {
             $this->actTimeBefore = 0;
             $this->warpFrom = null;
             $this->levelManager->nextLevel();
@@ -440,6 +443,7 @@ class Game extends EventEmitter
         })));
         // Scrap Brain transporter: the target room starts at once, without tally
         $this->objectManager->on('warp', function (int $level) {
+            if ($this->replay) return;
             $this->actTimeBefore += $this->objectManager->getLevelTime();
             $this->warpFrom ??= $this->levelManager->getCurrentLevel()->getLevel();
             $this->levelManager->goToLevel($level);
@@ -629,8 +633,10 @@ class Game extends EventEmitter
                 $this->recorder->begin($kind, $level, $this->versus->mode,
                     $this->versus->replayEntities(), $this->versus->replayFollow(), $this->versus->matchId(),
                     $level === LevelManager::CUSTOM ? $this->levelManager->getCustomSite() : null);
+                $this->recorder->world($this->versus->replayWorld());
             }
             $this->recorder->sample($deltaTime, $this->versus->replayStates());
+            $this->recorder->hud($this->versus->replayHud());
             if ($this->versus->isOver()) {
                 $this->versusRecorded = true;
                 $this->sendReplay($this->recorder->finish($this->versus->replayResult()));
@@ -647,8 +653,14 @@ class Game extends EventEmitter
         if (!$this->recorder->isRecording('solo', $number)) {
             $this->recorder->begin('solo', $number, 'solo', [[$this->options->getOnlineName() ?: 'SONIC', $this->player->getSheet(), [80, 140, 255]]], 0, null, $site);
         }
+        $state = $this->player->getState();
+        $flags = ($state === 'jump' || $state === 'roll' ? ReplayRecorder::BALL : 0)
+            | ($this->objectManager->hasShield() ? ReplayRecorder::SHIELD : 0)
+            | ($this->objectManager->hasInvincibility() ? ReplayRecorder::INVINCIBLE : 0)
+            | ($this->player->isGrounded() ? ReplayRecorder::GROUNDED : 0);
         $this->recorder->sample($deltaTime, [$this->objectManager->isPlayerDead() ? null
-            : [$this->player->getX(), $this->player->getY(), $this->player->getDrawnFrame()]]);
+            : [$this->player->getX(), $this->player->getY(), $this->player->getDrawnFrame(), $flags]]);
+        $this->recorder->hud(['counters' => [$this->objectManager->getRingCount(), $this->objectManager->getScore(), $this->objectManager->getLives()]]);
     }
 
     /** The first seconds of a level of the site: its name, and who made it. */
@@ -833,13 +845,20 @@ class Game extends EventEmitter
         $this->backToTitle();
     }
 
-    /** "Revoir" on the site: the level of the replay, the Sonics where they were (nothing is played). */
+    /**
+     * "Revoir" on the site: the level of the replay, the Sonics where they were; the objects of the act react to the
+     * Sonic of the player who recorded it (a puppet, ReplayPlayer::puppet). A match: like the match, without
+     * badniks nor sign (Versus).
+     */
     private function startReplay(ReplayPlayer $replay): void
     {
         $this->replay = $replay;
         $this->objectManager->resetGame();
         $this->objectManager->setCheats(['lives' => true]);
-        $this->objectManager->noEnemies = true;
+        $this->objectManager->setGodMode(false);
+        $this->objectManager->noEnemies = $replay->isMatch();
+        $this->objectManager->replayPuppet = true;
+        $this->objectManager->replayContactHurts = !$replay->hasState();
         $level = $replay->level();
         if ($level !== $this->levelManager->getCurrentLevel()->getLevel()) {
             $this->levelManager->goToLevel($level);
@@ -851,6 +870,8 @@ class Game extends EventEmitter
         $this->replayDummy ??= new Player($this->sdl);
         $this->replayDummy->setXY(-4096, -4096);
         $this->scene->replayView = true;
+        // alone: the HUD of the game (rings, time, score); a match draws its own scores
+        $this->scene->replayHud = !$replay->isMatch();
         $this->scene->worldOverlay = fn(float $x, float $y) => $this->replay?->drawWorld($this->sdl, $x, $y);
         $this->playLevelMusic(true);
     }
@@ -858,9 +879,35 @@ class Game extends EventEmitter
     private function updateReplay(float $deltaTime): void
     {
         $level = $this->scene->getCurrentLevel();
-        $this->replay->update($deltaTime, $level, $this->player);
-        // the platforms move, the rings turn... nobody touches them
-        $this->objectManager->update($this->replay->paused ? 0.0 : $deltaTime, $this->replayDummy, $level);
+        $this->replay->update($deltaTime, $level, $this->player, fn(int $id, string $what) => $this->objectManager->applyObject($id, $what));
+        // the puppet: where the Sonic of the player was, as he was (the objects see him; he is not drawn)
+        $dummy = $this->replayDummy;
+        $puppet = $this->replay->puppet();
+        if ($puppet === null) {
+            $dummy->setXY(-4096, -4096);
+            $dummy->setVelocity(0, 0);
+        } else {
+            $dummy->setXY($puppet['x'], $puppet['y']);
+            $dummy->setVelocity($puppet['vx'], $puppet['vy']);
+            $dummy->setState($puppet['ball'] ? 'jump' : 'walk');
+            $dummy->setGrounded($puppet['grounded']);
+            $dummy->setFacing($puppet['left'] ? 'left' : 'right');
+        }
+        // like the game loop: the objects run in their activity window around the camera
+        $camera = $this->scene->getCamera();
+        $window = $this->sdl->getWindow();
+        $this->objectManager->setRomCamera($camera->getRomCamera($dummy->getX(), $dummy->getY()));
+        $this->objectManager->setView($camera->getX(), $camera->getY(), $window->getWidth(), $window->getHeight());
+        $this->objectManager->setWave($camera->getWave());
+        $this->objectManager->update($this->replay->paused ? 0.0 : $deltaTime, $dummy, $level);
+        if ($counters = $this->replay->counters()) $this->objectManager->replayCounters(...$counters);
+        // the camera locks on the boss arena, on the sign, like in the game (on the Sonic of the player)
+        if ($this->replay->followsPuppet()) {
+            $camera->lock = $this->objectManager->getCameraLock();
+            if ($signLimits = $this->objectManager->getSignLimits()) $camera->applySignLimits($signLimits[0], $signLimits[1]);
+        } else {
+            $camera->lock = null;
+        }
         if ($this->replay->isFinished()) $this->endReplay();
     }
 
@@ -868,8 +915,12 @@ class Game extends EventEmitter
     {
         $this->replay = null;
         $this->scene->replayView = false;
+        $this->scene->replayHud = false;
         $this->scene->worldOverlay = null;
+        $this->scene->getCamera()->lock = null;
         $this->objectManager->noEnemies = false;
+        $this->objectManager->replayPuppet = false;
+        $this->objectManager->replayContactHurts = true;
         // opened from the site: back to it
         if (Bridge::available() && defined('SONIC_RETURN') && constant('SONIC_RETURN') === true) {
             Bridge::send(['t' => 'back']);
@@ -882,7 +933,7 @@ class Game extends EventEmitter
     /** Statistics: a jump, an enemy / monitor destroyed, a spring (the sounds of Sonic only, not the demo's). */
     private function countSfx(int $index): void
     {
-        if ($this->demo || $this->versus?->isSimulating()) return;
+        if ($this->demo || $this->replay || $this->versus?->isSimulating()) return;
         $key = match ($index) {
             SoundManager::SFX_JUMP => 'jumps', SoundManager::SFX_EXPLOSION => 'enemies', SoundManager::SFX_SPRING => 'springs',
             default => null,

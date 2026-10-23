@@ -127,7 +127,7 @@ class Scene extends EventEmitter
         }
 
         // Afficher le HUD en dernier (par-dessus tout)
-        if ($this->hud && $this->objectManager && !$this->replayView) {
+        if ($this->hud && $this->objectManager && (!$this->replayView || $this->replayHud)) {
             $this->hud->draw($this->objectManager, $level);
             $this->drawAirCountdown();
         }
@@ -269,6 +269,8 @@ class Scene extends EventEmitter
     public ?\Closure $worldOverlay = null;
     /** A replay is shown (Game::startReplay): no Sonic of the engine, no HUD. */
     public bool $replayView = false;
+    /** A replay of an act played alone: the HUD of the game too. */
+    public bool $replayHud = false;
     /** Sonic blinks (multiplayer: hit or put back by the match). */
     public bool $playerBlink = false;
 

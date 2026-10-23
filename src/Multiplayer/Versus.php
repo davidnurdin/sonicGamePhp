@@ -9,6 +9,7 @@ use SonicGame\Entities\Player;
 use SonicGame\Level\Level;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Renderer\TextRenderer;
+use SonicGame\Save\ReplayRecorder;
 use SonicGame\Entities\Objects\RomSprites;
 use SonicGame\Scene\Camera;
 use SonicGame\Scene\Scene;
@@ -198,11 +199,46 @@ class Versus extends EventEmitter
         return array_map(fn(Rival $r) => [$r->name, $r->texture, $r->rgb], $this->rivals);
     }
 
-    /** Each Sonic this frame: [x, y, drawn frame], or null (blinking, not drawn). */
+    /** Each Sonic this frame: [x, y, drawn frame, flags (ReplayRecorder::BALL...)], or null (blinking, not drawn). */
     public function replayStates(): array
     {
-        return array_map(fn(Rival $r) => !$r->isVisible() ? null : [$r->player->getX(), $r->player->getY(),
-            $r->puppet && $r->netFrame ? $r->netFrame : $r->player->getDrawnFrame()], $this->rivals);
+        return array_map(function (Rival $r) {
+            if (!$r->isVisible()) return null;
+            $shield = $r->human ? $this->objects->hasShield() : $r->shield;
+            $invincible = $r->human ? $this->objects->hasInvincibility() : $r->invincible;
+            $flags = ($r->isAttacking() ? ReplayRecorder::BALL : 0) | ($shield ? ReplayRecorder::SHIELD : 0)
+                | ($invincible ? ReplayRecorder::INVINCIBLE : 0) | ($r->player->isGrounded() ? ReplayRecorder::GROUNDED : 0);
+            return [$r->player->getX(), $r->player->getY(), $r->puppet && $r->netFrame ? $r->netFrame : $r->player->getDrawnFrame(), $flags];
+        }, $this->rivals);
+    }
+
+    /** What doesn't move in the match, for its replay: the finish line (race), the bases (flag mode). */
+    public function replayWorld(): array
+    {
+        return ['goal' => $this->mode === 'race' ? $this->goalX : null,
+            'bases' => array_map(fn(array $b, int $team) => [$b[0], $b[1], self::TEAM_COLOURS[$team]], $this->bases, array_keys($this->bases))];
+    }
+
+    /**
+     * What the screen of the match shows this frame, for its replay: the scores, the countdown or GO, the banner,
+     * the flag (lying: [x, y]) and the index of its carrier.
+     */
+    public function replayHud(): array
+    {
+        $countdown = $this->state === 'countdown' ? (string)max(1, (int)ceil($this->countdown)) : null;
+        $score = $this->scoreLines();
+        // the race clock to the second (to the hundredth it would change every frame)
+        if ($this->mode === 'race') $score[0][0] = Lang::t(self::MODES[$this->mode]) . '  ' . sprintf('%d:%02d', intdiv((int)$this->clock, 60), (int)$this->clock % 60);
+        return [
+            'score' => $score,
+            'countdown' => $countdown,
+            'mode' => $countdown !== null ? Lang::t(self::MODES[$this->mode]) : null,
+            'go' => $this->state === 'play' && $this->clock < 1,
+            'banner' => $this->state === 'play' && $this->banner !== null ? [$this->banner[0], $this->banner[1]] : null,
+            'flag' => $this->flag !== null && $this->carrier === null && $this->state !== 'countdown'
+                ? [(int)round($this->flag[0]), (int)round($this->flag[1])] : null,
+            'carrier' => $this->carrier !== null ? array_search($this->carrier, $this->rivals, true) : null,
+        ];
     }
 
     /** The Sonic of this player. */
@@ -1190,13 +1226,13 @@ class Versus extends EventEmitter
     {
         $renderer = $this->sdl->getRenderer()->getRenderer();
         foreach ($this->bases as $team => [$bx, $by]) {
-            $this->drawBase((int)round($bx - $cameraX), (int)round($by - $cameraY), self::TEAM_COLOURS[$team]);
+            self::drawBase($this->sdl, (int)round($bx - $cameraX), (int)round($by - $cameraY), self::TEAM_COLOURS[$team]);
         }
         if ($this->flag !== null && $this->state !== 'countdown' && $this->carrier === null) {
-            $this->drawFlag((int)round($this->flag[0] - $cameraX), (int)round($this->flag[1] - $cameraY), 40);
+            self::drawFlag($this->sdl, (int)round($this->flag[0] - $cameraX), (int)round($this->flag[1] - $cameraY), 40);
         }
         if ($this->mode === 'race') {
-            $this->drawFinishLine((int)round($this->goalX - $cameraX), $cameraY);
+            self::drawFinishLine($this->sdl, $this->level, $this->goalX, (int)round($this->goalX - $cameraX), $cameraY, $this->finishGround);
         }
         foreach ($this->rivals as $rival) {
             if ($rival->human || !$rival->isVisible()) continue;
@@ -1225,7 +1261,7 @@ class Versus extends EventEmitter
         // carried: a small flag over the head of its carrier
         if ($this->carrier !== null && $this->carrier->isVisible()) {
             $p = $this->carrier->player;
-            $this->drawFlag((int)round($p->getX() + 12 - $cameraX), (int)round($p->getY() - 2 - $cameraY), 22);
+            self::drawFlag($this->sdl, (int)round($p->getX() + 12 - $cameraX), (int)round($p->getY() - 2 - $cameraY), 22);
         }
     }
 
@@ -1256,55 +1292,58 @@ class Versus extends EventEmitter
     }
 
     /** The flag, the foot of its pole at ($x, $y) (view pixels). */
-    private function drawFlag(int $x, int $y, int $pole): void
+    public static function drawFlag(Sdl $sdl, int $x, int $y, int $pole): void
     {
         $wave = (int)(fmod(microtime(true), 86400.0) * 6) % 2;
-        $this->fill($x - 1, $y - $pole, 3, $pole, [240, 240, 240]);
-        $this->fill($x - 1, $y - $pole - 2, 3, 3, [255, 216, 0]);
-        $this->fill($x + 2, $y - $pole + 1 + $wave, 16, 11, [255, 216, 0]);
-        $this->fill($x + 2, $y - $pole + 1 + $wave, 16, 2, [255, 255, 170]);
-        $this->fill($x + 8, $y - $pole + 4 + $wave, 4, 4, [200, 40, 40]);
+        self::fill($sdl, $x - 1, $y - $pole, 3, $pole, [240, 240, 240]);
+        self::fill($sdl, $x - 1, $y - $pole - 2, 3, 3, [255, 216, 0]);
+        self::fill($sdl, $x + 2, $y - $pole + 1 + $wave, 16, 11, [255, 216, 0]);
+        self::fill($sdl, $x + 2, $y - $pole + 1 + $wave, 16, 2, [255, 255, 170]);
+        self::fill($sdl, $x + 8, $y - $pole + 4 + $wave, 4, 4, [200, 40, 40]);
     }
 
     /** A base of the flag mode: a pad and a tall pole of the colour of the team. */
-    private function drawBase(int $x, int $y, array $rgb): void
+    public static function drawBase(Sdl $sdl, int $x, int $y, array $rgb): void
     {
-        if ($x < -40 || $x > $this->sdl->getWindow()->getWidth() + 40) return;
+        if ($x < -40 || $x > $sdl->getWindow()->getWidth() + 40) return;
         // dark outlines and deep colours: pale ones melted into the sky and looked like white blocks
         $deep = [(int)($rgb[0] * 0.7), (int)($rgb[1] * 0.55), (int)($rgb[2] * 0.7)];
-        $this->fill($x - 21, $y - 7, 42, 7, [16, 16, 40]);
-        $this->fill($x - 20, $y - 6, 40, 5, $deep);
-        $this->fill($x - 20, $y - 6, 40, 1, $rgb);
-        $this->fill($x - 3, $y - 66, 6, 60, [16, 16, 40]);
-        $this->fill($x - 2, $y - 65, 4, 59, [120, 90, 60]);
-        $this->fill($x + 3, $y - 66, 22, 16, [16, 16, 40]);
-        $this->fill($x + 3, $y - 65, 21, 14, $deep);
-        $this->fill($x + 3, $y - 65, 21, 3, $rgb);
+        self::fill($sdl, $x - 21, $y - 7, 42, 7, [16, 16, 40]);
+        self::fill($sdl, $x - 20, $y - 6, 40, 5, $deep);
+        self::fill($sdl, $x - 20, $y - 6, 40, 1, $rgb);
+        self::fill($sdl, $x - 3, $y - 66, 6, 60, [16, 16, 40]);
+        self::fill($sdl, $x - 2, $y - 65, 4, 59, [120, 90, 60]);
+        self::fill($sdl, $x + 3, $y - 66, 22, 16, [16, 16, 40]);
+        self::fill($sdl, $x + 3, $y - 65, 21, 14, $deep);
+        self::fill($sdl, $x + 3, $y - 65, 21, 3, $rgb);
     }
 
-    /** Race: a chequered post from the ground up, at x (view pixels) of the goal. */
-    private function drawFinishLine(int $x, float $cameraY): void
+    /**
+     * Race: a chequered post from the ground up, at x (view pixels) of the goal $goalX; $grounds: y of the ground
+     * under it by height of the view, kept between calls.
+     */
+    public static function drawFinishLine(Sdl $sdl, ?Level $level, float $goalX, int $x, float $cameraY, array &$grounds): void
     {
-        $height = $this->sdl->getWindow()->getHeight();
-        if ($x < -8 || $x > $this->sdl->getWindow()->getWidth()) return;
+        $height = $sdl->getWindow()->getHeight();
+        if ($x < -8 || $x > $sdl->getWindow()->getWidth()) return;
         // the ground under the line, near the middle of the view
         $band = (int)floor($cameraY / 32);
-        $ground = $this->finishGround[$band] ??= $this->level?->findSurfaceY((int)$this->goalX, $band * 32 + intdiv($height, 2), $height)
+        $ground = $grounds[$band] ??= $level?->findSurfaceY((int)$goalX, $band * 32 + intdiv($height, 2), $height)
             ?? $band * 32 + $height;
         $bottom = (int)round($ground - $cameraY);
         for ($y = $bottom - 8, $row = 0; $y > $bottom - 96; $y -= 8, $row++) {
-            $this->fill($x - 4, $y, 4, 8, $row % 2 ? [20, 20, 20] : [240, 240, 240]);
-            $this->fill($x, $y, 4, 8, $row % 2 ? [240, 240, 240] : [20, 20, 20]);
+            self::fill($sdl, $x - 4, $y, 4, 8, $row % 2 ? [20, 20, 20] : [240, 240, 240]);
+            self::fill($sdl, $x, $y, 4, 8, $row % 2 ? [240, 240, 240] : [20, 20, 20]);
         }
-        $this->fill($x - 6, $bottom - 100, 12, 4, [255, 216, 0]);
+        self::fill($sdl, $x - 6, $bottom - 100, 12, 4, [255, 216, 0]);
     }
 
-    private function fill(int $x, int $y, int $w, int $h, array $rgb): void
+    private static function fill(Sdl $sdl, int $x, int $y, int $w, int $h, array $rgb): void
     {
         $rect = new \SDL_Rect;
         [$rect->x, $rect->y, $rect->w, $rect->h] = [$x, $y, $w, $h];
-        $this->sdl->getRenderer()->setColor($rgb[0], $rgb[1], $rgb[2], 255);
-        \SDL_RenderFillRect($this->sdl->getRenderer()->getRenderer(), $rect);
+        $sdl->getRenderer()->setColor($rgb[0], $rgb[1], $rgb[2], 255);
+        \SDL_RenderFillRect($sdl->getRenderer()->getRenderer(), $rect);
     }
 
     /**
@@ -1387,7 +1426,7 @@ class Versus extends EventEmitter
         $w = $text->width($label, $size);
         $x = (int)max($dst->x + $margin, min($dst->x + $dst->w - $margin - $w, $wx - $w / 2));
         $y = (int)max($dst->y + $margin * 4, min($dst->y + $dst->h - $margin * 3, $wy));
-        $this->fill($x - (int)($size * 0.9), $y + (int)($size * 0.15), (int)($size * 0.7), (int)($size * 0.7), $rgb);
+        self::fill($this->sdl, $x - (int)($size * 0.9), $y + (int)($size * 0.15), (int)($size * 0.7), (int)($size * 0.7), $rgb);
         $text->draw($label, $x, $y, $size, $rgb);
     }
 
@@ -1404,6 +1443,12 @@ class Versus extends EventEmitter
 
     /** Top right: the mode, the time, the score of each Sonic (team scores in the flag mode). */
     private function drawScores(TextRenderer $text, \SDL_Rect $dst, int $size): void
+    {
+        self::drawScoreLines($text, $dst, $size, $this->scoreLines());
+    }
+
+    /** The lines of the scores: [[text, rgb]]. */
+    private function scoreLines(): array
     {
         $lines = [];
         $time = match ($this->mode) {
@@ -1425,6 +1470,13 @@ class Versus extends EventEmitter
             };
             $lines[] = [($rival->human ? '> ' : '  ') . $rival->name . '  ' . $value, $rival->rgb];
         }
+        return $lines;
+    }
+
+    /** The scores in their panel, top right (ReplayPlayer draws the recorded ones). */
+    public static function drawScoreLines(TextRenderer $text, \SDL_Rect $dst, int $size, array $lines): void
+    {
+        if (!$lines) return;
         $line = (int)round($size * 1.25);
         $width = max(array_map(fn($l) => $text->width($l[0], $size), $lines));
         $x = $dst->x + $dst->w - $width - $size * 2;
