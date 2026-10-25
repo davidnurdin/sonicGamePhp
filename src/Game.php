@@ -31,6 +31,7 @@ use SonicGame\SoundManager\SoundManager;
 use SonicGame\Utils\Bridge;
 use SonicGame\Utils\Lang;
 use SonicGame\Utils\SiteLevels;
+use SonicGame\Utils\SiteRooms;
 
 class Game extends EventEmitter
 {
@@ -67,6 +68,9 @@ class Game extends EventEmitter
     private ?Online $online = null;
     /** The levels of the site's editor (menu NIVEAUX DU SITE); $customFromMenu: the one played was chosen there. */
     private SiteLevels $siteLevels;
+    private SiteRooms $siteRooms;
+    /** A room of SALONS to go in once the player has a name. */
+    private ?string $roomToJoin = null;
     private bool $customFromMenu = false;
     /**
      * What the level of the site being downloaded is for: 'play' (NIVEAUX DU SITE), 'pick' (chosen for the matches:
@@ -166,6 +170,7 @@ class Game extends EventEmitter
         $this->bestTimes = new BestTimes($root . '/var/besttimes.json');
         $this->siteLevels = new SiteLevels(defined('SONIC_SITE_URL') && constant('SONIC_SITE_URL') !== ''
             ? (string)constant('SONIC_SITE_URL') : Online::SITE_URL, $root . '/var/custom');
+        $this->siteRooms = new SiteRooms(defined('SONIC_SITE_URL') && constant('SONIC_SITE_URL') !== '' ? (string)constant('SONIC_SITE_URL') : Online::SITE_URL);
         $this->screens->setMenu($this->text, $this->options, $this->ghost, $this->bestTimes);
     }
 
@@ -342,6 +347,12 @@ class Game extends EventEmitter
         $this->screens->on('openSite', fn() => Bridge::openSite(defined('SONIC_SITE_URL') && constant('SONIC_SITE_URL') !== ''
             ? (string)constant('SONIC_SITE_URL') : Online::SITE_URL));
         $this->screens->setOnlineView(fn() => $this->online);
+        $this->screens->setRoomsView(fn() => $this->siteRooms->data());
+        // SALONS: a public room chosen in the list
+        $this->screens->on('roomJoin', function (string $code) {
+            $this->roomToJoin = $code;
+            $this->onlineAction('room');
+        });
         $this->screens->on('siteLevels', fn(int $page, string $sort = 'top') => $this->siteLevels->requestPage($page, $sort));
         $this->screens->on('siteLevelVote', fn(int $id, int $stars, bool $favourite) => $this->siteLevels->vote($id, $stars, $favourite));
         $this->screens->on('siteLevelPlay', function (int $id, string $key) {
@@ -484,7 +495,7 @@ class Game extends EventEmitter
     private function onlineAction(string $action): void
     {
         // the others see a name: asked before the first room
-        if (in_array($action, ['public', 'create', 'join'], true) && $this->options->getOnlineName() === '') {
+        if (in_array($action, ['public', 'create', 'join', 'room'], true) && $this->options->getOnlineName() === '') {
             $this->afterPlayerName = $action;
             $this->screens->showPlayerEntry($this->playerName ?? '');
             return;
@@ -516,6 +527,10 @@ class Game extends EventEmitter
                 break;
             case 'join':
                 $this->screens->showCodeEntry();
+                break;
+            case 'room':
+                if ($this->roomToJoin !== null) $this->connectOnline($this->roomToJoin);
+                $this->roomToJoin = null;
                 break;
             case 'leave':
                 $this->leaveOnline();
@@ -1559,6 +1574,8 @@ class Game extends EventEmitter
 			// a level of the site downloaded: also while the lobby of an online match waits (outside the menus)
 			if ($answer = $this->siteLevels->poll()) $this->siteLevelAnswer($answer);
 			if ($this->screens->isActive()) {
+				// who plays online: read while a menu shows it
+				if ($this->screens->wantsRooms()) $this->siteRooms->tick($deltaTime);
 				$this->screens->update($deltaTime, $this->buttonPressed);
 				$this->buttonPressed = false;
 				$closureDisplay($deltaTime);

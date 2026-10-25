@@ -11,7 +11,8 @@ use PhpWasmNetwork\Network;
  *
  * Requests: {"t": "share", "url", "text"} (the phone's share sheet, else the clipboard), {"t": "back"} (back
  * to the site that opened the game, if any), {"t": "open", "url"} (a page of the site in a new tab), {"t": "levels",
- * "page"} and {"t": "level", "id", "lt"} (the levels of the site's editor, see SiteLevels).
+ * "page"} and {"t": "level", "id", "lt"} (the levels of the site's editor, see SiteLevels), {"t": "rooms"} (who plays
+ * online, see SiteRooms).
  */
 final class Bridge
 {

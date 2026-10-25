@@ -27,7 +27,7 @@ use SonicGame\Utils\Lang;
  *
  * Events: titleDone, titleDemo, mapDone, actCompleteDone, creditsDone, gameOverDone [bool continued],
  * siteLevels [page, sort] (NIVEAUX DU SITE: a page of the list, answered with setSiteLevels), siteLevelPlay [id, key],
- * siteLevelVote [id, stars 0-5, favourite] (TON AVIS, after a level of the list).
+ * siteLevelVote [id, stars 0-5, favourite] (TON AVIS, after a level of the list), roomJoin [code] (a room of SALONS).
  */
 class Screens extends EventEmitter
 {
@@ -208,7 +208,7 @@ class Screens extends EventEmitter
                     ['ZONE', $this->zoneName($level), $level === Versus::SITE_LEVEL ? fn() => $this->pickSiteLevel('multi') : $nextLevel, $nextLevel],
                     ['IA', BotBrain::DIFFICULTIES[$ai], $nextAi, $nextAi],
                     ['LANCER', null, fn() => $this->finish('versusStart'), null],
-                    ['EN LIGNE', null, fn() => $this->openPage('online', 0), null],
+                    ['EN LIGNE', $this->playersOnline(), fn() => $this->openPage('online', 0), null],
                     ['RETOUR', null, fn() => $this->openPage('menu', 1), null],
                 ];
             case 'online':
@@ -216,7 +216,10 @@ class Screens extends EventEmitter
                 $online = $this->onlineView ? ($this->onlineView)() : null;
                 $act = fn(string $action) => fn() => $this->emit('online', [$action]);
                 if ($online === null || $online->status === 'error' || $online->status === 'closed') {
+                    $rooms = $this->roomsView ? ($this->roomsView)() : null;
                     return [
+                        // the public rooms, who is in them: joined from there
+                        ['SALONS', $rooms !== null ? (string)count($rooms['list']) : null, fn() => $this->openPage('rooms', 0), null],
                         ['SALON PUBLIC', null, $act('public'), null],
                         ['SALON PRIVE', null, $act('create'), null],
                         ['REJOINDRE', null, $act('join'), null],
@@ -244,6 +247,27 @@ class Screens extends EventEmitter
                     array_unshift($items, ['LANCER', null, $act('start'), null], ['MODE', Lang::t(Versus::MODES[$mode]), $nextMode, $nextMode],
                         ['ZONE', $this->zoneName($level), $level === Versus::SITE_LEVEL ? fn() => $this->pickSiteLevel('online') : $nextLevel, $nextLevel]);
                 }
+                return $items;
+            case 'rooms':
+                // the public rooms (the site's list, read again every few seconds): Enter goes in
+                $rooms = $this->roomsView ? ($this->roomsView)() : null;
+                $items = [];
+                foreach (array_slice($rooms['list'] ?? [], 0, self::ROOMS_SHOWN) as $room) {
+                    $names = $room['names'] !== [] ? implode(' ', array_map(fn($name) => self::plain($name, 8), $room['names'])) : $room['room'];
+                    $items[] = [$names, $room['players'] . '/' . $room['max'], function () use ($room) {
+                        $this->sound?->playSfx(SoundManager::SFX_SWITCH);
+                        $this->titlePage = 'online';
+                        $this->menuIndex = 0;
+                        $this->emit('roomJoin', [$room['room']]);
+                    }, null];
+                }
+                $act = fn(string $action) => fn() => $this->emit('online', [$action]);
+                $items[] = [$items === [] ? 'CREER UN SALON' : 'NOUVEAU SALON', null, function () use ($act) {
+                    $this->titlePage = 'online';
+                    $this->menuIndex = 0;
+                    $act('public')();
+                }, null];
+                $items[] = ['RETOUR', null, fn() => $this->openPage('online', 0), null];
                 return $items;
             case 'jukebox':
                 $songs = array_keys(self::SONGS);
@@ -618,10 +642,37 @@ class Screens extends EventEmitter
     private string $entryPurpose = 'name';
     /** Online: Game's session, for the page EN LIGNE. */
     private ?\Closure $onlineView = null;
+    /** Who plays online (SiteRooms::data()), for SALONS and the title screen. */
+    private ?\Closure $roomsView = null;
+    private const ROOMS_SHOWN = 7;
 
     public function setOnlineView(\Closure $view): void
     {
         $this->onlineView = $view;
+    }
+
+    public function setRoomsView(\Closure $view): void
+    {
+        $this->roomsView = $view;
+    }
+
+    /** A menu shows who plays online now (Game reads the site's list meanwhile). */
+    public function wantsRooms(): bool
+    {
+        if ($this->screen !== 'title' || $this->options === null) return false;
+        if ($this->titlePage === 'online') {
+            $online = $this->onlineView ? ($this->onlineView)() : null;
+            return $online === null || $online->status === 'error' || $online->status === 'closed';
+        }
+        return in_array($this->titlePage, ['menu', 'multi', 'rooms'], true);
+    }
+
+    /** "3 EN LIGNE": the players in the game now, or null (not known, or nobody). */
+    private function playersOnline(): ?string
+    {
+        $rooms = $this->roomsView ? ($this->roomsView)() : null;
+        $players = max((int)($rooms['ingame'] ?? 0), (int)($rooms['players'] ?? 0));
+        return $players > 0 ? Lang::t('{n} EN LIGNE', ['n' => $players]) : null;
     }
 
     /** The code of a room to join, on the same keyboard (letters only, 4). */
@@ -1228,6 +1279,16 @@ class Screens extends EventEmitter
                 $this->menuLine($label, $i === $this->menuIndex, self::MENU_Y - (count($items) > 4 ? 5 : 0) + $step * $i);
             }
         }
+        // who plays online now (the site's list): at the top, over the sky
+        $players = $this->text !== null ? $this->playersOnline() : null;
+        if ($players !== null) {
+            $rooms = $this->roomsView ? ($this->roomsView)() : null;
+            $count = count($rooms['list'] ?? []);
+            $line = $players . ($count > 0 ? '  ' . Lang::t($count > 1 ? '{n} SALONS' : '{n} SALON', ['n' => $count]) : '');
+            $size = 8 * $this->scale;
+            $width = $this->text->styledWidth($line, $size, $this->scale);
+            $this->styled($line, (256 * $this->scale - $width) / 2 / $this->scale, 4, $size, [[170, 255, 170], [0, 200, 0]]);
+        }
         // wagging finger: alternates every 8 frames 22 times, then rests on the first frame
         $tick = intdiv($this->frames, $title['frame_ticks']);
         $frame = $tick < $title['wags'] ? $tick % 2 : 0;
@@ -1300,6 +1361,30 @@ class Screens extends EventEmitter
             : [self::MENU_TOP, self::MENU_BOTTOM];
     }
 
+    /** Page SALONS under its entries: the selected room (its match), or what is going on. */
+    private function renderRooms(int $size): void
+    {
+        $rooms = $this->roomsView ? ($this->roomsView)() : null;
+        $list = array_slice($rooms['list'] ?? [], 0, self::ROOMS_SHOWN);
+        $room = $list[$this->menuIndex] ?? null;
+        $grey = [[255, 255, 255], [170, 170, 170]];
+        if ($room !== null) {
+            $lines = [Lang::t(Versus::MODES[$room['mode']] ?? 'COURSE') . '  ' . Versus::levelName($room['level'], $room['site'] !== '' ? $room['site'] : null),
+                Lang::t($room['state'] === 'match' ? 'EN MATCH  TU ENTRES EN JEU' : 'EN ATTENTE DE JOUEURS') . '  ' . $room['room']];
+        } elseif ($rooms === null) {
+            $lines = ['CHARGEMENT...', ''];
+        } else {
+            $lines = [$list === [] ? 'AUCUN SALON POUR LE MOMENT' : '', $this->playersOnline() ?? ''];
+        }
+        foreach ($lines as $i => $line) {
+            if ($line === '') continue;
+            $line = $this->fit($line, $size, 240, true);
+            $width = $this->text->styledWidth($line, $size, $this->scale);
+            $this->styled($line, (256 * $this->scale - $width) / 2 / $this->scale, 160 + 12 * $i, $size, $room !== null && $i === 1 && $room['state'] === 'lobby'
+                ? [[170, 255, 170], [0, 200, 0]] : $grey);
+        }
+    }
+
     /** Page EN LIGNE: the room, its players, the state of the connection. */
     /** The page EN LIGNE under its entries ($top: below the last one, SMS pixels). */
     private function renderOnline(int $size, int $top): void
@@ -1315,9 +1400,10 @@ class Screens extends EventEmitter
         $options = $this->options;
         $settings = Lang::t(Versus::MODES[$options->getVersusMode()]) . '  ' . Lang::t($this->zoneName($options->getVersusLevel()));
         if ($online === null) {
-            $centre('PUBLIC  AVEC D AUTRES JOUEURS', 140, $grey);
-            $centre('PRIVE  UN CODE POUR TES AMIS', 152, $grey);
-            $centre($settings, 168, [self::MENU_TOP, self::MENU_BOTTOM]);
+            // under the 6 entries
+            $centre('PUBLIC  AVEC D AUTRES JOUEURS', 146, $grey);
+            $centre('PRIVE  UN CODE POUR TES AMIS', 156, $grey);
+            $centre($settings, 170, [self::MENU_TOP, self::MENU_BOTTOM]);
             $centre('REGLAGES DANS MULTIJOUEUR', 180, $grey);
             return;
         }
@@ -1389,7 +1475,7 @@ class Screens extends EventEmitter
     {
         $scale = $this->scale;
         $title = match ($this->titlePage) {
-            'cheats' => 'CHEATS', 'scores' => 'MEILLEURS TEMPS', 'jukebox' => 'JUKEBOX', 'multi' => 'MULTIJOUEUR', 'online' => 'EN LIGNE',
+            'cheats' => 'CHEATS', 'scores' => 'MEILLEURS TEMPS', 'jukebox' => 'JUKEBOX', 'multi' => 'MULTIJOUEUR', 'online' => 'EN LIGNE', 'rooms' => 'SALONS',
             'levels', 'sitesorts' => 'NIVEAUX DU SITE', 'rate' => 'TON AVIS', default => 'OPTIONS',
         };
         $big = 12 * $scale;
@@ -1432,6 +1518,7 @@ class Screens extends EventEmitter
             }
         }
         if ($this->titlePage === 'online') $this->renderOnline($size, 40 + $step * count($items));
+        if ($this->titlePage === 'rooms') $this->renderRooms($size);
         if ($this->titlePage === 'levels') {
             // under the entries: what is going on, or whose account the private levels come from
             $line = match ($this->levelsStatus) {
