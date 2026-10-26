@@ -253,7 +253,7 @@ class Screens extends EventEmitter
                 $rooms = $this->roomsView ? ($this->roomsView)() : null;
                 $items = [];
                 foreach (array_slice($rooms['list'] ?? [], 0, self::ROOMS_SHOWN) as $room) {
-                    $names = $room['names'] !== [] ? implode(' ', array_map(fn($name) => self::plain($name, 8), $room['names'])) : $room['room'];
+                    $names = $room['names'] !== [] ? implode(' ', array_map(fn($name) => self::plain($name, Online::NAME_LENGTH), $room['names'])) : $room['room'];
                     $items[] = [$names, $room['players'] . '/' . $room['max'], function () use ($room) {
                         $this->sound?->playSfx(SoundManager::SFX_SWITCH);
                         $this->titlePage = 'online';
@@ -315,7 +315,7 @@ class Screens extends EventEmitter
                 }
                 $items = [];
                 foreach ($list['levels'] as $level) {
-                    $owner = $level['mine'] ? ($level['public'] ? 'A TOI' : 'PRIVE') : self::plain($level['author'], 8);
+                    $owner = $level['mine'] ? ($level['public'] ? 'A TOI' : 'PRIVE') : self::plain($level['author'], Online::NAME_LENGTH);
                     // its stars (the average of the players' votes), before its author
                     if (is_numeric($level['rating'] ?? null)) $owner = number_format((float)$level['rating'], 1, '.', '') . ' ' . $owner;
                     // the whole name: too long, it scrolls when selected (renderMenuPage)
@@ -699,7 +699,7 @@ class Screens extends EventEmitter
 
     private function entryLength(): int
     {
-        return match ($this->entryPurpose) { 'code' => 4, 'chat' => Online::CHAT_LENGTH, default => self::NAME_LENGTH };
+        return match ($this->entryPurpose) { 'code' => 4, 'chat' => Online::CHAT_LENGTH, 'player' => Online::NAME_LENGTH, default => self::NAME_LENGTH };
     }
 
     /** A time of the act entered the top 5: the name is typed on the on-screen keyboard. */
@@ -1426,7 +1426,8 @@ class Screens extends EventEmitter
         foreach ($online->peers() as $i => $peer) {
             // me in yellow
             $label = $peer === $online->host ? Lang::t('{name} HOTE', ['name' => $online->names[$peer]]) : $online->names[$peer];
-            $this->styled($label, $i % 2 ? 136 : 16, $y + intdiv($i, 2) * 10, $size, $peer === $online->me
+            // two columns: a long name scrolls
+            $this->styled($this->fit($label, $size, 116, true), $i % 2 ? 136 : 16, $y + intdiv($i, 2) * 10, $size, $peer === $online->me
                 ? [[255, 255, 170], [255, 200, 0]] : [[255, 255, 255], [170, 170, 170]]);
         }
         $y += (int)ceil(count($online->names) / 2) * 10 + 4;
@@ -1529,14 +1530,14 @@ class Screens extends EventEmitter
                     ? (in_array($this->levelsSort, ['mine', 'favourites'], true) && $this->levelsList['account'] === null ? 'CONNECTE TOI SUR LE SITE'
                         : ($this->levelsSort === 'favourites' ? 'PAS ENCORE DE FAVORI' : 'AUCUN NIVEAU POUR LE MOMENT'))
                     : Lang::t(self::LEVEL_SORTS[$this->levelsSort]) . ($this->levelsList['account'] !== null
-                        ? '  ' . Lang::t('COMPTE {name}', ['name' => self::plain($this->levelsList['account'], 8)]) : ''),
+                        ? '  ' . Lang::t('COMPTE {name}', ['name' => self::plain($this->levelsList['account'], Online::NAME_LENGTH)]) : ''),
             };
             $width = $this->text->styledWidth($line, $size, $scale);
             $this->styled($line, (256 * $scale - $width) / 2 / $scale, 172, $size, [[255, 255, 255], [170, 170, 170]]);
         }
         if ($this->titlePage === 'rate' && $this->playedLevel !== null) {
             // the level rated, and its author
-            foreach ([[self::plain($this->playedLevel['name'], 30), 150], [Lang::t('PAR {name}', ['name' => self::plain($this->playedLevel['author'] ?? '', 12)]), 164]] as [$line, $y]) {
+            foreach ([[self::plain($this->playedLevel['name'], 30), 150], [Lang::t('PAR {name}', ['name' => self::plain($this->playedLevel['author'] ?? '', Online::NAME_LENGTH)]), 164]] as [$line, $y]) {
                 $width = $this->text->styledWidth($line, $size, $scale);
                 $this->styled($line, (256 * $scale - $width) / 2 / $scale, $y, $size, [[255, 255, 255], [170, 170, 170]]);
             }

@@ -4,6 +4,7 @@ namespace SonicGame\Level;
 
 use Evenement\EventEmitter;
 use SonicGame\AssetManager\AssetManager;
+use SonicGame\Multiplayer\Online;
 use SonicGame\Renderer\Sdl;
 use SonicGame\Save\Options;
 use SonicGame\Scene\Screens;
@@ -305,14 +306,14 @@ class LevelManager extends EventEmitter
         }
         $this->customVersion++;
         $this->customId = is_int($data['id'] ?? null) ? $data['id'] : null;
-        $author = Screens::plain((string)($data['author'] ?? ''), 8);
+        $author = Screens::plain((string)($data['author'] ?? ''), Online::NAME_LENGTH);
         $this->customAuthor = $author !== '' ? $author : null;
         $this->customSite = Options::validSite(['id' => $this->customId, 'lt' => (string)($data['lt'] ?? ''),
             'name' => Screens::plain($data['name'] ?? '', 20)]);
         // what its best times are set on, its best time (the first record) and its replay (record.json.gz next to it: its ghost)
         $this->customContentVersion = is_string($data['version'] ?? null) && preg_match('/^[0-9a-f]{16}$/', $data['version']) ? $data['version'] : null;
         $first = is_array($data['records'][0] ?? null) ? $data['records'][0] : null;
-        $this->customRecord = $first !== null && is_numeric($first['time'] ?? null) ? ['name' => Screens::plain($first['name'] ?? '', 8),
+        $this->customRecord = $first !== null && is_numeric($first['time'] ?? null) ? ['name' => Screens::plain($first['name'] ?? '', Online::NAME_LENGTH),
             'time' => (float)$first['time'], 'ghost' => !empty($data['record_ghost']) && is_file($folder . '/record.json.gz') ? $folder . '/record.json.gz' : null] : null;
         foreach ($this->levels as $index => $candidate) {
             if ($candidate->getLevel() === self::CUSTOM) {

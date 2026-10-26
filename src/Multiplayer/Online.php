@@ -41,6 +41,8 @@ final class Online
     private const META = ['game' => 'sonic', 'v' => self::VERSION];
     /** Chat: characters of a line (the game's font, the on-screen keyboard) and lines kept. */
     public const CHAT_LENGTH = 30;
+    /** The longest name (the site's accounts have the same rule). */
+    public const NAME_LENGTH = 15;
     private const CHAT_LINES = 20;
 
     /** Relay server: the page defines SONIC_NET_URL (?net=), native: env SONIC_NET_URL (start.sh), else this one. */
@@ -401,20 +403,20 @@ final class Online
         $this->status = 'error';
     }
 
-    /** $name, or NAME2, NAME3... (8 characters at most) when another player of the room has it. */
+    /** $name, or NAME2, NAME3... (NAME_LENGTH characters at most) when another player of the room has it. */
     private function uniqueName(string $name, int $peer): string
     {
         $taken = array_diff_key($this->names, [$peer => true]);
         for ($n = 2, $unique = $name; in_array($unique, $taken, true); $n++) {
-            $unique = substr($name, 0, 8 - strlen((string)$n)) . $n;
+            $unique = substr($name, 0, self::NAME_LENGTH - strlen((string)$n)) . $n;
         }
         return $unique;
     }
 
-    /** A name the game's font can draw: A-Z 0-9 space, 8 characters. */
+    /** A name the game's font can draw: A-Z 0-9 space, NAME_LENGTH characters. */
     public static function cleanName(string $name, int $peer): string
     {
-        $name = substr(trim(preg_replace('/[^A-Z0-9 ]/', '', strtoupper($name))), 0, 8);
+        $name = substr(trim(preg_replace('/[^A-Z0-9 ]/', '', strtoupper($name))), 0, self::NAME_LENGTH);
         return $name !== '' ? $name : 'J' . ($peer + 1);
     }
 }
